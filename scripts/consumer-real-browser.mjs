@@ -10,6 +10,8 @@ import { withVerifiedSubjectMedia } from '../apps/web/src/consumer-ui/catalog.ts
 
 const args = process.argv.slice(2);
 const focusTrends = args.includes('--focus-trends');
+const focusIllustrative = args.includes('--focus-illustrative');
+const focusCompact = args.includes('--focus-compact');
 const option = flag => { const i = args.indexOf(flag); return i < 0 ? null : args[i + 1]; };
 if (!option('--dist')) throw new Error('Usage: node scripts/consumer-real-browser.mjs --dist apps/web/dist [--api-origin https://ante-up.fun] [--source-sha SHA]');
 const dist = path.resolve(option('--dist'));
@@ -32,12 +34,14 @@ const catalog = [...live, ...references];
 const referenceHistories = await Promise.all(references.map(market => referenceConsumerReadApi.getHistory(market.id, 'ALL')));
 const livePreviewHistories = await Promise.all(live.map(async market => (await getPublic(`/api/v1/consumer/markets/${encodeURIComponent(market.id)}/history?period=1W`)).data));
 const previewHistories = new Map([...referenceHistories, ...livePreviewHistories].map(history => [history.market.id, history]));
-const previewSeries = history => (history.source.mode === 'LIVE' ? ['CURVE_PRICE', 'REFERENCE_PRICE', 'TRADE_PRICE', 'ATTENTION_INDEX', 'ACTIVITY_COUNT'] : ['ACTIVITY_COUNT', 'ATTENTION_INDEX', 'CURVE_PRICE', 'REFERENCE_PRICE', 'TRADE_PRICE']).map(kind => history.series.find(series => series.kind === kind && series.points.length)).find(Boolean);
+const previewSeries = history => history.series.find(series => history.source.mode === 'REFERENCE' && series.evidence === 'ILLUSTRATIVE' && series.points.length)
+  ?? (history.source.mode === 'LIVE' ? ['CURVE_PRICE', 'REFERENCE_PRICE', 'TRADE_PRICE', 'ATTENTION_INDEX', 'ACTIVITY_COUNT'] : ['ACTIVITY_COUNT', 'ATTENTION_INDEX', 'CURVE_PRICE', 'REFERENCE_PRICE', 'TRADE_PRICE']).map(kind => history.series.find(series => series.kind === kind && series.points.length)).find(Boolean);
 const expectedSparkCount = [...previewHistories.values()].filter(history => (previewSeries(history)?.points.length ?? 0) > 1).length;
 for (const history of referenceHistories) {
-  if (!history || history.source.mode !== 'REFERENCE' || history.actions.length || history.series.length !== 1 ||
+  if (!history || history.source.mode !== 'REFERENCE' || history.actions.length || ![1, 2].includes(history.series.length) ||
       history.series[0].kind !== 'ACTIVITY_COUNT' || !history.series[0].points.length ||
-      history.series[0].points.some(point => !Number.isFinite(point.atMs) || !Number.isFinite(Number(point.value))))
+      history.series[0].evidence === 'ILLUSTRATIVE' || history.series.slice(1).some(series => series.evidence !== 'ILLUSTRATIVE') ||
+      history.series.some(series => series.points.some(point => !Number.isFinite(point.atMs) || !Number.isFinite(Number(point.value)))))
     throw new Error('Platform references must contain observed activity counts without synthetic wallet actions.');
 }
 const allowedImageOrigins = [...new Set(catalog.map(item => {
@@ -184,9 +188,9 @@ try {
     check(!probe.images.some(image => image.complete && !image.width), 'broken image');
     return { probe, check };
   }
-  function checkReferenceData(view, history) {
+  function checkReferenceData(view, history, series = history.series[0]) {
     const { probe, check } = view;
-    const series = history.series[0];
+    const illustrative = series.evidence === 'ILLUSTRATIVE';
     const points = [...series.points].sort((a, b) => a.atMs - b.atMs);
     check(probe.enabledFinancial.length === 0, 'executable financial control on reference subject');
     check(probe.markers === 0, 'reference has fabricated chip/trade markers');
@@ -205,7 +209,13 @@ try {
       check(probe.chart.length === 1 && probe.chartPoints === points.length, `chart point count differs from DTO (${probe.chartPoints}/${points.length})`);
       check(probe.chart.some(label => label.includes(series.unit)), `chart unit differs from ${series.unit}`);
       if (points.length > 1) check(probe.periodControls === 4, 'history period controls absent');
-      if (series.timeBasis === 'REPORT_DATE') {
+      if (illustrative) {
+        check(probe.text.includes('Illustrative') && probe.chart.some(label => /illustrative/i.test(label)), 'illustrative chart lacks explicit visible/accessibility label');
+        check(probe.chartSummary.some(text => text.includes(series.unit)), 'illustrative metric unit absent');
+        check(probe.text.includes('not measured activity'), 'illustrative chart lacks measured-data distinction');
+        check(points.every((point, index) => probe.pointTitles[index]?.endsWith(`${new Intl.NumberFormat('en', { maximumFractionDigits: 4 }).format(Number(point.value))} ${series.unit}`)), 'illustrative rendered values differ from its explicit preview DTO');
+        check(!probe.observationRows.length, 'illustrative series is presented as recorded source observations');
+      } else if (series.timeBasis === 'REPORT_DATE') {
         check(probe.chartCaption.every(caption => !/\bUTC\b|\b[AP]M\b|\d{1,2}:\d{2}/.test(caption)), 'date-only report axis invents a time or timezone');
         check(probe.pointTitles.every(title => !/\bUTC\b|\b[AP]M\b|\d{1,2}:\d{2}/.test(title)), 'date-only point label invents a time or timezone');
         check(probe.chartObservation.some(label => label.includes(series.aggregation === 'daily' ? 'Daily activity' : 'Cumulative activity') && label.includes('no live feed')), 'aggregation/report-date context absent');
@@ -239,8 +249,28 @@ try {
   const shortActor = actor => actor.length > 18 ? `${actor.slice(0, 7)}…${actor.slice(-5)}` : actor;
   const viewports = [{ name: 'desktop-1440', width: 1440, height: 900, mobile: false }, { name: 'mobile-390', width: 390, height: 844, mobile: true }, { name: 'mobile-320', width: 320, height: 568, mobile: true }];
   for (const viewport of viewports) {
+    if (focusCompact && !viewport.mobile) continue;
     await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile });
     await send('Emulation.setTouchEmulationEnabled', { enabled: viewport.mobile, maxTouchPoints: viewport.mobile ? 5 : 1 });
+    if (focusCompact) {
+      const titles = viewport.width === 320 ? ['Bonobo - Kerala (Official Audio)', 'NASA’s Artemis I Moon Mission: Launch to Splashdown Highlights', 'Awake', 'Rosewood', 'May Ninth'] : ['Bonobo - Kerala (Official Audio)'];
+      for (const [index, title] of titles.entries()) {
+        const history = referenceHistories.find(item => item.market.title === title);
+        if (!history) throw new Error(`Missing compact QA subject: ${title}`);
+        const selected = previewSeries(history), actual = history.series[0];
+        const route = `/markets/${encodeURIComponent(history.market.id)}/trade?period=ALL`;
+        const detail = await visit(route, viewport, `compact-${index}`, state => state.chartPoints === selected.points.length && state.actionTabs.length === 4);
+        checkReferenceData(detail, history, selected);
+        detail.check(!!detail.probe.chartViewport?.inView, 'default chart outside unobscured initial trading viewport');
+        const clicked = await evaluate(`(() => {const e=[...document.querySelectorAll('.au-chart-series button')].find(e=>e.title===${JSON.stringify(actual.label)}||e.textContent.trim()===${JSON.stringify(actual.label)});if(!e)return false;e.click();return true})()`);
+        detail.check(clicked, 'actual observed series toggle absent');
+        const observed = await visit(route, viewport, `compact-${index}-observed`, state => actual.points.length === 1 ? state.snapshots.length === 1 : state.chartPoints === actual.points.length, false);
+        checkReferenceData(observed, history);
+        await checkReferenceEvidence(observed, history);
+      }
+      console.log(JSON.stringify({ viewport: viewport.name, capturedViews: results.length, failures: failures.length }));
+      continue;
+    }
     const explore = await visit('/markets', viewport, 'explore', state => state.rows.length === catalog.length && state.rows.filter(row => row.spark?.visible).length === expectedSparkCount);
     explore.check(explore.probe.rows.filter(row => row.source === 'Public source').length === references.length, 'reference row count mismatch');
     explore.check(explore.probe.rows.filter(row => row.source === 'Devnet observed').length === live.length, 'live row count mismatch');
@@ -263,9 +293,47 @@ try {
       } else {
         explore.check(row.spark.visible && row.spark.kind === series.kind, `genuine trend hidden or wrong metric: ${row.label}`);
         explore.check(JSON.stringify(row.spark.points) === JSON.stringify(expected), `sparkline points differ from source: ${row.label}`);
-        explore.check(row.spark.description.includes(series.label) && row.spark.text.includes('First → last observation'), `sparkline change basis absent: ${row.label}`);
+        explore.check(series.evidence === 'ILLUSTRATIVE' ? /illustrative/i.test(row.spark.text) && /illustrative/i.test(row.spark.description) && /not measured/i.test(row.spark.description) : row.spark.description.includes(series.label) && row.spark.text.includes('First → last observation'), `sparkline change basis absent: ${row.label}`);
         for (const line of row.spark.lines) explore.check(!series.gaps.some(gap => line.fromMs < gap.toMs && line.toMs > gap.fromMs), `sparkline connects a source gap: ${row.label}`);
       }
+    }
+    if (focusIllustrative) {
+      let checkedPeriods = false;
+      for (const [index, history] of referenceHistories.entries()) {
+        const selected = previewSeries(history);
+        const route = `/markets/${encodeURIComponent(history.market.id)}/trade?period=ALL`;
+        const detail = await visit(route, viewport, `illustrative-${index}`, state => state.chartPoints === selected.points.length && state.actionTabs.length === 4);
+        checkReferenceData(detail, history, selected);
+        detail.check(!!detail.probe.chartViewport?.inView, 'default chart outside unobscured initial trading viewport');
+        if (history.market.thumbnailUrl) {
+          for (let attempt = 0; attempt < 40; attempt++) {
+            if (await evaluate("(() => {const e=document.querySelector('.au-detail-art');return !!e&&e.complete&&e.naturalWidth>0})()")) break;
+            await delay(200);
+          }
+          const artwork = (await evaluate(probeCode)).images;
+          detail.check(artwork.some(image => image.src === history.market.thumbnailUrl && image.complete && image.width > 0), 'catalog artwork did not load');
+          results.at(-1).loadedImages = artwork;
+        }
+        if (selected.evidence === 'ILLUSTRATIVE') {
+          const actual = history.series[0];
+          const clicked = await evaluate(`(() => {const e=[...document.querySelectorAll('.au-chart-series button')].find(e=>e.title===${JSON.stringify(actual.label)}||e.textContent.trim()===${JSON.stringify(actual.label)});if(!e)return false;e.click();return true})()`);
+          detail.check(clicked, 'actual observed series toggle absent');
+          const observed = await visit(route, viewport, `observed-${index}`, state => actual.points.length === 1 ? state.snapshots.length === 1 : state.chartPoints === actual.points.length, false);
+          checkReferenceData(observed, history);
+          await checkReferenceEvidence(observed, history);
+          if (!checkedPeriods) {
+            checkedPeriods = true;
+            for (const period of ['1D', '1W', '1M']) {
+              const expected = await referenceConsumerReadApi.getHistory(history.market.id, period);
+              const expectedSeries = previewSeries(expected);
+              const filtered = await visit(`/markets/${encodeURIComponent(history.market.id)}/trade?period=${period}`, viewport, `illustrative-period-${period}`, state => state.selectedPeriod === period && state.chartPoints === expectedSeries.points.length);
+              checkReferenceData(filtered, expected, expectedSeries);
+            }
+          }
+        } else await checkReferenceEvidence(detail, history);
+      }
+      console.log(JSON.stringify({ viewport: viewport.name, capturedViews: results.length, failures: failures.length }));
+      continue;
     }
     if (!focusTrends) {
     const posts = references.filter(market => market.subject === 'POST');
@@ -278,7 +346,15 @@ try {
     for (const [index, market] of references.entries()) {
       const history = referenceHistories[index];
       const multiPoint = history.series[0].points.length > 1;
-      const detail = await visit(`/markets/${encodeURIComponent(market.id)}?period=ALL`, viewport, `reference-${index}`, state => state.text.includes(market.title) && state.text.includes('PUBLIC SOURCE') && (multiPoint ? state.chartPoints === history.series[0].points.length : state.snapshots.length === 1));
+      const initial = previewSeries(history);
+      const detailRoute = `/markets/${encodeURIComponent(market.id)}?period=ALL`;
+      let detail = await visit(detailRoute, viewport, `reference-${index}`, state => state.text.includes(market.title) && state.text.includes('PUBLIC SOURCE') && (initial.points.length > 1 ? state.chartPoints === initial.points.length : state.snapshots.length === 1));
+      if (initial.evidence === 'ILLUSTRATIVE') {
+        checkReferenceData(detail, history, initial);
+        const clicked = await evaluate(`(() => {const e=[...document.querySelectorAll('.au-chart-series button')].find(e=>e.title===${JSON.stringify(history.series[0].label)}||e.textContent.trim()===${JSON.stringify(history.series[0].label)});if(!e)return false;e.click();return true})()`);
+        detail.check(clicked, 'actual observed series toggle absent');
+        detail = await visit(detailRoute, viewport, `reference-${index}-observed`, state => multiPoint ? state.chartPoints === history.series[0].points.length : state.snapshots.length === 1, false);
+      }
       if (market.thumbnailUrl) {
         for (let attempt = 0; attempt < 40; attempt++) {
           const imageReady = await evaluate(`(() => {const e=document.querySelector('.au-detail-art');return !!e&&e.complete&&e.naturalWidth>0})()`);
@@ -318,8 +394,9 @@ try {
       !focusTrends && referenceHistories.find(history => history.series[0].points.length === 1)].filter(Boolean);
     for (const history of routeSubjects) for (const section of ['trade', 'pro', 'lp']) {
       const route = `/markets/${encodeURIComponent(history.market.id)}/${section}?period=ALL`;
-      const view = await visit(route, viewport, `route-${history.series[0].aggregation ?? 'snapshot'}-${section}`, state => state.actionTabs.length === 4 && (history.series[0].points.length > 1 ? state.chartPoints === history.series[0].points.length : state.snapshots.length === 1));
-      checkReferenceData(view, history);
+      const initial = previewSeries(history);
+      const view = await visit(route, viewport, `route-${history.series[0].aggregation ?? 'snapshot'}-${section}`, state => state.actionTabs.length === 4 && (initial.points.length > 1 ? state.chartPoints === initial.points.length : state.snapshots.length === 1));
+      checkReferenceData(view, history, initial);
       view.check(!!view.probe.chartViewport?.inView, 'reference chart/snapshot outside initial trading viewport');
     }
     for (const [index, market] of live.entries()) for (const section of ['trade', 'pro', 'lp']) {
