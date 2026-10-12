@@ -1,0 +1,37 @@
+# Nginx Proxy Manager custom vhost template; install only after DNS and cert issuance.
+# Connect the proxy and Ante Up web container to the same persistent ingress network.
+# Certificates must exist before nginx -t/reload. This file is not auto-installed.
+limit_req_zone $binary_remote_addr zone=ante_up_api:10m rate=3r/s;
+server {
+  listen 80;
+  listen [::]:80;
+  server_name ante-up.fun;
+  include conf.d/include/letsencrypt-acme-challenge.conf;
+  location / { return 301 https://ante-up.fun$request_uri; }
+}
+server {
+  listen 443 ssl;
+  listen [::]:443 ssl;
+  server_name ante-up.fun;
+  ssl_certificate /etc/letsencrypt/live/ante-up.fun/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/ante-up.fun/privkey.pem;
+  ssl_protocols TLSv1.2 TLSv1.3;
+  resolver 127.0.0.11 valid=10s ipv6=off;
+  set $ante_upstream http://ante-up-web-1:8080;
+  client_max_body_size 32k;
+  add_header X-Content-Type-Options nosniff always;
+  add_header Referrer-Policy same-origin always;
+  location /api/ {
+    limit_req zone=ante_up_api burst=12 nodelay;
+    limit_req_status 429;
+    proxy_pass $ante_upstream$request_uri;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_read_timeout 20s;
+  }
+  location / {
+    proxy_pass $ante_upstream$request_uri;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+  }
+}

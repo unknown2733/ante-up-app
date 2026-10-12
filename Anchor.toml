@@ -1,0 +1,13 @@
+# Shared local-test and Devnet identity; deployment key remains on the server.
+[programs.localnet]
+ante_up = "FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr"
+
+[programs.devnet]
+ante_up = "FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr"
+
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+[workspace]
+members = ["programs/ante_up"]

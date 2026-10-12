@@ -1,0 +1,6 @@
+[workspace]
+members = ["programs/ante_up", "programs/ante_up_math"]
+resolver = "2"
+
+[profile.release]
+overflow-checks = true

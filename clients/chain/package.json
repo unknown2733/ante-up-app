@@ -1,0 +1,35 @@
+{
+  "name": "@ante-up/chain-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "generate": "node scripts/generate.mjs",
+    "check": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "npm run build && node --test ../../tests/chain/*.test.mjs"
+  },
+  "dependencies": {
+    "@solana/kit": "8.4.0",
+    "@solana-program/system": "0.14.1",
+    "@solana-program/token": "0.16.1",
+    "@solana/program-client-core": "8.4.0"
+  },
+  "devDependencies": {
+    "@codama/renderers-js": "2.5.0",
+    "@codama/nodes-from-anchor": "1.5.6",
+    "@solana/kit-plugin-litesvm": "0.19.0",
+    "codama": "1.11.0",
+    "litesvm": "1.6.0",
+    "@types/node": "26.6.5",
+    "typescript": "7.0.2"
+  }
+}

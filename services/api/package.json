@@ -1,0 +1,21 @@
+{
+  "name": "@ante-up/fixture-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.ts",
+    "keeper": "node src/keeper-run.ts",
+    "test": "node --test test/*.test.ts",
+    "check": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "@solana/kit": "8.4.0"
+  }
+}

@@ -1,0 +1,1 @@
+{"name":"@ante-up/evidence","private":true,"type":"module","scripts":{"test":"node --test *.test.mjs","live":"node cli.mjs --execute"},"dependencies":{"@ardrive/turbo-sdk":"2.1.0","@dha-team/arbundles":"1.0.4","@solana/kit":"8.4.0","arweave":"1.15.7","sas-lib":"1.0.10"}}

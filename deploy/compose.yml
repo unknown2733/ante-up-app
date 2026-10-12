@@ -1,0 +1,103 @@
+name: ante-up
+x-base: &base
+  image: ante-up:${ANTE_UP_RELEASE:-devnet}
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile
+  user: "${ANTE_UP_UID:-1000}:${ANTE_UP_GID:-1000}"
+  restart: unless-stopped
+  init: true
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  stop_grace_period: 60s
+  mem_limit: 1536m
+  cpus: 1.0
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: "3"}
+x-env: &env
+  ANTE_UP_CLUSTER: devnet
+  ANTE_UP_MODE: devnet
+  ANTE_UP_PROGRAM_ID: FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr
+  ANTE_UP_RPC_URL_FILE: /run/secrets/rpc.url
+  ANTE_UP_INDEX_DB: /state/live-smoke/index.sqlite
+  ANTE_UP_HEALTH_DIRECTORY: /state/health
+services:
+  indexer:
+    <<: *base
+    command: [flock, -n, -F, /state/indexer.lock, node, scripts/service-entry.mjs, services/indexer/src/run.ts, --follow]
+    environment:
+      <<: *env
+      ANTE_UP_CANDIDATES_PATH: /state/live-smoke/candidates.json
+      ANTE_UP_PROOFS_PATH: /state/live-smoke/evidence/jobs.json
+      ANTE_UP_POLL_INTERVAL_MS: "10000"
+    volumes:
+      - ${ANTE_UP_STATE_DIR}:/state
+      - ${ANTE_UP_SECRET_DIR}/devnet-rpc.url:/run/secrets/rpc.url:ro
+    healthcheck:
+      test: [CMD, node, scripts/service-health.mjs, indexer]
+      interval: 30s
+      timeout: 15s
+      start_period: 60s
+      retries: 3
+  collector:
+    <<: *base
+    command: [flock, -n, -F, /state/collector.lock, node, scripts/service-entry.mjs, scripts/collect-devnet.mjs, --execute, --follow]
+    depends_on:
+      indexer: {condition: service_healthy}
+    environment:
+      <<: *env
+      ANTE_UP_ENABLE_PAID_X: "yes"
+      ANTE_UP_EXTERNAL_INDEXER: "yes"
+      ANTE_UP_COLLECTION_CONFIG: /state/live-smoke/collection-config.json
+      ANTE_UP_PUBLISHER_KEYPAIR_FILE: /run/secrets/publisher.json
+      X_BEARER_TOKEN_FILE: /run/secrets/x.token
+      ANTE_UP_STATE_LIMIT_BYTES: "5368709120"
+    volumes:
+      - ${ANTE_UP_STATE_DIR}:/state
+      - ${ANTE_UP_SECRET_DIR}/devnet-rpc.url:/run/secrets/rpc.url:ro
+      - ${ANTE_UP_SECRET_DIR}/devnet-publisher.json:/run/secrets/publisher.json:ro
+      - ${ANTE_UP_SECRET_DIR}/x-bearer.token:/run/secrets/x.token:ro
+    healthcheck:
+      test: [CMD, node, scripts/service-health.mjs, collector]
+      interval: 30s
+      timeout: 15s
+      start_period: 120s
+      retries: 3
+  api:
+    <<: *base
+    command: [node, scripts/service-entry.mjs, services/api/src/server.ts]
+    environment:
+      <<: *env
+      HOST: 0.0.0.0
+      PORT: "8787"
+      ANTE_UP_MARKETS_PATH: /state/markets.json
+    volumes:
+      - ${ANTE_UP_STATE_DIR}:/state
+      - ${ANTE_UP_SECRET_DIR}/devnet-rpc.url:/run/secrets/rpc.url:ro
+    ports: ["127.0.0.1:18787:8787"]
+    healthcheck:
+      test: [CMD, node, scripts/service-health.mjs, api]
+      interval: 60s
+      timeout: 15s
+      start_period: 30s
+      retries: 3
+  web:
+    <<: *base
+    networks: [default, ante_up_ingress]
+    command: [node, scripts/serve-web.mjs]
+    environment:
+      WEB_HOST: 0.0.0.0
+      WEB_PORT: "8080"
+      API_ORIGIN: http://api:8787
+    ports: ["127.0.0.1:18088:8080"]
+    healthcheck:
+      test: [CMD, node, scripts/service-health.mjs, web]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+networks:
+  ante_up_ingress:
+    external: true

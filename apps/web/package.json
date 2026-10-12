@@ -1,0 +1,35 @@
+{
+  "name": "ante-up-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "predev": "npm run build:chain",
+    "dev": "vite --host 127.0.0.1",
+    "build:chain": "npm --prefix ../../clients/chain run build",
+    "prebuild": "npm run build:chain",
+    "build": "tsc -b && vite build",
+    "pretest": "npm run build:chain",
+    "test": "node --test --test-concurrency=1 tests/*.test.mjs",
+    "test:integration": "node --test tests/http-d.test.mjs",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "@ante-up/chain-client": "file:../../clients/chain",
+    "@solana-mobile/wallet-standard-mobile": "0.7.0",
+    "@solana/kit": "8.4.0",
+    "@solana/kit-plugin-wallet": "0.21.0",
+    "@solana/program-client-core": "8.4.0",
+    "@solana/react": "8.4.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "~5.9.3",
+    "vite": "^7.1.0"
+  }
+}

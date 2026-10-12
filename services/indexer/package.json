@@ -1,0 +1,21 @@
+{
+  "name": "@ante-up/indexer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "check": "tsc --noEmit",
+    "poll:once": "node src/run.ts",
+    "poll:follow": "node src/run.ts --follow"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@solana/kit": "8.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "typescript": "7.0.2"
+  }
+}

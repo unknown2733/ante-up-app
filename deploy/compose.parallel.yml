@@ -1,0 +1,10 @@
+services:
+  api:
+    image: ante-up:clock-timing-20261013
+  indexer:
+    image: ante-up:parallel-qa-20261013
+    environment:
+      ANTE_UP_EXTRA_CANDIDATES_PATHS: '["/state/financial-qa-20261013/candidates.json"]'
+  web:
+    image: ante-up:wallet-reconcile-20261013
+

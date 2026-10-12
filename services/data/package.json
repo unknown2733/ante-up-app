@@ -1,0 +1,1 @@
+{"name":"@ante-up/data","private":true,"type":"module","scripts":{"test":"node --test *.test.mjs","live":"node cli.mjs --execute"},"dependencies":{"@solana/kit":"8.4.0"}}

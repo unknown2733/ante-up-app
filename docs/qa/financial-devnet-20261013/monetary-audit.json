@@ -1,0 +1,378 @@
+{
+  "at": "2026-10-12T16:11:27.311Z",
+  "cluster": "devnet",
+  "synthetic": true,
+  "market": "CHSKtjQD8XywUybvpjgoT1YMyHqbE4sgstKMHVnrWqMH",
+  "wallet": "CUNjqLY8g5v6SLtT4y8VnR4urkLe6dxRRf7kL3Qs4ikf",
+  "finality": "finalized",
+  "transactions": [
+    {
+      "step": "fund-sol",
+      "signature": "B4rN84Ycaxr1QZ5eGKh7AiLNUKyZ5Rbwot4hopZjEMtZzk8L8QKGATEG6kQ8oGFS52uQ9Nq9e7bSSUn86iyWSPS",
+      "slot": "510313095",
+      "feeLamports": "5000",
+      "adminLamports": "-60005000",
+      "publisherLamports": "0",
+      "qaLamports": "60000000",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "create-payment-ata",
+      "signature": "5RhHHJ4aapSkDv2bR5uTEtuZJBGBWkMhpaPNfpiZjVyaiQRxR3QuAL7d1b9f6KbJvRFFfjS7aVzhjXnTPShoarkQ",
+      "slot": "510313105",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-1493440",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "faucet",
+      "signature": "wcH2QhzsAsFiPy34L4Kz51ksFn5W33chPQVAytUZLNWyWN4nu2nUzwjQjAij8Pzcx4YjK49tbBs2SHGEe4crS1F",
+      "slot": "510313125",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-1021000",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "fund-tusd",
+      "signature": "2Bju2ynfzDeW1VrL43d55LP7eHggunWFRR3aKRS8tmpRwv6fXA6aCYEJHCH3VAn21Ns8GkQJXNax8in2vR46gVrs",
+      "slot": "510313133",
+      "feeLamports": "5000",
+      "adminLamports": "-5000",
+      "publisherLamports": "0",
+      "qaLamports": "0",
+      "treasuryAtoms": "-500000000"
+    },
+    {
+      "step": "register",
+      "signature": "5MvEFFrWeCJFeBosMRzmjygBjKyX8xbh7iRUpXzxvspVK6uUr9pYAzzgUsJittji6AzsyBZKu7fkgWty8JBZorks",
+      "slot": "510313144",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-12120800",
+      "treasuryAtoms": "10000000"
+    },
+    {
+      "step": "create-keyword-ata",
+      "signature": "bBKxm3k3E8TiyhseQ89iQry4NijFLat4Md82CaVYmH22TLmknh1EXDRqGU6o7JHzV7mzzjmHJhPuWeUEP8WyiL2",
+      "slot": "510313155",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-1493440",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "curve-buy",
+      "signature": "shzZgTC5wBBWSZPowXP7cK61zPbjtUfdQeDvVWpr8xrg13NgBF8sBAqsvkKvvcwUZrBqhp12qHHyNTZA7jea49R",
+      "slot": "510313172",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-5000",
+      "treasuryAtoms": "220000"
+    },
+    {
+      "step": "curve-sell",
+      "signature": "Ln4dXsLyHJWHSsbDrRBsDubUFmgMaoVnJHZP14QB3pDZGnqKpAwoEhfhn9PpMa13KEWua2RSgSHnrvHLFCMR5aU",
+      "slot": "510313180",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-5000",
+      "treasuryAtoms": "240"
+    },
+    {
+      "step": "curve-rebuy",
+      "signature": "4A8mTs39Am3KQkgLunaGvb7SXFVpJytXZEby49MeoXBHWFJRnSWESFjQpQpXx8g4B1JfpDhz9LaaZdcTMyfVrUqt",
+      "slot": "510313192",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-5000",
+      "treasuryAtoms": "240"
+    },
+    {
+      "step": "graduation-observation",
+      "signature": "4riuZaZUMV4SRLQVQA7XYBnAig6WXZcpbhBCvkxp35uDS7AS85pjdknjc3xpurXoWLVEkQezzwNYG5VQ9EPNDQ3d",
+      "slot": "510313204",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "-1996360",
+      "qaLamports": "0",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "graduate",
+      "signature": "5hwQTjU319suar7MrDm5MxwQYm1XDBfcVNozs59rPFMo3a3mycGSkrq3FiAr9qBea15mHokmYv17RcpTfNF6qL3Y",
+      "slot": "510313219",
+      "feeLamports": "5000",
+      "adminLamports": "-5000",
+      "publisherLamports": "0",
+      "qaLamports": "0",
+      "treasuryAtoms": "-7199118080"
+    },
+    {
+      "step": "spot-buy",
+      "signature": "2HPbatjaehuaeYFTjXa8BQZUBSTfJ6PMivMWXWvJS3AJVcXpaV9N6c3974ef23WBCspqDmfequqLceSUFojc7wsw",
+      "slot": "510313248",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-5000",
+      "treasuryAtoms": "2400"
+    },
+    {
+      "step": "spot-sell",
+      "signature": "2gVYuMhDqXagw53kF2NFWaD3WogyveQowrzy2EVZgkKBY2LCDiDDGhN3WsjrZ4ao2AQmunSG4ytourPRmuoCn5m4",
+      "slot": "510313257",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-5000",
+      "treasuryAtoms": "2400"
+    },
+    {
+      "step": "lp-deposit",
+      "signature": "3f4h3DvNg2prVGHvARD2BwZZHMQ1bf9SjdMg6xjjtPbQdtiR9LyDZb8o1R4SKHW47S2fRRyvtCQhjHR1HgLVhLy8",
+      "slot": "510313270",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-1183560",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "lp-withdraw",
+      "signature": "2j9uvMPCzJfVTtoqcTmKbnfb5Lyg28CEyA59WMBctjRGkmrSLowm8bexemjwS9PBTSpibTYewvausXQ8g8rsXkwD",
+      "slot": "510313291",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-5000",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "heartbeat-7465917",
+      "signature": "2rZr3xmeJwhV5k5BtPAyE5eZvWtYLufkmeit5XT5KoReJA9wcxVB9sQe9KRA5Z6cyPn3RQBnhAGpGSYdeS82TAGP",
+      "slot": "510314300",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "-1996360",
+      "qaLamports": "0",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "heartbeat-7465918",
+      "signature": "2SCg78PWw94GchCHWt5Bb6uzKJuJLfTMnjjeM7ULbAv3GQUT9Mea8n69Eg1oMy8R6QmwVyhjeoenZQ5zVyidLopS",
+      "slot": "510315306",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "-1996360",
+      "qaLamports": "0",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "heartbeat-7465919",
+      "signature": "2WBdiMZLiCdzuTge5jdySH9dqsKaUWP5GQtAgNogyPnqDUdWKyhRVvVikoqhhZjgbRuCCE5FREbAkFLXtF97CntH",
+      "slot": "510316351",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "-1996360",
+      "qaLamports": "0",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "pro-entry-observation",
+      "signature": "4U1FGLDPsZVkqBHpLJrJHbP2TwWqWWpoUA3AJ3tAKfFhK4CeZGxtax1pw8oi7JYfC8fhLLBTn6C3a2XBR5jPGBtP",
+      "slot": "510317094",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "-1996360",
+      "qaLamports": "0",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "open-1",
+      "signature": "5ytAoSUasC3VHfdYKb37BhL6x5jJMmE3nxH5UnCzGrS2duRc6TbvMqxEGU8QD7VcujjdfczG2ztkQWi4RBdvRzNk",
+      "slot": "510318006",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-1996360",
+      "treasuryAtoms": "100000"
+    },
+    {
+      "step": "open-2",
+      "signature": "3ePQh1qUCLPi66DhEWM7MFH52EZsDTvjDCyRdAwM7gjPYoszmnjyDVTw6NKKhrSV3sUyzqf7Fg7RYTRWgJvnghWM",
+      "slot": "510318028",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-1996360",
+      "treasuryAtoms": "100000"
+    },
+    {
+      "step": "pro-exit-observation",
+      "signature": "2GeuTwpFFoSEikT7h5wpBNUTspGe1S6Wbz4XMdY53TUF4rwADRcLinshiUxviqXR4o6C4JpXLiNominv4Cqe9s6E",
+      "slot": "510318044",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "-1996360",
+      "qaLamports": "0",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "close-1",
+      "signature": "5b4KXB7dFX389mBiCuVP3tfRRtvg7N5gsft79SxzHAYhcsMmVP8gYmX9WKiUC1UWSK8BTyPNtiMWq7jyU1eR8H3R",
+      "slot": "510318709",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-1346120",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "claim-1",
+      "signature": "5cqd3nnDFLNyBKGqd89XbSg1xizHrwraaDs7WFnfXedtgHdhhd726bnB69ZvkvviqA6YkkQPGoyZdx1JABHXqpmQ",
+      "slot": "510318728",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-5000",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "close-2",
+      "signature": "3USttPsoWmvgPVwKw7fXj4bbqPefCxQKY1LhmV2VXnpU9MqnScKuJBPrqTFS5GhjYwJL7wGnN8fYEnWEhMoT4nNa",
+      "slot": "510318756",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-1346120",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "claim-2",
+      "signature": "26qskh7mN51Kxa78AdcHTGaM7tcuwAWsz2eKJKQuYHDD6BGPVqHajoa4rpQinqWibNEUkEFhsW6VQSVNY5H4em79",
+      "slot": "510318768",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-5000",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "down-entry-observation",
+      "signature": "2ogBUqrzqHSYAxCVDorE87CMMPPwtaZm6f1DcTjiPkHHASnEGCGatpMWMmuD2Vv6mwEucf2KLBBtkzUpenc94mdV",
+      "slot": "510318940",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "-1996360",
+      "qaLamports": "0",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "open-3",
+      "signature": "5VDUL5WWgMJ27hvkU8VN4rPwQpUeUqrzTgf2BfzyXoXcc2eFpKzdDBw4PnToxEqnzfb3KPtbjcymejbDVwFmZTBX",
+      "slot": "510318960",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-1996360",
+      "treasuryAtoms": "100000"
+    },
+    {
+      "step": "open-4",
+      "signature": "3DEKDKunCt8k1ADqVnXdMMuenCQgVnuRLaaidvPeYKTzEtk46pkWzGvCvydCsTzqRDeVtU7rb3y9YUQPCo5Um9g6",
+      "slot": "510318970",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-1996360",
+      "treasuryAtoms": "100000"
+    },
+    {
+      "step": "down-exit-observation",
+      "signature": "5ZspzaBmYCEGNm3yEahgUiwRP1f9MNTmSimhWUcQGLpRbD6M6m8ndMMg3kT9pary39d8oi2HH8Sgrpug4WhDLVxk",
+      "slot": "510318985",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "-1996360",
+      "qaLamports": "0",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "close-3",
+      "signature": "5mNdVoQneWQUHTaxLfPJQhjRiVWSBHLrhGZZE286UCkurwUHZdwsSD3TTtt5rzhtJ6WhDMC8msH2Nha4m5xZ74Ur",
+      "slot": "510318998",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-1346120",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "claim-3",
+      "signature": "rHTSPh7CjgjinXk3oL8mT7JNRMXLCm7qEhFCVuLiUYtEJnDFPubMX432ziAjdcWvZwZV6QTc61iY7FGNnifnqeZ",
+      "slot": "510319011",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-5000",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "close-4",
+      "signature": "2WcrD1FRag2TwYLannamdBzbq3oYk1to9VkCzVaHVRjrSkz8Ft43scAQuvuhBinFby2XjLKMV6corQaXaDBv2Gy3",
+      "slot": "510319030",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-1346120",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "claim-4",
+      "signature": "5EXVvqZoMmiB7vPecrUmkhm3c8EceF7Etj2NLujRFafaVoCNiWzEDd8m7bjd3MmQ125QzWbfn6wgWShis1xYiQJy",
+      "slot": "510319042",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-5000",
+      "treasuryAtoms": "0"
+    },
+    {
+      "step": "cleanup-spot-sell",
+      "signature": "47VUpHJVt17JEfJ5a5fPQmqoeR52ZHnpmbemYFxFuEVr8BHvAHG2UYNFnN2tDLN5HiRksxJysSsdBLG4udeCLKS8",
+      "slot": "510319309",
+      "feeLamports": "5000",
+      "adminLamports": "0",
+      "publisherLamports": "0",
+      "qaLamports": "-5000",
+      "treasuryAtoms": "192000"
+    }
+  ],
+  "totals": {
+    "adminLamports": "-60015000",
+    "publisherLamports": "-15970880",
+    "qaLamports": "29262840",
+    "feesLamports": "175000",
+    "treasuryAtoms": "-7688300800",
+    "graduationContributionAtoms": "7199118080"
+  },
+  "latestAdminLamports": "1081371840",
+  "supportedMarkets": 1,
+  "externalQ": "0",
+  "openPositions": 0,
+  "proReserved": "0",
+  "otherReserved": "0",
+  "shares": "7100000000",
+  "lockedShares": "7100000000",
+  "heartbeat": "Stopped after finite QA; no scheduled process was created.",
+  "normalMaturity": "Not exercised live; local LiteSVM only."
+}

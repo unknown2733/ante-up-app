@@ -1,0 +1,11 @@
+.git
+**/node_modules
+**/dist
+**/target
+.runtime
+.env*
+**/.env*
+**/*keypair*.json
+**/*private*.json
+**/.history
+docs/implementation/evidence

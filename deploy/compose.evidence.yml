@@ -1,0 +1,45 @@
+services:
+  evidence:
+    image: ante-up:parallel-qa-20261013
+    user: "${ANTE_UP_UID:-1000}:${ANTE_UP_GID:-1000}"
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 60s
+    mem_limit: 1536m
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+    command: [flock, -n, -F, /state/evidence.lock, node, scripts/evidence-worker.mjs]
+    environment:
+      ANTE_UP_LIVE_DIRECTORY: /state/live-smoke
+      ANTE_UP_RPC_URL_FILE: /run/secrets/rpc.url
+      ANTE_UP_PAYER_KEYPAIR_FILE: /run/secrets/payer.json
+      ANTE_UP_ISSUER_KEYPAIR_FILE: /run/secrets/issuer.json
+      ANTE_UP_TURBO_KEY_FILE: /run/secrets/turbo.json
+      ANTE_UP_ENABLE_EVIDENCE_LIVE: "yes"
+      ANTE_UP_EVIDENCE_LOCKED: "yes"
+      ANTE_UP_EVIDENCE_BATCH_SIZE: "4"
+      ANTE_UP_EVIDENCE_RECORD_IDS: ${ANTE_UP_EVIDENCE_RECORD_IDS:?Set approved record allowlist}
+      ANTE_UP_MAX_UPLOAD_WINC: ${ANTE_UP_MAX_UPLOAD_WINC:?Set verified per-record quote cap}
+      ANTE_UP_EVIDENCE_TOTAL_WINC: ${ANTE_UP_EVIDENCE_TOTAL_WINC:?Set bounded total quote budget}
+      ANTE_UP_EVIDENCE_DAILY_WINC: ${ANTE_UP_EVIDENCE_DAILY_WINC:?Set bounded daily quote budget}
+      ANTE_UP_STATE_LIMIT_BYTES: "5368709120"
+      ANTE_UP_HEALTH_DIRECTORY: /state/health
+    volumes:
+      - ${ANTE_UP_STATE_DIR}:/state
+      - ${ANTE_UP_SECRET_DIR}/devnet-rpc.url:/run/secrets/rpc.url:ro
+      - ${ANTE_UP_SECRET_DIR}/devnet-deployer.json:/run/secrets/payer.json:ro
+      - ${ANTE_UP_SECRET_DIR}/devnet-issuer.json:/run/secrets/issuer.json:ro
+      - ${ANTE_UP_SECRET_DIR}/turbo-upload-key.json:/run/secrets/turbo.json:ro
+    healthcheck:
+      test: [CMD, node, scripts/service-health.mjs, evidence]
+      interval: 60s
+      timeout: 15s
+      start_period: 60s
+      retries: 3
+

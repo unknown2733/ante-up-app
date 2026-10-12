@@ -1,0 +1,9 @@
+# Incremental release, only when the base has the same package lockfiles.
+# The clean-build path remains deploy/Dockerfile.
+ARG BASE_IMAGE=ante-up:wallet-reconcile-20261013
+FROM ${BASE_IMAGE}
+USER root
+COPY . /app
+WORKDIR /app
+RUN npm --prefix clients/chain run build && npm --prefix services/api run check && npm --prefix apps/web run build
+USER node

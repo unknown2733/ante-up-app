@@ -1,0 +1,34 @@
+services:
+  price-history:
+    image: ante-up:${ANTE_UP_RELEASE:-devnet}
+    user: "${ANTE_UP_UID:-1000}:${ANTE_UP_GID:-1000}"
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 60s
+    mem_limit: 512m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+    command: [flock, -n, -F, /state/price-history.lock, node, scripts/price-history.mjs, --follow]
+    environment:
+      ANTE_UP_PROGRAM_ID: FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr
+      ANTE_UP_MARKETS_PATH: /state/markets.json
+      ANTE_UP_RPC_URL_FILE: /run/secrets/rpc.url
+      ANTE_UP_PRICE_DB: /state/live-smoke/price-history.sqlite
+      ANTE_UP_PRICE_HEALTH_PATH: /state/health/price-history.json
+      ANTE_UP_PRICE_INTERVAL_MS: "300000"
+      ANTE_UP_PRICE_TIMEOUT_MS: "20000"
+    volumes:
+      - ${ANTE_UP_STATE_DIR}:/state
+      - ${ANTE_UP_SECRET_DIR}/devnet-rpc.url:/run/secrets/rpc.url:ro
+    healthcheck:
+      test: [CMD, node, scripts/price-history.mjs, --health]
+      interval: 60s
+      timeout: 10s
+      start_period: 90s
+      retries: 3

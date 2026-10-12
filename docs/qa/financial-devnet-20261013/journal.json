@@ -1,0 +1,717 @@
+{
+  "label": "ante-up-synthetic-finance-qa-20261013-v1",
+  "synthetic": true,
+  "cluster": "devnet",
+  "programId": "FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr",
+  "market": "CHSKtjQD8XywUybvpjgoT1YMyHqbE4sgstKMHVnrWqMH",
+  "marketSeedHex": "83412f26909a95644f481a79a791bf87d5105136e5bae39820350a14e12a82eb",
+  "stage": "setup",
+  "steps": {
+    "fund-sol": {
+      "signature": "B4rN84Ycaxr1QZ5eGKh7AiLNUKyZ5Rbwot4hopZjEMtZzk8L8QKGATEG6kQ8oGFS52uQ9Nq9e7bSSUn86iyWSPS",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497539340"
+    },
+    "create-payment-ata": {
+      "signature": "5RhHHJ4aapSkDv2bR5uTEtuZJBGBWkMhpaPNfpiZjVyaiQRxR3QuAL7d1b9f6KbJvRFFfjS7aVzhjXnTPShoarkQ",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497539350"
+    },
+    "faucet": {
+      "signature": "wcH2QhzsAsFiPy34L4Kz51ksFn5W33chPQVAytUZLNWyWN4nu2nUzwjQjAij8Pzcx4YjK49tbBs2SHGEe4crS1F",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497539361"
+    },
+    "fund-tusd": {
+      "signature": "2Bju2ynfzDeW1VrL43d55LP7eHggunWFRR3aKRS8tmpRwv6fXA6aCYEJHCH3VAn21Ns8GkQJXNax8in2vR46gVrs",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497539378"
+    },
+    "register": {
+      "signature": "5MvEFFrWeCJFeBosMRzmjygBjKyX8xbh7iRUpXzxvspVK6uUr9pYAzzgUsJittji6AzsyBZKu7fkgWty8JBZorks",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497539389"
+    },
+    "create-keyword-ata": {
+      "signature": "bBKxm3k3E8TiyhseQ89iQry4NijFLat4Md82CaVYmH22TLmknh1EXDRqGU6o7JHzV7mzzjmHJhPuWeUEP8WyiL2",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497539399"
+    },
+    "curve-buy": {
+      "signature": "shzZgTC5wBBWSZPowXP7cK61zPbjtUfdQeDvVWpr8xrg13NgBF8sBAqsvkKvvcwUZrBqhp12qHHyNTZA7jea49R",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497539413"
+    },
+    "curve-sell": {
+      "signature": "Ln4dXsLyHJWHSsbDrRBsDubUFmgMaoVnJHZP14QB3pDZGnqKpAwoEhfhn9PpMa13KEWua2RSgSHnrvHLFCMR5aU",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497539425"
+    },
+    "curve-rebuy": {
+      "signature": "4A8mTs39Am3KQkgLunaGvb7SXFVpJytXZEby49MeoXBHWFJRnSWESFjQpQpXx8g4B1JfpDhz9LaaZdcTMyfVrUqt",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497539437"
+    },
+    "graduation-observation": {
+      "signature": "4riuZaZUMV4SRLQVQA7XYBnAig6WXZcpbhBCvkxp35uDS7AS85pjdknjc3xpurXoWLVEkQezzwNYG5VQ9EPNDQ3d",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497539449"
+    },
+    "graduate": {
+      "signature": "5hwQTjU319suar7MrDm5MxwQYm1XDBfcVNozs59rPFMo3a3mycGSkrq3FiAr9qBea15mHokmYv17RcpTfNF6qL3Y",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497539463"
+    },
+    "spot-buy": {
+      "signature": "2HPbatjaehuaeYFTjXa8BQZUBSTfJ6PMivMWXWvJS3AJVcXpaV9N6c3974ef23WBCspqDmfequqLceSUFojc7wsw",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497539481"
+    },
+    "spot-sell": {
+      "signature": "2gVYuMhDqXagw53kF2NFWaD3WogyveQowrzy2EVZgkKBY2LCDiDDGhN3WsjrZ4ao2AQmunSG4ytourPRmuoCn5m4",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497539500"
+    },
+    "lp-deposit": {
+      "signature": "3f4h3DvNg2prVGHvARD2BwZZHMQ1bf9SjdMg6xjjtPbQdtiR9LyDZb8o1R4SKHW47S2fRRyvtCQhjHR1HgLVhLy8",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497539513"
+    },
+    "lp-withdraw": {
+      "signature": "2j9uvMPCzJfVTtoqcTmKbnfb5Lyg28CEyA59WMBctjRGkmrSLowm8bexemjwS9PBTSpibTYewvausXQ8g8rsXkwD",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497539533"
+    },
+    "heartbeat-7465917": {
+      "signature": "2rZr3xmeJwhV5k5BtPAyE5eZvWtYLufkmeit5XT5KoReJA9wcxVB9sQe9KRA5Z6cyPn3RQBnhAGpGSYdeS82TAGP",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497540544"
+    },
+    "heartbeat-7465918": {
+      "signature": "2SCg78PWw94GchCHWt5Bb6uzKJuJLfTMnjjeM7ULbAv3GQUT9Mea8n69Eg1oMy8R6QmwVyhjeoenZQ5zVyidLopS",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497541542"
+    },
+    "heartbeat-7465919": {
+      "signature": "2WBdiMZLiCdzuTge5jdySH9dqsKaUWP5GQtAgNogyPnqDUdWKyhRVvVikoqhhZjgbRuCCE5FREbAkFLXtF97CntH",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497542584"
+    },
+    "pro-entry-observation": {
+      "signature": "4U1FGLDPsZVkqBHpLJrJHbP2TwWqWWpoUA3AJ3tAKfFhK4CeZGxtax1pw8oi7JYfC8fhLLBTn6C3a2XBR5jPGBtP",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497543326"
+    },
+    "open-1": {
+      "signature": "5ytAoSUasC3VHfdYKb37BhL6x5jJMmE3nxH5UnCzGrS2duRc6TbvMqxEGU8QD7VcujjdfczG2ztkQWi4RBdvRzNk",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497544230"
+    },
+    "open-2": {
+      "signature": "3ePQh1qUCLPi66DhEWM7MFH52EZsDTvjDCyRdAwM7gjPYoszmnjyDVTw6NKKhrSV3sUyzqf7Fg7RYTRWgJvnghWM",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497544242"
+    },
+    "pro-exit-observation": {
+      "signature": "2GeuTwpFFoSEikT7h5wpBNUTspGe1S6Wbz4XMdY53TUF4rwADRcLinshiUxviqXR4o6C4JpXLiNominv4Cqe9s6E",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497544269"
+    },
+    "close-1": {
+      "signature": "5b4KXB7dFX389mBiCuVP3tfRRtvg7N5gsft79SxzHAYhcsMmVP8gYmX9WKiUC1UWSK8BTyPNtiMWq7jyU1eR8H3R",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497544928"
+    },
+    "claim-1": {
+      "signature": "5cqd3nnDFLNyBKGqd89XbSg1xizHrwraaDs7WFnfXedtgHdhhd726bnB69ZvkvviqA6YkkQPGoyZdx1JABHXqpmQ",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497544944"
+    },
+    "close-2": {
+      "signature": "3USttPsoWmvgPVwKw7fXj4bbqPefCxQKY1LhmV2VXnpU9MqnScKuJBPrqTFS5GhjYwJL7wGnN8fYEnWEhMoT4nNa",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497544968"
+    },
+    "claim-2": {
+      "signature": "26qskh7mN51Kxa78AdcHTGaM7tcuwAWsz2eKJKQuYHDD6BGPVqHajoa4rpQinqWibNEUkEFhsW6VQSVNY5H4em79",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497544989"
+    },
+    "down-entry-observation": {
+      "signature": "2ogBUqrzqHSYAxCVDorE87CMMPPwtaZm6f1DcTjiPkHHASnEGCGatpMWMmuD2Vv6mwEucf2KLBBtkzUpenc94mdV",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497545160"
+    },
+    "open-3": {
+      "signature": "5VDUL5WWgMJ27hvkU8VN4rPwQpUeUqrzTgf2BfzyXoXcc2eFpKzdDBw4PnToxEqnzfb3KPtbjcymejbDVwFmZTBX",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497545172"
+    },
+    "open-4": {
+      "signature": "3DEKDKunCt8k1ADqVnXdMMuenCQgVnuRLaaidvPeYKTzEtk46pkWzGvCvydCsTzqRDeVtU7rb3y9YUQPCo5Um9g6",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497545190"
+    },
+    "down-exit-observation": {
+      "signature": "5ZspzaBmYCEGNm3yEahgUiwRP1f9MNTmSimhWUcQGLpRbD6M6m8ndMMg3kT9pary39d8oi2HH8Sgrpug4WhDLVxk",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497545205"
+    },
+    "close-3": {
+      "signature": "5mNdVoQneWQUHTaxLfPJQhjRiVWSBHLrhGZZE286UCkurwUHZdwsSD3TTtt5rzhtJ6WhDMC8msH2Nha4m5xZ74Ur",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497545218"
+    },
+    "claim-3": {
+      "signature": "rHTSPh7CjgjinXk3oL8mT7JNRMXLCm7qEhFCVuLiUYtEJnDFPubMX432ziAjdcWvZwZV6QTc61iY7FGNnifnqeZ",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497545230"
+    },
+    "close-4": {
+      "signature": "2WcrD1FRag2TwYLannamdBzbq3oYk1to9VkCzVaHVRjrSkz8Ft43scAQuvuhBinFby2XjLKMV6corQaXaDBv2Gy3",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497545250"
+    },
+    "claim-4": {
+      "signature": "5EXVvqZoMmiB7vPecrUmkhm3c8EceF7Etj2NLujRFafaVoCNiWzEDd8m7bjd3MmQ125QzWbfn6wgWShis1xYiQJy",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497545262"
+    },
+    "cleanup-spot-sell": {
+      "signature": "47VUpHJVt17JEfJ5a5fPQmqoeR52ZHnpmbemYFxFuEVr8BHvAHG2UYNFnN2tDLN5HiRksxJysSsdBLG4udeCLKS8",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497545526"
+    }
+  },
+  "observations": [
+    {
+      "candidate": {
+        "schemaVersion": "0.1",
+        "formulaVersion": "h3-d7-q12-v1",
+        "configVersion": "10",
+        "queryVersion": "1",
+        "queryHash": "e92227da739a5f3fdfd953c2d2107dbf33c01e33813e63b1b187e747743c9893",
+        "marketId": "CHSKtjQD8XywUybvpjgoT1YMyHqbE4sgstKMHVnrWqMH",
+        "sequence": "1",
+        "dataThrough": 1791819917,
+        "computedAt": 1791819922,
+        "activityNowQ12": "125000000000000",
+        "activity7dQ12": "100000000000000",
+        "dataStatus": "VALID",
+        "reason": null,
+        "admission": {
+          "state": "OPEN",
+          "recoveryCount": 0,
+          "reason": null
+        },
+        "evidenceHash": "0b9372c5289e69e512c631b316f6484c6acaa034fe43ef54485b324aaaa077fd"
+      },
+      "candidateHash": "10213c15092301d817e95ec5fc6f72b30ef4b998beb852838038a3c9d4181294",
+      "syntheticEvidence": {
+        "source": "synthetic-financial-qa",
+        "notRealTrend": true,
+        "label": "ante-up-synthetic-finance-qa-20261013-v1",
+        "description": "Direct deterministic financial test inputs; not measured X activity or a replayed EWMA.",
+        "sequence": "1",
+        "activityNowQ12": "125000000000000",
+        "activity7dQ12": "100000000000000",
+        "computedAt": 1791819922
+      },
+      "jobName": "graduation-observation"
+    },
+    {
+      "candidate": {
+        "schemaVersion": "0.1",
+        "formulaVersion": "h3-d7-q12-v1",
+        "configVersion": "10",
+        "queryVersion": "1",
+        "queryHash": "e92227da739a5f3fdfd953c2d2107dbf33c01e33813e63b1b187e747743c9893",
+        "marketId": "CHSKtjQD8XywUybvpjgoT1YMyHqbE4sgstKMHVnrWqMH",
+        "sequence": "2",
+        "dataThrough": 1791820180,
+        "computedAt": 1791820185,
+        "activityNowQ12": "125000000000000",
+        "activity7dQ12": "100000000000000",
+        "dataStatus": "VALID",
+        "reason": null,
+        "admission": {
+          "state": "OPEN",
+          "recoveryCount": 0,
+          "reason": null
+        },
+        "evidenceHash": "c68066438ea73106c93158468fac9e8c24e5006aa7757affdc7c8d5476d46ec5"
+      },
+      "candidateHash": "f85626a59740b308d5cb4eabae543d68aac1406db0eb283299c4ba84d673dd05",
+      "syntheticEvidence": {
+        "source": "synthetic-financial-qa",
+        "notRealTrend": true,
+        "label": "ante-up-synthetic-finance-qa-20261013-v1",
+        "description": "Direct deterministic financial test inputs; not measured X activity or a replayed EWMA.",
+        "sequence": "2",
+        "activityNowQ12": "125000000000000",
+        "activity7dQ12": "100000000000000",
+        "computedAt": 1791820185
+      },
+      "jobName": "heartbeat-7465917"
+    },
+    {
+      "candidate": {
+        "schemaVersion": "0.1",
+        "formulaVersion": "h3-d7-q12-v1",
+        "configVersion": "10",
+        "queryVersion": "1",
+        "queryHash": "e92227da739a5f3fdfd953c2d2107dbf33c01e33813e63b1b187e747743c9893",
+        "marketId": "CHSKtjQD8XywUybvpjgoT1YMyHqbE4sgstKMHVnrWqMH",
+        "sequence": "3",
+        "dataThrough": 1791820419,
+        "computedAt": 1791820424,
+        "activityNowQ12": "125000000000000",
+        "activity7dQ12": "100000000000000",
+        "dataStatus": "VALID",
+        "reason": null,
+        "admission": {
+          "state": "OPEN",
+          "recoveryCount": 0,
+          "reason": null
+        },
+        "evidenceHash": "aeaff13b813bbb4d0eac5b189d30391a48dfefccf68c08b52675498a840fce1b"
+      },
+      "candidateHash": "97ef56caec71b539ce52869b537640d63376125204e16b12bb6714b9f24cb396",
+      "syntheticEvidence": {
+        "source": "synthetic-financial-qa",
+        "notRealTrend": true,
+        "label": "ante-up-synthetic-finance-qa-20261013-v1",
+        "description": "Direct deterministic financial test inputs; not measured X activity or a replayed EWMA.",
+        "sequence": "3",
+        "activityNowQ12": "125000000000000",
+        "activity7dQ12": "100000000000000",
+        "computedAt": 1791820424
+      },
+      "jobName": "heartbeat-7465918"
+    },
+    {
+      "candidate": {
+        "schemaVersion": "0.1",
+        "formulaVersion": "h3-d7-q12-v1",
+        "configVersion": "10",
+        "queryVersion": "1",
+        "queryHash": "e92227da739a5f3fdfd953c2d2107dbf33c01e33813e63b1b187e747743c9893",
+        "marketId": "CHSKtjQD8XywUybvpjgoT1YMyHqbE4sgstKMHVnrWqMH",
+        "sequence": "4",
+        "dataThrough": 1791820669,
+        "computedAt": 1791820674,
+        "activityNowQ12": "125000000000000",
+        "activity7dQ12": "100000000000000",
+        "dataStatus": "VALID",
+        "reason": null,
+        "admission": {
+          "state": "OPEN",
+          "recoveryCount": 0,
+          "reason": null
+        },
+        "evidenceHash": "1390678f660054bec4bd62b0f203478b774c162d49bf86e8fb56d245598c015e"
+      },
+      "candidateHash": "81bf6c9110873eb76dc6674210f7e95296d16b5492b2fa0733d4c1d3664604a4",
+      "syntheticEvidence": {
+        "source": "synthetic-financial-qa",
+        "notRealTrend": true,
+        "label": "ante-up-synthetic-finance-qa-20261013-v1",
+        "description": "Direct deterministic financial test inputs; not measured X activity or a replayed EWMA.",
+        "sequence": "4",
+        "activityNowQ12": "125000000000000",
+        "activity7dQ12": "100000000000000",
+        "computedAt": 1791820674
+      },
+      "jobName": "heartbeat-7465919"
+    },
+    {
+      "candidate": {
+        "schemaVersion": "0.1",
+        "formulaVersion": "h3-d7-q12-v1",
+        "configVersion": "10",
+        "queryVersion": "1",
+        "queryHash": "e92227da739a5f3fdfd953c2d2107dbf33c01e33813e63b1b187e747743c9893",
+        "marketId": "CHSKtjQD8XywUybvpjgoT1YMyHqbE4sgstKMHVnrWqMH",
+        "sequence": "5",
+        "dataThrough": 1791820846,
+        "computedAt": 1791820851,
+        "activityNowQ12": "125000000000000",
+        "activity7dQ12": "100000000000000",
+        "dataStatus": "VALID",
+        "reason": null,
+        "admission": {
+          "state": "OPEN",
+          "recoveryCount": 0,
+          "reason": null
+        },
+        "evidenceHash": "85aacae81e0a1093774260b7d740c1befc7bc25389b585d539c016397938b6ad"
+      },
+      "candidateHash": "a640cabdae7e4e3355ee9d1235606c6d2a5da62a551d816473aa2b45283be65a",
+      "syntheticEvidence": {
+        "source": "synthetic-financial-qa",
+        "notRealTrend": true,
+        "label": "ante-up-synthetic-finance-qa-20261013-v1",
+        "description": "Direct deterministic financial test inputs; not measured X activity or a replayed EWMA.",
+        "sequence": "5",
+        "activityNowQ12": "125000000000000",
+        "activity7dQ12": "100000000000000",
+        "computedAt": 1791820851
+      },
+      "jobName": "pro-entry-observation"
+    },
+    {
+      "candidate": {
+        "schemaVersion": "0.1",
+        "formulaVersion": "h3-d7-q12-v1",
+        "configVersion": "10",
+        "queryVersion": "1",
+        "queryHash": "e92227da739a5f3fdfd953c2d2107dbf33c01e33813e63b1b187e747743c9893",
+        "marketId": "CHSKtjQD8XywUybvpjgoT1YMyHqbE4sgstKMHVnrWqMH",
+        "sequence": "6",
+        "dataThrough": 1791821073,
+        "computedAt": 1791821078,
+        "activityNowQ12": "150000000000000",
+        "activity7dQ12": "100000000000000",
+        "dataStatus": "VALID",
+        "reason": null,
+        "admission": {
+          "state": "OPEN",
+          "recoveryCount": 0,
+          "reason": null
+        },
+        "evidenceHash": "3f32775375db886b7a745fdabb67c785ac5c5ed2adace88c2c51a250c491de47"
+      },
+      "candidateHash": "016a5a5b549712ed880aadcc927bf8c2b64157255513b12b00ab79334cc2c567",
+      "syntheticEvidence": {
+        "source": "synthetic-financial-qa",
+        "notRealTrend": true,
+        "label": "ante-up-synthetic-finance-qa-20261013-v1",
+        "description": "Direct deterministic financial test inputs; not measured X activity or a replayed EWMA.",
+        "sequence": "6",
+        "activityNowQ12": "150000000000000",
+        "activity7dQ12": "100000000000000",
+        "computedAt": 1791821078
+      },
+      "jobName": "pro-exit-observation"
+    },
+    {
+      "candidate": {
+        "schemaVersion": "0.1",
+        "formulaVersion": "h3-d7-q12-v1",
+        "configVersion": "11",
+        "queryVersion": "1",
+        "queryHash": "e92227da739a5f3fdfd953c2d2107dbf33c01e33813e63b1b187e747743c9893",
+        "marketId": "CHSKtjQD8XywUybvpjgoT1YMyHqbE4sgstKMHVnrWqMH",
+        "sequence": "7",
+        "dataThrough": 1791821287,
+        "computedAt": 1791821292,
+        "activityNowQ12": "150000000000000",
+        "activity7dQ12": "100000000000000",
+        "dataStatus": "VALID",
+        "reason": null,
+        "admission": {
+          "state": "OPEN",
+          "recoveryCount": 0,
+          "reason": null
+        },
+        "evidenceHash": "ab37e1affcd46f07d76dde356e412832f93b0ef28d3e4e61be7fe97553f76a4f"
+      },
+      "candidateHash": "e3abc0e71f2b36d6be4dd662738bf326d1b9464293cc3fd42a68cdde271f3b82",
+      "syntheticEvidence": {
+        "source": "synthetic-financial-qa",
+        "notRealTrend": true,
+        "label": "ante-up-synthetic-finance-qa-20261013-v1",
+        "description": "Direct deterministic financial test inputs; not measured X activity or a replayed EWMA.",
+        "sequence": "7",
+        "activityNowQ12": "150000000000000",
+        "activity7dQ12": "100000000000000",
+        "computedAt": 1791821292
+      },
+      "jobName": "down-entry-observation"
+    },
+    {
+      "candidate": {
+        "schemaVersion": "0.1",
+        "formulaVersion": "h3-d7-q12-v1",
+        "configVersion": "11",
+        "queryVersion": "1",
+        "queryHash": "e92227da739a5f3fdfd953c2d2107dbf33c01e33813e63b1b187e747743c9893",
+        "marketId": "CHSKtjQD8XywUybvpjgoT1YMyHqbE4sgstKMHVnrWqMH",
+        "sequence": "8",
+        "dataThrough": 1791821298,
+        "computedAt": 1791821303,
+        "activityNowQ12": "100000000000000",
+        "activity7dQ12": "100000000000000",
+        "dataStatus": "VALID",
+        "reason": null,
+        "admission": {
+          "state": "OPEN",
+          "recoveryCount": 0,
+          "reason": null
+        },
+        "evidenceHash": "39b51e20a9abe8d451ea2845dc7bfafd12b5328a120f92418e677aab906e5df5"
+      },
+      "candidateHash": "b9e05aef316c0c7e2f45ac4a24733917aae883b5e1e971e0a17beec6d558384d",
+      "syntheticEvidence": {
+        "source": "synthetic-financial-qa",
+        "notRealTrend": true,
+        "label": "ante-up-synthetic-finance-qa-20261013-v1",
+        "description": "Direct deterministic financial test inputs; not measured X activity or a replayed EWMA.",
+        "sequence": "8",
+        "activityNowQ12": "100000000000000",
+        "activity7dQ12": "100000000000000",
+        "computedAt": 1791821303
+      },
+      "jobName": "down-exit-observation"
+    }
+  ],
+  "audits": [
+    {
+      "name": "graduated",
+      "at": "1791819930",
+      "ledger": {
+        "assets": "8300000000",
+        "spotReserve": "4800000000",
+        "proReserve": "0",
+        "otherReserve": "0",
+        "buffer": "500000000",
+        "free": "3000000000",
+        "spotLiability": "1200000000",
+        "totalShares": "7100000000",
+        "lockedShares": "7100000000"
+      },
+      "userTUSD": "388897600",
+      "userTokens": "1000000000"
+    },
+    {
+      "name": "lp-deposited",
+      "at": "1791819942",
+      "ledger": {
+        "assets": "8500019200",
+        "spotReserve": "4800000000",
+        "proReserve": "0",
+        "otherReserve": "0",
+        "buffer": "500000000",
+        "free": "3200019200",
+        "spotLiability": "1200000000",
+        "totalShares": "7299999459",
+        "lockedShares": "7100000000"
+      },
+      "userTUSD": "188873600",
+      "userTokens": "1000000000"
+    },
+    {
+      "name": "setup-complete",
+      "at": "1791819947",
+      "ledger": {
+        "assets": "8300019201",
+        "spotReserve": "4800000000",
+        "proReserve": "0",
+        "otherReserve": "0",
+        "buffer": "500000000",
+        "free": "3000019201",
+        "spotLiability": "1200000000",
+        "totalShares": "7100000000",
+        "lockedShares": "7100000000"
+      },
+      "userTUSD": "388873599",
+      "userTokens": "1000000000"
+    },
+    {
+      "name": "pro-long-short-open",
+      "at": "1791821078",
+      "ledger": {
+        "assets": "8506516380",
+        "spotReserve": "4800000000",
+        "proReserve": "2200000000",
+        "otherReserve": "5697179",
+        "buffer": "500000000",
+        "free": "1000819201",
+        "spotLiability": "1200000000",
+        "totalShares": "7100000000",
+        "lockedShares": "7100000000"
+      },
+      "userTUSD": "182176420",
+      "userTokens": "1000000000"
+    },
+    {
+      "name": "claimed-1",
+      "at": "1791821245",
+      "ledger": {
+        "assets": "8303035828",
+        "spotReserve": "4800000000",
+        "proReserve": "600000000",
+        "otherReserve": "2215558",
+        "buffer": "500000000",
+        "free": "2400820270",
+        "spotLiability": "1440000000",
+        "totalShares": "7100000000",
+        "lockedShares": "7100000000"
+      },
+      "userTUSD": "385656972",
+      "userTokens": "1000000000"
+    },
+    {
+      "name": "claimed-2",
+      "at": "1791821256",
+      "ledger": {
+        "assets": "8300820974",
+        "spotReserve": "4800000000",
+        "proReserve": "0",
+        "otherReserve": "0",
+        "buffer": "500000000",
+        "free": "3000820974",
+        "spotLiability": "1440000000",
+        "totalShares": "7100000000",
+        "lockedShares": "7100000000"
+      },
+      "userTUSD": "387871826",
+      "userTokens": "1000000000"
+    },
+    {
+      "name": "down-long-short-open",
+      "at": "1791821303",
+      "ledger": {
+        "assets": "8506893948",
+        "spotReserve": "4800000000",
+        "proReserve": "1866666667",
+        "otherReserve": "5272974",
+        "buffer": "500000000",
+        "free": "1334954307",
+        "spotLiability": "1440000000",
+        "totalShares": "7100000000",
+        "lockedShares": "7100000000"
+      },
+      "userTUSD": "181598852",
+      "userTokens": "1000000000"
+    },
+    {
+      "name": "claimed-3",
+      "at": "1791821313",
+      "ledger": {
+        "assets": "8503835671",
+        "spotReserve": "4800000000",
+        "proReserve": "600000000",
+        "otherReserve": "2214642",
+        "buffer": "500000000",
+        "free": "2601621029",
+        "spotLiability": "960000000",
+        "totalShares": "7100000000",
+        "lockedShares": "7100000000"
+      },
+      "userTUSD": "184657129",
+      "userTokens": "1000000000"
+    },
+    {
+      "name": "claimed-4",
+      "at": "1791821320",
+      "ledger": {
+        "assets": "8234954419",
+        "spotReserve": "4800000000",
+        "proReserve": "0",
+        "otherReserve": "0",
+        "buffer": "500000000",
+        "free": "2934954419",
+        "spotLiability": "960000000",
+        "totalShares": "7100000000",
+        "lockedShares": "7100000000"
+      },
+      "userTUSD": "453538381",
+      "userTokens": "1000000000"
+    },
+    {
+      "name": "cleanup-complete",
+      "at": "1791821384",
+      "ledger": {
+        "assets": "7275722419",
+        "spotReserve": "0",
+        "proReserve": "0",
+        "otherReserve": "0",
+        "buffer": "500000000",
+        "free": "6775722419",
+        "spotLiability": "0",
+        "totalShares": "7100000000",
+        "lockedShares": "7100000000"
+      },
+      "userTUSD": "1412578381",
+      "userTokens": "0"
+    }
+  ],
+  "wallet": "CUNjqLY8g5v6SLtT4y8VnR4urkLe6dxRRf7kL3Qs4ikf",
+  "expiredAttempts": [
+    {
+      "signature": "SiR3RBG6uz5zCPZFWS1Ub9WNUM3TsxLzGr1hspdwKq94izR43A4D3uXJgN7ji87KPsbUoLtb6HYoEvpbjD4jhp1",
+      "state": "UNKNOWN",
+      "lastValidBlockHeight": "497543338",
+      "error": "Transaction simulation failed",
+      "name": "open-1",
+      "reconciledAt": "2026-10-12T16:04:23.260Z",
+      "finalizedHeight": "497544052",
+      "positionAbsent": true
+    },
+    {
+      "signature": "3ManeV9kSS2bJXw5yrPiWLuZZPn4LYYx17PDGk9e2QWZBvn8daqLMb3CVzzYCEUF5wqEWuMVqHHfvdqMrRd5xUBc",
+      "state": "UNKNOWN",
+      "lastValidBlockHeight": "497544282",
+      "error": "Transaction simulation failed",
+      "name": "close-1",
+      "reconciledAt": "2026-10-12T16:06:56.475Z",
+      "finalizedHeight": "497544692",
+      "positionAbsent": false
+    }
+  ],
+  "positionResults": {
+    "1": {
+      "direction": "long",
+      "entryPrice": "1200000",
+      "exitPrice": "1440000",
+      "grossPayout": "200000000",
+      "entryTradingFee": "500000",
+      "prepaidFee": "3481621",
+      "refund": "3480552",
+      "earnedTimeFee": "1069"
+    },
+    "2": {
+      "direction": "short",
+      "entryPrice": "1200000",
+      "exitPrice": "1440000",
+      "grossPayout": "0",
+      "entryTradingFee": "500000",
+      "prepaidFee": "2215558",
+      "refund": "2214854",
+      "earnedTimeFee": "704"
+    },
+    "3": {
+      "direction": "long",
+      "entryPrice": "1440000",
+      "exitPrice": "960000",
+      "grossPayout": "0",
+      "entryTradingFee": "500000",
+      "prepaidFee": "3058332",
+      "refund": "3058277",
+      "earnedTimeFee": "55"
+    },
+    "4": {
+      "direction": "short",
+      "entryPrice": "1440000",
+      "exitPrice": "960000",
+      "grossPayout": "266666666",
+      "entryTradingFee": "500000",
+      "prepaidFee": "2214642",
+      "refund": "2214586",
+      "earnedTimeFee": "56"
+    }
+  },
+  "cleanup": {
+    "quantity": "1000000000",
+    "price": "960000",
+    "gross": "960000000",
+    "fee": {
+      "total": "960000",
+      "protocol": "192000",
+      "vault": "768000"
+    },
+    "expectedReceipt": "959040000",
+    "userBefore": "453538381"
+  }
+}

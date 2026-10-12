@@ -1,0 +1,9 @@
+services:
+  api:
+    image: ante-up:${ANTE_UP_CONSUMER_RELEASE:-consumer-20261013}
+    environment:
+      ANTE_UP_PRICE_DB: /state/live-smoke/price-history.sqlite
+  web:
+    image: ante-up:${ANTE_UP_CONSUMER_RELEASE:-consumer-20261013}
+  price-history:
+    image: ante-up:${ANTE_UP_CONSUMER_RELEASE:-consumer-20261013}

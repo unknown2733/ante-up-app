@@ -1,0 +1,7 @@
+# Consumer demo catalog
+
+This catalog contains 15 fictional subjects across keyword, video, track, album and account. It is a fixed, synthetic five-week story ending 2026-10-12 12:00 UTC. Nothing here is an X, YouTube, YouTube Music or on-chain observation. `demo:` IDs are intentionally invalid as Solana wallet or market addresses.
+
+`h` is an illustrative positive attention ratio. One deterministic function interpolates six weekly anchors and adds bounded intraday harmonic movement. The provider samples it hourly for 1D/1W, every six hours for 1M, and daily for ALL. These are generated values, not observations; shared timestamps return the same value in every period. Free Call close performance is `h_exit / h_entry - 1`, computed from that same function at the exact action times. Curve quotes are independent illustrative values. Pool reference prices use a constant illustrative scale times `h`; neither series is an executable quote. No trade fills, fees, balances, SAS evidence, explorer URLs or actual market creation are represented.
+
+The client provider in `apps/web/src/demo/consumerDemo.ts` returns the shared `ConsumerReadApi` shape. It is read-only and has no dependency on local wallet state, server APIs, network, browser storage or signing. Its fixed `asOfMs` is the reference time for seven-day ranks and period filtering. Do not substitute this provider when a Live read fails or pass its IDs to the existing `MarketApi` and transaction controllers.
