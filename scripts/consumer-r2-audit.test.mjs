@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { auditR2Catalog, auditR2Source } from './consumer-r2-audit.mjs';
+import { auditR2Catalog, auditR2Source, auditR2RegressionEvidence } from './consumer-r2-audit.mjs';
 
 const source = { mode: 'DEMO', label: 'Sample history', asOfMs: Date.parse('2026-10-13T00:00:00Z') };
 const scenarios = Array.from({ length: 15 }, (_, i) => ({ slug: `scenario-${i}`,
@@ -54,4 +54,40 @@ test('R2 source scan distinguishes integrated source from visible legacy copy an
     assert.equal(result.singleNavigation.status, 'PENDING');
     assert.equal(result.executionBoundary.status, 'PENDING');
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('closed placement rows, SVG data avatar and Live profile copy fail before correction and pass after', () => {
+  const histories = [{ actions: [
+    { id: 'placed', kind: 'CALL_OPEN', recordId: 'record-1' },
+    { id: 'returned', kind: 'CALL_CLOSE', recordId: 'record-1' },
+  ] }];
+  const docsPages = ['/docs', '/docs/start', '/docs/chips', '/docs/markets', '/docs/pro',
+    '/docs/liquidity', '/docs/data', '/docs/proofs'].map(route => ({ route,
+      visibleText: 'Current Ante Up Devnet documentation with specific implemented behavior.', linkAccessible: true }));
+  const good = {
+    activityRows: [{ actionId: 'placed', visibleState: 'Placed a chip · closed record' }],
+    svgAvatar: { src: 'data:image/svg+xml,%3Csvg%3E', naturalWidth: 32, fallbackVisible: false },
+    marketMedia: markets.map(market => ({ marketId: market.id, subjectTitle: market.title,
+      imageVisible: true, fallbackVisible: false, reviewedSubject: true })),
+    noteReviews: markets.map(market => ({ marketId: market.id, matched: true, evidence: 'Reviewed against subject and scenario.' })),
+    liveProfile: { route: '/u/LiveWallet', visibleText: 'Chip history and recorded results',
+      accessibleLabels: ['View profile', 'See chip on chart'] },
+    docsPages,
+  };
+  const bad = structuredClone(good);
+  bad.activityRows[0].visibleState = 'Active';
+  bad.svgAvatar.naturalWidth = 0;
+  bad.marketMedia[0].subjectTitle = 'Unrelated subject';
+  bad.noteReviews[0].matched = false;
+  bad.liveProfile.visibleText = 'Public free calls';
+  bad.docsPages[0].visibleText = 'TODO placeholder';
+  const failures = auditR2RegressionEvidence(markets, histories, bad);
+  for (const key of ['closedPlacementPresentation', 'avatarSvgFallback', 'renderedMarketMedia',
+    'noteSubjectFit', 'liveProfileCopy', 'renderedDocs']) assert.equal(failures[key].status, 'FAIL', key);
+  const passed = auditR2RegressionEvidence(markets, histories, good);
+  for (const key of ['closedPlacementPresentation', 'avatarSvgFallback', 'renderedMarketMedia',
+    'noteSubjectFit', 'liveProfileCopy', 'renderedDocs']) assert.equal(passed[key].status, 'PASS', key);
+  const pending = auditR2RegressionEvidence(markets, histories);
+  assert.equal(pending.closedPlacementPresentation.status, 'PENDING');
+  assert.equal(pending.liveProfileCopy.status, 'PENDING');
 });

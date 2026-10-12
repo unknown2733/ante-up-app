@@ -1,5 +1,5 @@
 /** Read-only R2 acceptance audit. Baseline gaps are PENDING until integration is supplied. */
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { auditConsumerSnapshot } from '../apps/web/qa/consumer/audit.mjs';
@@ -78,12 +78,111 @@ export async function auditR2Source(root) {
   checks.mediaFallback = stamp(media && /SubjectImage/.test(media) && /WalletAvatar/.test(media) &&
     /onError|error/i.test(media) ? 'PASS' : 'PENDING',
     { modulePresent: !!media, limit: 'Image failure and avatar identity fallback require rendered checks.' });
+  checks.appMarketMediaWiring = stamp(app && /marketMedia\s*=/.test(app) ? 'PASS' : 'PENDING',
+    { propPresent: !!app && /marketMedia\s*=/.test(app),
+      limit: 'Source wiring token alone does not prove the correct image/title appears on each row.' });
+  const social = await read(root, 'apps/web/src/social/Social.tsx');
+  checks.closedPlacementSourceRisk = stamp('PENDING',
+    { legacyRiskDetected: !!social && /action\.kind\s*===\s*['"]CALL_OPEN['"]\s*\?\s*['"]Open['"]/.test(social),
+      limit: 'A placement event can outlive its record. Supply rendered activity rows to prove a closed record is not labeled Active/Open.' });
+  checks.liveProfileSourceRisk = stamp('PENDING',
+    { sourceCandidate: !!social && /Public free calls|No public free calls|free call leaderboard/i.test(social),
+      limit: 'Rendered Live profile text and accessible labels are required.' });
+  const docsFiles = [];
+  async function collectDocs(relative) {
+    const directory = path.join(root, relative);
+    try {
+      for (const item of await readdir(directory, { withFileTypes: true })) {
+        const child = path.join(relative, item.name);
+        if (item.isDirectory()) await collectDocs(child);
+        else if (/\.(?:md|mdx|tsx?)$/i.test(item.name)) docsFiles.push(child);
+      }
+    } catch { /* module not integrated yet */ }
+  }
+  await collectDocs('apps/web/src/docs');
+  await collectDocs('docs/product');
+  const placeholderHits = [];
+  for (const relative of docsFiles) {
+    const body = await read(root, relative);
+    for (const [index, line] of (body ?? '').split(/\r?\n/).entries())
+      if (/\bTODO\b|\bTBD\b|\blorem ipsum\b|\bcoming soon\b|\bplaceholder\b/i.test(line))
+        placeholderHits.push({ file: relative, line: index + 1, excerpt: line.trim().slice(0, 160) });
+  }
+  checks.docsPlaceholders = stamp(!docsFiles.length ? 'PENDING' : placeholderHits.length ? 'FAIL' : 'PASS',
+    { files: docsFiles.length, hits: placeholderHits.slice(0, 30),
+      limit: 'Review hits in context. Browser must confirm complete rendered Docs pages.' });
   checks.executionBoundary = stamp('PENDING',
     'Source scan cannot establish that sample IDs never enter wallet prepare, ranking, settlement or SAS. Verify route capability and read/write traces on integrated App/API.');
   return checks;
 }
 
-export async function auditR2(root = defaultRoot, { catalog = null, readModel = null } = {}) {
+/** Rendered evidence must come from the integrated App, never inferred from the old sample adapter. */
+export function auditR2RegressionEvidence(sampleMarkets, sampleHistories, evidence = null) {
+  const checks = {};
+  const actions = new Map(sampleHistories.flatMap(history => history?.actions ?? []).map(action => [action.id, action]));
+  const closedRecords = new Set([...actions.values()].filter(action => action.kind === 'CALL_CLOSE' && action.recordId).map(action => action.recordId));
+  const closedPlacements = [...actions.values()].filter(action => action.kind === 'CALL_OPEN' && closedRecords.has(action.recordId));
+  const activityRows = evidence?.activityRows;
+  if (!Array.isArray(activityRows)) checks.closedPlacementPresentation = stamp('PENDING',
+    { closedPlacementCount: closedPlacements.length, limit: 'Export rendered activity rows for all closed sample records.' });
+  else {
+    const rows = new Map(activityRows.map(row => [row.actionId, row]));
+    const missing = closedPlacements.filter(action => !rows.has(action.id)).map(action => action.id);
+    const mislabeled = closedPlacements.filter(action =>
+      /\b(?:active|open)\b/i.test(String(rows.get(action.id)?.visibleState ?? ''))).map(action => action.id);
+    checks.closedPlacementPresentation = stamp(mislabeled.length ? 'FAIL' : missing.length ? 'PENDING' : 'PASS',
+      { closedPlacementCount: closedPlacements.length, missing, mislabeled });
+  }
+  const avatar = evidence?.svgAvatar;
+  checks.avatarSvgFallback = stamp(!avatar ? 'PENDING'
+    : /^data:image\/svg\+xml(?:;[^,]*)?,/i.test(avatar.src ?? '') &&
+      (Number(avatar.naturalWidth) > 0 || avatar.fallbackVisible === true) ? 'PASS' : 'FAIL',
+  avatar ?? 'Supply one rendered SVG data-URI avatar with naturalWidth or an explicit visible fallback.');
+  const mediaRows = evidence?.marketMedia;
+  if (!Array.isArray(mediaRows)) checks.renderedMarketMedia = stamp('PENDING', 'Supply rendered media/fallback evidence for all 15 sample IDs.');
+  else {
+    const byId = new Map(mediaRows.map(row => [row.marketId, row]));
+    const missing = sampleMarkets.filter(market => !byId.has(market.id)).map(market => market.id);
+    const invalid = sampleMarkets.filter(market => {
+      const row = byId.get(market.id);
+      return row && (!(row.imageVisible || row.fallbackVisible) || row.subjectTitle !== market.title || row.reviewedSubject !== true);
+    }).map(market => market.id);
+    checks.renderedMarketMedia = stamp(invalid.length ? 'FAIL' : missing.length ? 'PENDING' : 'PASS', { missing, invalid,
+      limit: 'reviewedSubject is a manual title/art match, not image license verification.' });
+  }
+  const noteReviews = evidence?.noteReviews;
+  if (!Array.isArray(noteReviews)) checks.noteSubjectFit = stamp('PENDING', 'Review each sample note against its real subject; generic old scenario prose is not automatically appropriate.');
+  else {
+    const byId = new Map(noteReviews.map(item => [item.marketId, item]));
+    const missing = sampleMarkets.filter(market => !byId.has(market.id)).map(market => market.id);
+    const mismatched = sampleMarkets.filter(market => {
+      const review = byId.get(market.id);
+      return review && (review.matched !== true || typeof review.evidence !== 'string' || !review.evidence.trim());
+    }).map(market => market.id);
+    checks.noteSubjectFit = stamp(mismatched.length ? 'FAIL' : missing.length ? 'PENDING' : 'PASS', { missing, mismatched });
+  }
+  const liveProfile = evidence?.liveProfile;
+  const profileText = liveProfile ? [liveProfile.visibleText, ...(liveProfile.accessibleLabels ?? [])].join(' ') : '';
+  checks.liveProfileCopy = stamp(!liveProfile ? 'PENDING'
+    : !/^\/u\//.test(liveProfile.route ?? '') || !liveProfile.visibleText?.trim() ||
+      /\bfree[ -]?calls?\b/i.test(profileText) ? 'FAIL' : 'PASS',
+  liveProfile ? { route: liveProfile.route, residualFreeCall: /\bfree[ -]?calls?\b/i.test(profileText) }
+    : 'Supply a rendered Live public profile body and accessible labels.');
+  const docsPages = evidence?.docsPages;
+  if (!Array.isArray(docsPages)) checks.renderedDocs = stamp('PENDING', 'Supply /docs and topic deep-link reloads at desktop and mobile widths.');
+  else {
+    const missingHome = !docsPages.some(page => page.route === '/docs');
+    const bad = docsPages.filter(page => !page.route?.startsWith('/docs') || !page.visibleText || page.visibleText.length < 30 ||
+      /\bTODO\b|\bTBD\b|\blorem ipsum\b|\bcoming soon\b|\bplaceholder\b/i.test(page.visibleText) ||
+      page.linkAccessible !== true).map(page => page.route);
+    checks.renderedDocs = stamp(bad.length ? 'FAIL' : missingHome || docsPages.length < 8 ? 'PENDING' : 'PASS',
+      { count: docsPages.length, missingHome, bad,
+        limit: 'Inspect all links and content against current capabilities; this scan only catches placeholders and missing pages.' });
+  }
+  return checks;
+}
+
+export async function auditR2(root = defaultRoot, { catalog = null, readModel = null, regression = null } = {}) {
   const { demoActors, demoScenarioFixtures } = await import(pathToFileURL(path.join(root, 'contracts/fixtures/consumer/catalog.ts')).href);
   const { demoConsumerReadApi } = await import(pathToFileURL(path.join(root, 'apps/web/src/demo/consumerDemo.ts')).href);
   const sampleMarkets = await demoConsumerReadApi.listMarkets();
@@ -98,6 +197,8 @@ export async function auditR2(root = defaultRoot, { catalog = null, readModel = 
     { markets: sampleMarkets.length, histories: sampleHistories.length, profiles: sampleProfiles.length,
       leaderboards: sampleLeaderboards.length, findings: sampleIssues,
       limit: 'Tests existing sample adapter only; not the R2 unified catalog or live API.' });
+  const regressions = auditR2RegressionEvidence(sampleMarkets, sampleHistories, regression);
+  for (const [key, value] of Object.entries(regressions)) checks[key] = value;
   if (readModel === null) checks.readModelIntegrity = stamp('PENDING',
     'Supply --read-model-json with markets/histories/profiles/leaderboards from the integrated adapters.');
   else {
@@ -116,10 +217,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const root = path.resolve(option('--root') ?? defaultRoot);
   const catalogFile = option('--catalog-json');
   const readModelFile = option('--read-model-json');
+  const regressionFile = option('--regression-json');
   const catalog = catalogFile ? JSON.parse(await readFile(path.resolve(catalogFile), 'utf8')) : null;
   const readModel = readModelFile ? JSON.parse(await readFile(path.resolve(readModelFile), 'utf8')) : null;
+  const regression = regressionFile ? JSON.parse(await readFile(path.resolve(regressionFile), 'utf8')) : null;
   if (catalog !== null && !Array.isArray(catalog)) throw new Error('--catalog-json must be a JSON array of rendered Explore market DTOs.');
-  const report = await auditR2(root, { catalog, readModel });
+  const report = await auditR2(root, { catalog, readModel, regression });
   const output = path.join(root, '.runtime/consumer-r2-qa/audit.json');
   await mkdir(path.dirname(output), { recursive: true });
   await writeFile(output, JSON.stringify(report, null, 2));
