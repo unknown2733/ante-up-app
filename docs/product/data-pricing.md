@@ -14,7 +14,11 @@ A single observation appears as a snapshot. A history requires multiple recorded
 - **Daily activity:** Free and Gangnam Style show daily YouTube views reported by Kworb. Blinding Lights shows Spotify Global chart-eligible streams per day, which differ from the all-stream counter on a song page.
 - **Dates and ranges:** 1D, 1W, and 1M end at the latest available report, not today. All shows the complete imported history. Report dates do not imply a time of day or time zone. Open **View recorded observations** for exact dates, values, and source links.
 
-Daily counts can rise or fall as activity changes. Missing days are unknown, not zero. We do not invent intermediate values, infer trading returns, or turn these reports into live prices. Imported history and the Devnet market connection are separate.
+Daily counts can rise or fall as activity changes. Missing days in the measured series are unknown, not zero. Imported history and the Devnet market connection are separate.
+
+## Illustrative trends
+
+Subjects with fewer than four verified observations also offer an **Illustrative trend** to preview the chart experience. Its temporary values use a preview index ending at 100; its shape, dates and percentage change are illustrative, not historical measurements or forecasts. This display-only series cannot affect chip results, rankings, proofs or settlement. The original observed counts remain available through the source metric selector. Subjects with sufficient daily history continue to show their measured series.
 
 ## Attention reference
 

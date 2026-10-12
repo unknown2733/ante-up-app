@@ -58,17 +58,19 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
   const sourceLabel = history.source.mode === 'REFERENCE' ? 'Public source data' : history.source.mode === 'DEMO' ? 'Sample history' : 'Live Devnet';
   const scopedHistory = scopedChartHistory(history);
   const series = scopedHistory.series.find(item => item.id === seriesId)
+    ?? scopedHistory.series.find(item => item.evidence === 'ILLUSTRATIVE')
     ?? scopedHistory.series.find(item => item.points.length > 0 && (item.kind === 'CURVE_PRICE' || item.kind === 'REFERENCE_PRICE'))
     ?? scopedHistory.series.find(item => item.points.length > 0)
     ?? scopedHistory.series[0] ?? null;
-  const bounds = chartBounds(scopedHistory);
+  const illustrative = series?.evidence === 'ILLUSTRATIVE';
+  const bounds = chartBounds({ ...scopedHistory, series: series ? [series] : [] });
   const points = chartPoints(series, bounds);
   const dateOnly = series?.timeBasis === 'REPORT_DATE';
   const axisWhen = dateOnly ? reportWhen : when;
   const snapshot = history.source.mode === 'REFERENCE' && !dateOnly && series?.kind === 'ACTIVITY_COUNT' && series.points.length === 1
     ? series.points[0] : null;
   const snapshotOnly = !!snapshot && history.period === 'ALL' && scopedHistory.series.every(item => item.kind === 'ACTIVITY_COUNT' && item.points.length <= 1);
-  const sourceUrl = series?.source.sourceUrl ?? history.source.sourceUrl;
+  const sourceUrl = illustrative ? undefined : series?.source.sourceUrl ?? history.source.sourceUrl;
   const segments = series ? chartSegments(series, points) : [];
   const clusters = chartClusters(scopedHistory.actions, bounds, Math.max(28, 44 * 640 / markerWidth));
   const selected = clusters.find(cluster => cluster.id === markerId) ?? null;
@@ -85,7 +87,7 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
 
   return <section className="au-chart" aria-label={`${history.market.title} ${snapshot ? 'activity snapshot' : 'chart and chip activity'}`}>
     <div className="au-chart-head">
-      <div><span className="au-chart-eyebrow">{sourceLabel}</span><h2>{history.market.title} {snapshot ? 'snapshot' : 'history'}</h2></div>
+      <div><span className="au-chart-eyebrow">{illustrative ? 'Illustrative trend' : sourceLabel}</span><h2>{history.market.title} {illustrative ? 'preview' : snapshot ? 'snapshot' : 'history'}</h2></div>
       {!snapshotOnly && <div className="au-chart-periods" role="group" aria-label="Chart period">
         {periods.map(period => <button key={period} type="button" aria-pressed={period === history.period}
           disabled={!onPeriodChange} onClick={() => onPeriodChange?.(period)}>{period}</button>)}
@@ -94,12 +96,13 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
     {(!snapshot || scopedHistory.series.length > 1) && <div className="au-chart-series" role="group" aria-label="Chart data">
       {scopedHistory.series.map(item => <button key={item.id} type="button" aria-pressed={item.id === series?.id}
         onClick={() => { setSeriesId(item.id); setMarkerId(null); }}>
-        <span className="au-chart-swatch" style={{ background: colors[item.kind] }} />{item.kind === 'ACTIVITY_COUNT' ? item.label : seriesName[item.kind]}
+        <span className="au-chart-swatch" style={{ background: colors[item.kind] }} />{item.evidence === 'ILLUSTRATIVE' ? 'Illustrative trend' : item.kind === 'ACTIVITY_COUNT' ? item.label : seriesName[item.kind]}
       </button>)}
     </div>}
+    {illustrative && <p className="au-chart-illustrative">Illustrative trend · temporary values, not measured activity. Latest preview index = 100.</p>}
     {!snapshot && latest && series && <div className="au-chart-value-summary">
       <div><strong>{number(latest.value)}</strong><span>{series.unit}</span></div>
-      <span className={change !== null && change < 0 ? 'negative' : change !== null && change > 0 ? 'positive' : ''}>{change === null ? 'One observation' : `${change > 0 ? '+' : ''}${change.toFixed(2)}%`}<small>{change === null ? 'More observations needed for a trend' : `${dateOnly ? 'Activity change' : 'Series change'} · first to last shown`}</small></span>
+      <span className={change !== null && change < 0 ? 'negative' : change !== null && change > 0 ? 'positive' : ''}>{change === null ? 'One observation' : `${change > 0 ? '+' : ''}${change.toFixed(2)}%`}<small>{change === null ? 'More observations needed for a trend' : `${illustrative ? 'Illustrative change' : dateOnly ? 'Activity change' : 'Series change'} · first to last shown`}</small></span>
     </div>}
     {snapshot && series ? <div className="au-chart-snapshot">
       <p className="au-snapshot-label">{series.label}</p>
@@ -112,7 +115,7 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
     </div> : <div className="au-chart-plot">{series && points.length && low !== null && high !== null ? <>
       <div className="au-chart-canvas">
         <svg viewBox="0 0 640 220" role="img" preserveAspectRatio="none"
-          aria-label={`${seriesName[series.kind]}, ${points.length} ${history.source.mode === 'DEMO' ? 'sample' : 'observed'} points, ${number(low)} to ${number(high)} ${series.unit}. Missing intervals are not connected.`}>
+          aria-label={`${illustrative ? 'Illustrative trend' : seriesName[series.kind]}, ${points.length} ${illustrative || history.source.mode === 'DEMO' ? 'illustrative' : 'observed'} points, ${number(low)} to ${number(high)} ${series.unit}. Missing intervals are not connected.`}>
           {[CHART_TOP, (CHART_TOP + CHART_BOTTOM) / 2].map(y => <line key={y} x1={CHART_LEFT} y1={y} x2={CHART_RIGHT} y2={y} className="au-chart-grid" />)}
           <line x1={CHART_LEFT} y1={CHART_BOTTOM} x2={CHART_RIGHT} y2={CHART_BOTTOM} className="au-chart-axis" />
           <line x1={CHART_LEFT} y1={CHART_TOP} x2={CHART_LEFT} y2={CHART_BOTTOM} className="au-chart-axis" />
@@ -168,11 +171,11 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
       </article>)}
     </div>}
     <details className="au-chart-source"><summary>About this {snapshot ? 'snapshot' : 'chart'}</summary>
-      <p>{history.source.label}. {dateOnly ? `Latest report ${reportWhen(history.source.asOfMs)} (time zone not supplied)` : `Updated ${when(history.source.asOfMs)}`}. {history.source.mode === 'DEMO'
+      {illustrative ? <p>Temporary display values for exploring the chart interface. The shape and percentage are illustrative, not historical measurements, investment returns or settlement inputs. Select the source metric above to see the original verified observations.</p> : <><p>{history.source.label}. {dateOnly ? `Latest report ${reportWhen(history.source.asOfMs)} (time zone not supplied)` : `Updated ${when(history.source.asOfMs)}`}. {history.source.mode === 'DEMO'
         ? 'Sample values and example activity are illustrative; they are not real wallet results or executable markets.'
         : history.source.mode === 'REFERENCE' ? snapshot ? 'A captured count from the linked source. A provider report date describes the measurement; the capture time records when the source was retrieved.' : 'Historical observations from the linked public source. The date range and metric apply to this source.' : 'Observed history comes from Devnet records. Chip activity tracks attention, not cash profit.'}</p>
       {series && <p>{series.kind === 'ACTIVITY_COUNT' ? series.label : seriesName[series.kind]} · {series.unit}. {snapshot ? 'This snapshot does not establish a trend or a continuously updated feed.' : 'Missing intervals are left blank.'} {history.source.mode === 'REFERENCE' ? 'This activity is not a token price or a trade return.' : 'Chart values are informational; current quotes and receipts govern transactions.'}</p>}
-      {history.source.sourceUrl && <a href={history.source.sourceUrl}>View data source</a>}
+      {history.source.sourceUrl && <a href={history.source.sourceUrl}>View data source</a>}</>}
     </details>
   </section>;
 }

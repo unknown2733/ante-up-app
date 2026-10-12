@@ -38,7 +38,7 @@ test('reference adapter exposes public observations without financial or wallet 
     assert.ok(history);
     assert.equal(history.source.mode, 'REFERENCE');
     assert.deepEqual(history.actions, [], `${item.id}: no invented chips, trades, notes or attestations`);
-    for (const series of history.series) {
+    for (const series of history.series.filter(item => item.evidence !== 'ILLUSTRATIVE')) {
       observedSeries++;
       assert.equal(series.kind, 'ACTIVITY_COUNT');
       assert.equal(series.source.mode, 'REFERENCE');
@@ -120,6 +120,7 @@ test('single captured platform count renders its date and source without inventi
   const markets = await api.listMarkets();
   for (const subject of markets) {
     const history = await api.getHistory(subject.id, 'ALL');
+    history.series = history.series.filter(item => item.evidence !== 'ILLUSTRATIVE');
     if (history.series[0].timeBasis === 'REPORT_DATE') continue;
     const html = render(ConsumerChart, { history, onSelectAction: noAction, onPeriodChange: noAction });
     assert.match(html, /au-chart-snapshot/);
@@ -140,6 +141,7 @@ test('historical reports display dated values and preserve sparse gaps across pe
   for (const subject of subjects) {
     for (const period of ['ALL', '1D', '1W', '1M']) {
       const history = await api.getHistory(subject.id, period);
+      history.series = history.series.filter(item => item.evidence !== 'ILLUSTRATIVE');
       const series = history.series[0];
       const html = render(ConsumerChart, { history, onSelectAction: noAction, onPeriodChange: noAction });
       assert.match(html, /Chart period/);
@@ -191,4 +193,28 @@ test('chart summary reflects observed change and empty price series cannot hide 
   assert.ok(html.includes(`${change > 0 ? '+' : ''}${change.toFixed(2)}%`));
   assert.equal((html.match(/<circle /g) ?? []).length, points.length);
   assert.ok(html.indexOf('au-chart-plot') < html.indexOf('au-chart-history-context'));
+});
+
+test('illustrative defaults are labeled and never borrow observed provenance', async () => {
+  const { ConsumerChart } = await server.ssrLoadModule('/src/charts/ConsumerChart.tsx');
+  const { MarketSparkline } = await server.ssrLoadModule('/src/consumer-ui/MarketSparkline.tsx');
+  const { referenceConsumerReadApi: api } = await server.ssrLoadModule('/src/reference/referenceData.ts');
+  let count = 0;
+  for (const market of await api.listMarkets()) {
+    const history = await api.getHistory(market.id, 'ALL');
+    const preview = history.series.find(series => series.evidence === 'ILLUSTRATIVE');
+    if (!preview) continue;
+    count++;
+    const html = render(ConsumerChart, { history, onSelectAction: noAction });
+    assert.match(html, /au-chart-illustrative/);
+    assert.match(html, /temporary values, not measured activity/);
+    assert.match(html, /Illustrative change/);
+    assert.equal((html.match(/<circle /g) ?? []).length, 29);
+    assert.doesNotMatch(html, /View data source|recorded observations|29 observed points/);
+    const spark = render(MarketSparkline, { market, history });
+    assert.match(spark, /Illustrative trend/);
+    assert.match(spark, /not measured/);
+    assert.equal((spark.match(/<circle /g) ?? []).length, 29);
+  }
+  assert.equal(count, 9);
 });

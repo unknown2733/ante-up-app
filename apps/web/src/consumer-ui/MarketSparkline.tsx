@@ -10,7 +10,8 @@ const dateLabel = (atMs: number) => new Date(atMs).toLocaleDateString('en-US', {
 export function sparklineModel(market: ConsumerMarket, history?: MarketHistory) {
   if (!history || history.market.id !== market.id || history.source.mode !== market.source.mode) return null;
   const preference = market.source.mode === 'LIVE' ? pricePreference : activityPreference;
-  const series = preference.map(kind => history.series.find(candidate => candidate.kind === kind && candidate.source.mode === history.source.mode && candidate.points.length > 0)).find(Boolean);
+  const series = history.series.find(candidate => candidate.evidence === 'ILLUSTRATIVE' && candidate.source.mode === history.source.mode)
+    ?? preference.map(kind => history.series.find(candidate => candidate.kind === kind && candidate.source.mode === history.source.mode && candidate.points.length > 0)).find(Boolean);
   if (!series) return null;
   const observed = series.points.map(point => ({ atMs: point.atMs, value: Number(point.value) }))
     .filter(point => Number.isFinite(point.atMs) && Number.isFinite(point.value) && point.atMs <= series.source.asOfMs)
@@ -41,10 +42,11 @@ export function MarketSparkline({ market, history }: { market: ConsumerMarket; h
     <small>{history?.series.some(series => series.points.length === 1) ? 'One captured observation' : 'No observed trend yet'}</small>
   </span>;
   const { series, points, segments, first, last, change } = model;
+  const illustrative = series.evidence === 'ILLUSTRATIVE';
   const sparse = segments.every(segment => segment.length === 1);
   const dates = `${dateLabel(first.atMs)} – ${dateLabel(last.atMs)}`;
-  const metric = series.label;
-  const description = `${metric}: ${points.length} observations, ${dates}. ${change === null ? 'Change unavailable because the first observation is zero.' : `${formatChange(change)} from first to last observed value.`}${sparse ? ' Separate dots show sparse observations; intervals are unobserved.' : ' Lines connect consecutive observations; missing intervals remain blank.'}`;
+  const metric = illustrative ? 'Illustrative trend · preview index' : series.label;
+  const description = illustrative ? `${metric}: ${points.length} temporary values, not measured activity. Latest preview index 100.` : `${metric}: ${points.length} observations, ${dates}. ${change === null ? 'Change unavailable because the first observation is zero.' : `${formatChange(change)} from first to last observed value.`}${sparse ? ' Separate dots show sparse observations; intervals are unobserved.' : ' Lines connect consecutive observations; missing intervals remain blank.'}`;
   return <span className={`au-sparkline${change !== null && change < 0 ? ' au-sparkline-down' : ''}`} data-market-id={market.id} data-series-kind={series.kind}>
     <span className="au-sparkline-metric" title={metric}>{metric}</span>
     <svg className="au-sparkline-plot" viewBox="0 0 180 56" role="img" aria-label={description} preserveAspectRatio="none">
@@ -56,6 +58,6 @@ export function MarketSparkline({ market, history }: { market: ConsumerMarket; h
         r={sparse ? 3.5 : index === points.length - 1 ? 3 : 1.7} data-at-ms={point.atMs} data-value={point.value} />)}
     </svg>
     <span className="au-sparkline-summary"><strong>{formatChange(change)}</strong><small>{sparse ? 'Sparse observations' : dates}</small></span>
-    <small className="au-sparkline-basis">First → last observation{sparse ? ` · ${dates}` : ''}</small>
+    <small className="au-sparkline-basis">{illustrative ? 'Illustrative change · not measured' : `First → last observation${sparse ? ` · ${dates}` : ''}`}</small>
   </span>;
 }

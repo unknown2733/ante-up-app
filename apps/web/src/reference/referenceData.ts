@@ -1,6 +1,7 @@
 import type { ConsumerMarket, ConsumerReadApi, ConsumerSeries, ConsumerSource, MarketHistory } from '../../../../contracts/consumer.ts';
 import { platformReferences } from '../../../../contracts/reference/platform-snapshot.ts';
 import { historyReferences } from '../../../../contracts/reference/platform-history.ts';
+import { createIllustrativeHistory } from './illustrativeHistory.ts';
 
 export const REFERENCE_AS_OF_MS = Math.max(...platformReferences.map(item => Date.parse(item.metric.capturedAt)), ...historyReferences.map(item => Date.parse(item.capturedAt)));
 export const REFERENCE_MARKET_PREFIX = 'reference:market:';
@@ -58,7 +59,7 @@ const byId = new Map(built.map(item => [item.market.id, item]));
 
 export function isReferenceConsumerId(id: string): boolean { return id.startsWith('reference:'); }
 
-/** Exact captured counts, not a synthetic history or an executable quote. */
+/** Actual counts remain first; explicitly illustrative layout values are a separate optional series. */
 export function createReferenceConsumerReadApi(): ConsumerReadApi {
   return {
     async listMarkets() { return copy(built.map(item => item.market)); },
@@ -70,8 +71,10 @@ export function createReferenceConsumerReadApi(): ConsumerReadApi {
       const series = item.series.timeBasis === 'REPORT_DATE' ? { ...item.series,
         points: item.series.points.filter(point => point.atMs >= start),
         gaps: item.series.gaps.filter(gap => gap.fromMs >= start) } : item.series;
+      // Eligibility uses full source coverage, never a short selected period.
+      const illustrative = item.series.points.length < 4 ? createIllustrativeHistory(item.market, period) : null;
       const history: MarketHistory = { market: item.market, period, source: item.market.source,
-        series: [series], actions: [] };
+        series: illustrative ? [series, illustrative] : [series], actions: [] };
       return copy(history);
     },
     async getProfile() { return null; },
