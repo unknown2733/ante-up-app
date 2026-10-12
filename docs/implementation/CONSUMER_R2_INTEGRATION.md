@@ -57,6 +57,8 @@ Evidence directories are under the sibling QA checkout, `../ante-up-r2-qa/.runti
 
 Root inspected mobile chart, profile and Docs screenshots as well as the JSON results. The initial loopback connection failure captures were discarded. External image denial in the fallback-only pass is intentional and counted separately from unexpected application errors. Public image checks allow only the catalog's HTTPS image origins and read requests; application writes and external RPC remain blocked.
 
+The structured R2 auditor separately reported **13 PASS, 9 PENDING, 0 FAIL** with the local read-model export. Its pending evidence fields were not backfilled with invented approval flags; browser evidence remains in the reports above. This is not an all-gates release certification. Physical wallets, actual execution/finality and deployed-environment regression remain separate acceptance work.
+
 ## Release boundaries
 
 - No public push or live deployment performed in this integration pass.
