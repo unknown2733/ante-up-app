@@ -26,6 +26,6 @@ export function PeriodControl({ value, onChange }: { value: ConsumerPeriod; onCh
 
 export type ActionTab = 'call' | 'trade' | 'pro' | 'liquidity';
 export function ActionTabs({ value, onChange, showPro = true, showLiquidity = true }: { value: ActionTab; onChange: (value: ActionTab) => void; showPro?: boolean; showLiquidity?: boolean }) {
-  const tabs: Array<[ActionTab, string]> = [['call', 'Call'], ['trade', 'Buy / Sell'], ...(showPro ? [['pro', 'Pro'] as [ActionTab, string]] : []), ...(showLiquidity ? [['liquidity', 'Liquidity'] as [ActionTab, string]] : [])];
+  const tabs: Array<[ActionTab, string]> = [['call', 'Chips'], ['trade', 'Buy / Sell'], ...(showPro ? [['pro', 'Pro'] as [ActionTab, string]] : []), ...(showLiquidity ? [['liquidity', 'Liquidity'] as [ActionTab, string]] : [])];
   return <div className="au-action-tabs" role="tablist" aria-label="Market actions">{tabs.map(([id, label]) => <button key={id} role="tab" type="button" aria-selected={value === id} className={value === id ? 'active' : ''} onClick={() => onChange(id)}>{label}</button>)}</div>;
 }

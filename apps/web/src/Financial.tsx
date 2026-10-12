@@ -62,7 +62,7 @@ export function PrivateFinancialPanel({ wallet, refresh }: { wallet: string; ref
     try { setPortfolio(await liveFinancialFlow.portfolio()); } catch (cause) { setError(textError(cause)); }
     finally { setLoading(false); }
   }
-  return <section className="detail-panel finance-panel"><span className="eyebrow orange-text">PRIVATE FINANCE</span><h2>My test assets</h2><p>Only the connected wallet can view these balances. They do not appear on public free-call profiles.</p>
+  return <section className="detail-panel finance-panel"><span className="eyebrow orange-text">PRIVATE FINANCE</span><h2>My test assets</h2><p>Only the connected wallet can view these balances. They do not appear on public chip profiles.</p>
     {isFixture || !liveFinancialFlow ? <Notice>Financial account lookup is unavailable.</Notice> : <button className="button button-dark" disabled={loading} onClick={() => void load()}>{loading ? 'Loading…' : portfolio ? 'Refresh balances' : 'View balances'}</button>}
     {error && <Notice error>{error}</Notice>}
     {portfolio && <><div className="finance-facts"><Fact label="Test tUSD balance">{amount(portfolio.quoteBalanceAtoms)} tUSD</Fact><Fact label="Market tokens">{portfolio.tokenBalances.length} types</Fact><Fact label="Pro positions">{portfolio.positions.length}</Fact><Fact label="Liquidity shares">{portfolio.lpShares.length} markets</Fact></div><div className="finance-holdings">

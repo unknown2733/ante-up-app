@@ -1,18 +1,18 @@
 import type { ConsumerMarket, ConsumerMode, ConsumerSubject } from '../../../../contracts/consumer';
 
 export const consumerCopy = {
-  nav: { discover: 'Discover', leaderboard: 'Leaderboard', activity: 'My activity', funds: 'Test funds' },
+  nav: { discover: 'Explore', leaderboard: 'Leaderboard', activity: 'My activity', funds: 'Test funds', docs: 'Docs' },
   modes: { LIVE: 'Live Devnet', DEMO: 'Demo' } satisfies Record<ConsumerMode, string>,
   subjects: { KEYWORD: 'Keyword', VIDEO: 'Video', TRACK: 'Track', ALBUM: 'Album', ACCOUNT: 'Account' } satisfies Record<ConsumerSubject, string>,
   phases: { CURVE: 'Bonding curve', POOL: 'Pool', PREVIEW: 'Preview' } satisfies Record<ConsumerMarket['phase'], string>,
-  actions: { openCall: 'Make a call', closeCall: 'Close call', buy: 'Buy', sell: 'Sell' },
+  actions: { openCall: 'Place chip', closeCall: 'Take back chip', buy: 'Buy', sell: 'Sell' },
   states: {
     loading: 'Loading markets…',
     empty: 'No markets found',
     emptyDetail: 'Try another search or subject.',
     unavailable: 'Price history is not available yet.',
     missingPrice: 'Price pending',
-    ownCall: 'Your call is open',
+    ownCall: 'Your chip is active',
   },
 } as const;
 

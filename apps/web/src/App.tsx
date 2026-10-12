@@ -8,8 +8,8 @@ import { currentWalletContext, walletClient, walletCluster, WalletPanel, WalletP
 import type { FreeOutcome, FreeProgress, FreeRequest } from './liveFree';
 import { FinancialFaucet, FinancialMarket, FinancialRegistration, PrivateFinancialPanel } from './Financial';
 import { displayConsumerError } from './consumer-ui/copy';
-import type { ConsumerAction, ConsumerMode, ConsumerNote, ConsumerPeriod, MarketHistory } from '../../../contracts/consumer';
-import { ConsumerShell, MarketDiscovery, ActionTabs } from './consumer-ui';
+import type { ConsumerAction, ConsumerMarket, ConsumerMode, ConsumerNote, ConsumerPeriod, MarketHistory } from '../../../contracts/consumer';
+import { ConsumerShell, MarketDiscovery, ActionTabs, mergeConsumerMarkets } from './consumer-ui';
 import type { ActionTab, ConsumerRoute } from './consumer-ui';
 import { ConsumerChart } from './charts/ConsumerChart';
 import { SocialLeaderboard, SocialNote, SocialNoteEditor, SocialNoteHistory, SocialProfile } from './social/Social';
@@ -70,8 +70,8 @@ function RecordCard({ record, compact = false, preview }: { record: FreeRecord; 
   const result = record.result?.kind === 'return' ? percent(record.result) : record.status === 'CLOSED_NA' ? 'N/A' : preview?.status === 'REFERENCE' ? percent(preview.referenceReturn) : 'Open';
   const tone = record.status === 'CLOSED_NA' ? 'orange' : record.status === 'OPEN' ? 'blue' : record.result?.kind === 'return' && Number(record.result.numerator) < 0 ? 'red' : 'green';
   return <Link to={`/records/${encodeURIComponent(record.id)}`} className={`record-card ${compact ? 'compact' : ''}`}>
-    <div className="record-card-top"><div className="keyword"><span className="keyword-mark">↗</span> {marketName(record.marketId)}</div><Tag tone={tone}>{record.status === 'OPEN' ? 'Open' : record.status === 'CLOSED_NA' ? 'N/A' : 'Closed'}</Tag></div>
-    <div className="record-card-bottom"><div><span className="muted tiny">{record.status === 'OPEN' ? 'Opened' : 'Closed'} · {date(record.exit?.executedAt || record.entry.executedAt)}</span><div className="tiny muted">{record.status === 'OPEN' ? preview?.status === 'REFERENCE' ? `Current reference · ${date(preview.observedAt)} · excluded from ranking` : 'No reference return · excluded from ranking' : record.status === 'CLOSED_NA' ? record.result?.kind === 'na' && displayConsumerError(record.result.reason) : record.proofId ? 'View proof status →' : 'Proof pending →'}</div></div><strong className={`record-value ${tone}`}>{result}</strong></div>
+    <div className="record-card-top"><div className="keyword"><span className="keyword-mark">◉</span> {marketName(record.marketId)}</div><Tag tone={tone}>{record.status === 'OPEN' ? 'Chip active' : record.status === 'CLOSED_NA' ? 'N/A result' : 'Chip returned'}</Tag></div>
+    <div className="record-card-bottom"><div><span className="muted tiny">{record.status === 'OPEN' ? 'Placed' : 'Returned'} · {date(record.exit?.executedAt || record.entry.executedAt)}</span><div className="tiny muted">{record.status === 'OPEN' ? preview?.status === 'REFERENCE' ? `Current reference · ${date(preview.observedAt)} · excluded from ranking` : 'No reference result · excluded from ranking' : record.status === 'CLOSED_NA' ? record.result?.kind === 'na' && displayConsumerError(record.result.reason) : record.proofId ? 'Verify record →' : 'Proof pending →'}</div></div><strong className={`record-value ${tone}`}>{result}</strong></div>
   </Link>;
 }
 
@@ -83,7 +83,7 @@ function LiveFreeAction({ market, recordId, mode, profileLoading, limitReached, 
   const running = useRef(false);
   const wallet = currentWalletContext();
   const requestValue: FreeRequest = { market, action: recordId ? 'closeFree' : 'openFree', recordId };
-  const unavailable = mode !== walletCluster ? 'The API network does not match your wallet network.' : !liveFreeFlow ? 'Free calls are unavailable here.' : limitReached && !recordId ? 'You have reached the three open call limit.' : liveFreeFlow.supportReason(requestValue, wallet);
+  const unavailable = mode !== walletCluster ? 'The API network does not match your wallet network.' : !liveFreeFlow ? 'Chip placement is unavailable here.' : limitReached && !recordId ? 'You have reached the three active chip limit.' : liveFreeFlow.supportReason(requestValue, wallet);
   useEffect(() => { setProgress(null); setOutcome(liveFreeFlow?.pending(requestValue, currentWalletContext()) ?? null); }, [connected?.account.address, market.id, recordId]);
   async function run() {
     if (!liveFreeFlow || running.current || unavailable || profileLoading) return;
@@ -107,7 +107,7 @@ function LiveFreeAction({ market, recordId, mode, profileLoading, limitReached, 
   const disabled = busy || profileLoading || !!unavailable || pending || outcome?.state === 'FINALIZED';
   const progressText: Record<FreeProgress, string> = { AUTH: 'Authenticating wallet…', PREPARING: 'Preparing transaction…', AWAITING_SIGNATURE: 'Waiting for wallet signature…', SUBMITTED: 'Submitted · checking finality…', CONFIRMED: 'Confirming on chain…' };
   return <>
-    <button className={`button full ${disabled ? 'button-disabled' : 'button-blue'}`} disabled={disabled} onClick={run}>{busy ? progressText[progress ?? 'AUTH'] : recordId ? 'Close call' : 'Make a call'} <span>↗</span></button>
+    <button className={`button full ${disabled ? 'button-disabled' : 'button-chip'}`} disabled={disabled} onClick={run}>{busy ? progressText[progress ?? 'AUTH'] : recordId ? 'Take back chip' : 'Place chip'} <span>↗</span></button>
     {unavailable && <p className="tiny muted">{displayConsumerError(unavailable)}</p>}
     {outcome && <Notice tone={outcome.state === 'FINALIZED' ? 'blue' : outcome.state === 'FAILED' ? 'red' : 'orange'}>{outcome.state === 'FINALIZED' ? 'Finalized. Refresh your activity to see the record.' : outcome.state === 'UNKNOWN' || outcome.state === 'CONFIRMED' || outcome.state === 'SUBMITTED' ? 'Status is not final. Check this request before trying again.' : displayConsumerError(outcome.reason)}{outcome.requestId && <span className="tiny"> Request ID: {outcome.requestId}</span>}{outcome.signature && <span className="tiny"> · Signature: {outcome.signature}</span>}</Notice>}
     {projectionWaiting && <button className="button button-dark full" disabled={busy || profileLoading} onClick={changed}>Refresh finalized activity</button>}
@@ -144,7 +144,7 @@ function MarketPage({ id, refresh, changed, mode, section = 'call' }: { id: stri
     setBusy(true); setMessage('');
     try {
       const response = open ? await api.closeFree(DEMO_WALLET, open.id) : await api.openFree(DEMO_WALLET, m.id);
-      if (response.kind === 'fixture') { changed(); setMessage(open ? 'Demo call closed. Review its result and pending proof.' : 'Demo call opened. No wallet signature or chain record was created.'); }
+      if (response.kind === 'fixture') { changed(); setMessage(open ? 'Sample chip returned. Review its illustrative result.' : 'Sample chip placed. No wallet signature or chain record was created.'); }
       else setMessage(displayConsumerError(response.reason));
     } finally { setBusy(false); }
   }
@@ -155,20 +155,20 @@ function MarketPage({ id, refresh, changed, mode, section = 'call' }: { id: stri
   const ownLimit = (profile.value?.openRecords.length || 0) >= 3;
   const duplicate = !open && profile.value?.openRecords.some((record) => record.marketId === m.id);
   return <div className="page">
-    <Link to="/markets" className="back">← Markets</Link><div className="detail-title"><span className="eyebrow blue-text">KEYWORD MARKET</span><h1>{m.keyword}<span className="title-dot">.</span></h1><div className="tag-row"><Tag tone="blue">{phaseText[m.phase]}</Tag><Tag tone={m.dataStatus === 'VALID' ? 'green' : m.dataStatus === 'OUTAGE' ? 'red' : 'orange'}>{statusText[m.dataStatus]}</Tag>{!m.supported && <Tag tone="orange">Data coverage pending</Tag>}</div></div>
+    <div className="detail-title"><span className="eyebrow blue-text">DEVNET MARKET</span><div className="tag-row"><Tag tone="blue">{phaseText[m.phase]}</Tag><Tag tone={m.dataStatus === 'VALID' ? 'green' : m.dataStatus === 'OUTAGE' ? 'red' : 'orange'}>{statusText[m.dataStatus]}</Tag>{!m.supported && <Tag tone="orange">Data coverage pending</Tag>}</div></div>
     <div className="detail-grid"><div className="metric-card primary-metric"><span className="eyebrow">{m.price?.kind === 'curve' ? 'Curve quote' : 'Index reference'}</span><strong>{m.price ? atoms(m.price.atoms) : '—'}<small>{m.price ? ' tUSD' : ''}</small></strong><p>{isFixture ? 'Demo reference · not an execution price' : m.price?.executable ? 'Published snapshot · rechecked at execution' : 'Reference only · unavailable for execution'}</p></div><div className="metric-card"><span className="eyebrow">Fixed price cap</span><strong>{m.anchor ? `${atoms(m.anchor.maxPriceAtoms)} tUSD` : '—'}</strong><p>{m.anchor ? 'Graduation anchor' : 'Before graduation / no anchor'}</p></div></div>
     {m.snapshot && <div className="snapshot-strip"><span>Observed {date(m.snapshot.payload.dataThrough)}</span><span>Formula {m.snapshot.payload.formulaVersion}</span><span>Query {m.snapshot.payload.queryHash.slice(0, 8)}…</span><Tag tone={m.snapshot.payload.admission.state === 'OPEN' ? 'green' : 'orange'}>{m.snapshot.payload.admission.state === 'OPEN' ? 'New entries open' : m.snapshot.payload.admission.state === 'RECOVERING' ? `Recovery checks ${m.snapshot.payload.admission.recoveryCount}/2` : 'New entries paused'}</Tag></div>}
-    <div className="comparison-strip"><div><span>Attention change since my call</span><strong>{open ? 'Open' : 'See activity'}</strong></div><div><span>Weekly price change</span><strong>No data</strong></div><div><span>My trade P&L</span><strong>No P&L data</strong></div></div>
-    {section === 'call' && <section className="detail-panel"><div className="section-head"><div><span className="eyebrow orange-text">BASIC</span><h2>Make a free call</h2></div><span className="big-arrow">↗</span></div><p>Open a call on this keyword and close it later. The result is <strong>Attention change since my call</strong>, not a cash payout.</p>
-      <div className="rule-list"><div><span>Open calls</span><strong>{profile.value?.openRecords.length ?? '—'} / 3</strong></div><div><span>Per market</span><strong>Maximum one</strong></div><div><span>New entries</span><strong>6 per wallet / 24 h · 100 total</strong></div></div>
-      {m.dataStatus === 'LOW_ACTIVITY' && <Notice tone="orange">Activity is low. Free calls remain available; new paid trades are paused.</Notice>}
-      {m.dataStatus === 'OUTAGE' && <Notice tone="red">You can still open or close a free call while data is unavailable. Closing now may record N/A.</Notice>}
+    <div className="comparison-strip"><div><span>Attention change since chip placement</span><strong>{open ? 'Chip active' : 'See activity'}</strong></div><div><span>Weekly price change</span><strong>No data</strong></div><div><span>My trade P&L</span><strong>No P&L data</strong></div></div>
+    {section === 'call' && <section className="detail-panel"><div className="section-head"><div><span className="eyebrow orange-text">CHIPS</span><h2>{open ? 'Your chip is active' : 'Place a chip'}</h2></div><span className="au-chip-count" aria-label={`${profile.value?.openRecords.length ?? 'Unknown'} of 3 active chips`}><span aria-hidden="true">◉</span> {profile.value?.openRecords.length ?? '—'} / 3 active</span></div><p>{open ? 'Take back your chip to finalize the attention result and free up this chip.' : 'Place a chip on this keyword and take it back later. The result tracks attention change, not a cash payout.'}</p>
+      <div className="rule-list"><div><span>Active chips</span><strong>{profile.value?.openRecords.length ?? '—'} / 3</strong></div><div><span>Per market</span><strong>Maximum one</strong></div><div><span>New placements</span><strong>6 per wallet / 24 h · 100 total</strong></div></div>
+      {m.dataStatus === 'LOW_ACTIVITY' && <Notice tone="orange">Activity is low. Chips remain available; new paid trades are paused.</Notice>}
+      {m.dataStatus === 'OUTAGE' && <Notice tone="red">You can still place or take back a chip while data is unavailable. Taking it back now may record N/A.</Notice>}
       {m.dataStatus === 'PREPARING' && <Notice tone="orange">The index is preparing. A missing entry reference will not be backfilled.</Notice>}
       {message && <Notice tone="blue">{message}</Notice>}
-      {!isFixture && profile.error && <Notice tone="red">Could not verify your free calls, so another action is blocked. {profile.error}</Notice>}
-      {isFixture ? <button className="button button-blue full" disabled={busy || freeAllowed?.allowed === false || (!!ownLimit && !open) || !!duplicate} onClick={mutate}>{busy ? 'Processing…' : open ? 'Close call' : 'Make a call'} <span>↗</span></button> : <LiveFreeAction market={m} recordId={open?.id ?? null} mode={mode} profileLoading={profile.loading || !!profile.error} limitReached={ownLimit} projectionWaiting={!!projectionWait} changed={changed} />}
-      {(freeAllowed?.allowed === false || (ownLimit && !open)) && <p className="tiny muted">{ownLimit && !open ? 'You have reached the three open call limit.' : reasonText[freeAllowed?.reason || ''] || displayConsumerError(freeAllowed?.reason)}</p>}
-      <p className="tiny muted">{isFixture ? 'This changes a browser-only demo record. It does not submit a transaction or issue proof.' : 'Live actions require wallet signature, entry approval, and final chain confirmation.'}</p>
+      {!isFixture && profile.error && <Notice tone="red">Could not verify your active chips, so another action is blocked. {profile.error}</Notice>}
+      {isFixture ? <button className="button button-chip full" disabled={busy || freeAllowed?.allowed === false || (!!ownLimit && !open) || !!duplicate} onClick={mutate}>{busy ? 'Processing…' : open ? 'Take back chip' : 'Place chip'} <span>↗</span></button> : <LiveFreeAction market={m} recordId={open?.id ?? null} mode={mode} profileLoading={profile.loading || !!profile.error} limitReached={ownLimit} projectionWaiting={!!projectionWait} changed={changed} />}
+      {(freeAllowed?.allowed === false || (ownLimit && !open)) && <p className="tiny muted">{ownLimit && !open ? 'You have reached the three active chip limit.' : reasonText[freeAllowed?.reason || ''] || displayConsumerError(freeAllowed?.reason)}</p>}
+      <p className="tiny muted">{isFixture ? 'This changes a browser-only sample record. It does not submit a transaction or issue proof.' : 'Devnet actions require wallet signature, entry approval, and final chain confirmation.'}</p>
       {open && <RecordCard record={open} compact />}
     </section>}
     {section !== 'call' && <><Link to="/faucet" className="text-link">Get test tUSD ↗</Link><FinancialMarket key={`${m.id}:${section}`} market={m} section={section === 'trade' ? 'money' : section === 'liquidity' ? 'lp' : 'pro'} onFinalized={changed} /></>}
@@ -181,13 +181,13 @@ function ProfilePage({ wallet, refresh, own = false }: { wallet: string; refresh
   if (profile.error) return <div className="page"><ErrorBox message={profile.error} /></div>;
   const p = profile.value;
   if (!p) return null;
-  return <div className="page"><div className="profile-header"><span className="eyebrow blue-text">{own ? 'MY RECORD' : 'PUBLIC PROFILE'}</span><h1>{own ? 'My activity' : shortWallet(wallet)}<span className="title-dot">.</span></h1><p>{own ? isFixture ? 'Free calls and closed results from this demo wallet.' : 'Free calls and closed results from your connected wallet.' : 'Only free calls are public. Pro and liquidity holdings are not shown here.'}</p></div>
-    <div className="profile-stats"><div><span>Average valid close</span><strong>{p.averageReturn ? percent(p.averageReturn) : '—'}</strong><small>{p.averageReturn ? 'Finalized free call results only' : isFixture && own ? 'Demo ranking snapshot pending' : 'No eligible results'}</small></div><div><span>Valid closes</span><strong>{p.closedValidCount}</strong><small>N/A {p.closedNaCount} excluded</small></div><div><span>Open</span><strong>{p.openRecords.length}</strong><small>Excluded from ranking</small></div></div>
-    {p.leaderboardStatus === 'HELD_CALCULATION_ERROR' && <Notice tone="red">Ranking is on hold while a calculation error is reviewed. Losing calls remain included.</Notice>}
-    <section className="section no-pad"><div className="section-head"><div><span className="eyebrow blue-text">OPEN CALLS</span><h2>Open calls</h2></div><span className="section-note">Keyword and entry time are public</span></div>{p.openRecords.length ? <div className="record-list">{p.openRecords.map((record) => <RecordCard key={record.id} record={record} preview={p.openPreviews?.find((item) => item.recordId === record.id)} />)}</div> : <Empty title="No open calls">Explore a market to make a free call.</Empty>}</section>
-    <section className="section no-pad"><div className="section-head"><div><span className="eyebrow orange-text">HISTORY</span><h2>Closed calls</h2></div><span className="section-note">Includes losses and N/A</span></div>{p.closedRecords.length ? <div className="record-list">{p.closedRecords.map((record) => <RecordCard key={record.id} record={record} />)}</div> : <Empty title="No closed calls" />}</section>
+  return <div className="page"><div className="profile-header"><span className="eyebrow blue-text">{own ? 'MY RECORD' : 'PUBLIC PROFILE'}</span><h1>{own ? 'My activity' : shortWallet(wallet)}<span className="title-dot">.</span></h1><p>{own ? isFixture ? 'Sample chips and illustrative results from this browser.' : 'Chips and finalized results from your connected wallet.' : 'Only chip activity is public. Pro and liquidity holdings are not shown here.'}</p></div>
+    <div className="profile-stats"><div><span>Average valid result</span><strong>{p.averageReturn ? percent(p.averageReturn) : '—'}</strong><small>{p.averageReturn ? 'Finalized chip results only' : isFixture && own ? 'Sample ranking snapshot pending' : 'No eligible results'}</small></div><div><span>Valid results</span><strong>{p.closedValidCount}</strong><small>N/A {p.closedNaCount} excluded</small></div><div><span>Active chips</span><strong>{p.openRecords.length}</strong><small>Excluded from ranking</small></div></div>
+    {p.leaderboardStatus === 'HELD_CALCULATION_ERROR' && <Notice tone="red">Ranking is on hold while a calculation error is reviewed. Negative chip results remain included.</Notice>}
+    <section className="section no-pad"><div className="section-head"><div><span className="eyebrow blue-text">ACTIVE CHIPS</span><h2>Active chips</h2></div><span className="section-note">Subject and placement time are public</span></div>{p.openRecords.length ? <div className="record-list">{p.openRecords.map((record) => <RecordCard key={record.id} record={record} preview={p.openPreviews?.find((item) => item.recordId === record.id)} />)}</div> : <Empty title="No active chips">Explore a supported market to place a chip.</Empty>}</section>
+    <section className="section no-pad"><div className="section-head"><div><span className="eyebrow orange-text">HISTORY</span><h2>Chip history</h2></div><span className="section-note">Includes negative and N/A results</span></div>{p.closedRecords.length ? <div className="record-list">{p.closedRecords.map((record) => <RecordCard key={record.id} record={record} />)}</div> : <Empty title="No completed chips" />}</section>
     {own && !isFixture && <PrivateFinancialPanel wallet={wallet} refresh={refresh} />}
-    {own && isFixture && <Notice tone="blue">Demo activity is stored in this browser only. It has no wallet signature, chain record, or real SAS proof.</Notice>}
+    {own && isFixture && <Notice tone="blue">Sample activity is stored in this browser only. It has no wallet signature, chain record, or real SAS proof.</Notice>}
   </div>;
 }
 
@@ -204,12 +204,12 @@ function RecordPage({ id }: { id: string }) {
   if (!r) return <div className="page"><Empty title="Record not found" /></div>;
   const p = proof.value;
   const result = r.result?.kind === 'return' ? percent(r.result) : r.status === 'CLOSED_NA' ? 'N/A' : 'Open';
-  return <div className="page"><Link to={r.wallet === DEMO_WALLET || r.wallet === connected?.account.address ? '/me' : `/u/${encodeURIComponent(r.wallet)}`} className="back">← Profile</Link><div className="profile-header"><span className="eyebrow blue-text">FREE CALL / {r.id}</span><h1>{market.value?.keyword ?? marketName(r.marketId)}<span className="title-dot">.</span></h1><p>Free call · separate from paid trades</p></div>
-    {r.status === 'OPEN' && <Link to={`/markets/${encodeURIComponent(r.marketId)}`} className="button button-blue full">{r.wallet === connected?.account.address || isFixture ? 'Go to close call' : 'View market'} ↗</Link>}
-    <div className="result-hero"><span className="eyebrow">Attention change since my call</span><strong className={r.result?.kind === 'return' && Number(r.result.numerator) < 0 ? 'red' : ''}>{result}</strong><p>{r.result?.kind === 'na' ? displayConsumerError(r.result.reason) : r.status === 'OPEN' ? 'Before close · reference return is excluded from ranking' : 'Fixed at close · separate from weekly price change and trade P&L'}</p></div>
-    <div className="timeline"><div><span className="timeline-dot" /><span>Call opened</span><strong>{date(r.entry.executedAt)}</strong><small>slot {r.entry.slot} · {r.entry.h ? `h ${r.entry.h.numerator}/${r.entry.h.denominator}` : r.entry.unavailableReason ? displayConsumerError(r.entry.unavailableReason) : 'No index reference'}</small></div><div><span className="timeline-dot" /><span>Call closed</span><strong>{r.exit ? date(r.exit.executedAt) : 'Still open'}</strong><small>{r.exit ? `slot ${r.exit.slot} · ${r.exit.h ? `h ${r.exit.h.numerator}/${r.exit.h.denominator}` : r.exit.unavailableReason ? displayConsumerError(r.exit.unavailableReason) : 'No index reference'}` : 'Free calls have no weekly forced close'}</small></div></div>
-    <section className="detail-panel proof-panel"><span className="eyebrow orange-text">VERIFY THE CALL</span><h2>Record and proof status</h2>{r.status === 'OPEN' ? <Notice tone="blue">An open call has an entry record. Result proof is issued separately after closing.</Notice> : proof.loading ? <p className="muted">Loading proof status…</p> : proof.error ? <ErrorBox message={proof.error} /> : p ? <><div className="proof-state"><Tag tone={p.state === 'ISSUED' ? 'green' : p.state === 'INVALID' || p.state === 'REPLACED' ? 'red' : 'orange'}>{proofText[p.state]}</Tag><span>{p.confirmations === null ? 'Confirmations unavailable' : `Storage transaction ${p.confirmations}/20 confirmations`}</span></div>{p.error && <Notice tone={p.state === 'INVALID' || p.state === 'REPLACED' ? 'red' : 'orange'}>{displayConsumerError(p.error)}</Notice>}{p.replacementId && <Link to={`/proofs/${encodeURIComponent(p.replacementId)}`} className="text-link">Replacement proof {p.replacementId} ↗</Link>}<div className="proof-facts"><div><span>Content hash</span><code>{p.payloadHash ? `${p.payloadHash.slice(0, 12)}…` : 'Pending'}</code></div><div><span>Manifest</span><strong>{p.manifestRef?.arweaveItemId || 'Pending storage'}</strong></div><div><span>SAS ID</span><strong>{p.sasId || 'Not issued'}</strong></div><div><span>Source evidence</span><strong>{p.evidence[0]?.arweaveItemId || 'Pending storage'}</strong></div></div></> : <Notice tone="orange">The close is recorded while proof is pending. The result and slot release are separate from proof issuance.</Notice>}
-      <p className="tiny muted">{isFixture ? 'Demo hashes, transactions, and SAS IDs are examples, not verifiable external links. ' : ''}Result proof is issued only after evidence storage, inclusion, and 20-confirmation checks.</p></section>
+  return <div className="page"><Link to={r.wallet === DEMO_WALLET || r.wallet === connected?.account.address ? '/me' : `/u/${encodeURIComponent(r.wallet)}`} className="back">← Profile</Link><div className="profile-header"><span className="eyebrow blue-text">CHIP RECORD / {r.id}</span><h1>{market.value?.keyword ?? marketName(r.marketId)}<span className="title-dot">.</span></h1><p>Chip participation · separate from paid trades</p></div>
+    {r.status === 'OPEN' && <Link to={`/markets/${encodeURIComponent(r.marketId)}`} className="button button-chip full">{r.wallet === connected?.account.address || isFixture ? 'Go to take back chip' : 'View market'} ↗</Link>}
+    <div className="result-hero"><span className="eyebrow">Attention change since chip placement</span><strong className={r.result?.kind === 'return' && Number(r.result.numerator) < 0 ? 'red' : ''}>{result}</strong><p>{r.result?.kind === 'na' ? displayConsumerError(r.result.reason) : r.status === 'OPEN' ? 'Before taking back · reference result is excluded from ranking' : 'Fixed when taken back · separate from weekly price change and trade P&L'}</p></div>
+    <div className="timeline"><div><span className="timeline-dot" /><span>Placed a chip</span><strong>{date(r.entry.executedAt)}</strong><small>slot {r.entry.slot} · {r.entry.h ? `h ${r.entry.h.numerator}/${r.entry.h.denominator}` : r.entry.unavailableReason ? displayConsumerError(r.entry.unavailableReason) : 'No index reference'}</small></div><div><span className="timeline-dot" /><span>Took back a chip</span><strong>{r.exit ? date(r.exit.executedAt) : 'Still active'}</strong><small>{r.exit ? `slot ${r.exit.slot} · ${r.exit.h ? `h ${r.exit.h.numerator}/${r.exit.h.denominator}` : r.exit.unavailableReason ? displayConsumerError(r.exit.unavailableReason) : 'No index reference'}` : 'There is no weekly forced close'}</small></div></div>
+    <section className="detail-panel proof-panel"><span className="eyebrow orange-text">VERIFY THE CHIP</span><h2>Record and proof status</h2>{r.status === 'OPEN' ? <Notice tone="blue">An active chip has an entry record. Result proof is issued separately after it is taken back.</Notice> : proof.loading ? <p className="muted">Loading proof status…</p> : proof.error ? <ErrorBox message={proof.error} /> : p ? <><div className="proof-state"><Tag tone={p.state === 'ISSUED' ? 'green' : p.state === 'INVALID' || p.state === 'REPLACED' ? 'red' : 'orange'}>{proofText[p.state]}</Tag><span>{p.confirmations === null ? 'Confirmations unavailable' : `Storage transaction ${p.confirmations}/20 confirmations`}</span></div>{p.error && <Notice tone={p.state === 'INVALID' || p.state === 'REPLACED' ? 'red' : 'orange'}>{displayConsumerError(p.error)}</Notice>}{p.replacementId && <Link to={`/proofs/${encodeURIComponent(p.replacementId)}`} className="text-link">Replacement proof {p.replacementId} ↗</Link>}<div className="proof-facts"><div><span>Content hash</span><code>{p.payloadHash ? `${p.payloadHash.slice(0, 12)}…` : 'Pending'}</code></div><div><span>Manifest</span><strong>{p.manifestRef?.arweaveItemId || 'Pending storage'}</strong></div><div><span>SAS ID</span><strong>{p.sasId || 'Not issued'}</strong></div><div><span>Source evidence</span><strong>{p.evidence[0]?.arweaveItemId || 'Pending storage'}</strong></div></div></> : <Notice tone="orange">The close is recorded while proof is pending. The result and slot release are separate from proof issuance.</Notice>}
+      <p className="tiny muted">{isFixture ? 'Sample hashes, transactions, and SAS IDs are examples, not verifiable external links. ' : ''}Result proof is issued only after evidence storage, inclusion, and 20-confirmation checks.</p></section>
     <div className="record-footer"><Link to={`/u/${encodeURIComponent(r.wallet)}`} className="text-link">View public profile ↗</Link><span className="tiny muted">Shared cards are snapshots of the record</span></div>
   </div>;
 }
@@ -219,8 +219,7 @@ function ProofPage({ id }: { id: string }) {
   return <div className="page"><Link to="/markets" className="back">← Markets</Link><div className="profile-header"><span className="eyebrow blue-text">PROOF HISTORY</span><h1>Proof history<span className="title-dot">.</span></h1></div>{proof.loading ? <p>Loading…</p> : proof.error ? <ErrorBox message={proof.error} /> : proof.value ? <div className="detail-panel"><h2>{proofText[proof.value.state]}</h2><p>{proof.value.error ? displayConsumerError(proof.value.error) : 'Proof status for this record.'}</p><div className="proof-facts"><div><span>Proof ID</span><strong>{proof.value.id}</strong></div><div><span>Source record</span><Link to={`/records/${encodeURIComponent(proof.value.recordId)}`} className="text-link">{proof.value.recordId} ↗</Link></div><div><span>Content hash</span><code>{proof.value.payloadHash ? `${proof.value.payloadHash.slice(0, 12)}…` : 'Pending'}</code></div><div><span>Manifest</span><strong>{proof.value.manifestRef?.arweaveItemId || 'Pending storage'}</strong></div><div><span>SAS ID</span><strong>{proof.value.sasId || 'Not issued'}</strong></div></div>{proof.value.replacementId && <Link to={`/proofs/${encodeURIComponent(proof.value.replacementId)}`} className="text-link">View replacement proof ↗</Link>}</div> : <Empty title="Proof not found" />}</div>;
 }
 
-const demoSuffix = (mode: ConsumerMode) => mode === 'DEMO' ? '?mode=demo' : '?mode=live';
-const consumerHref = (route: ConsumerRoute, mode: ConsumerMode) => `${route === 'discover' ? '/markets' : route === 'activity' ? '/me' : route === 'funds' ? '/faucet' : '/leaderboard'}${demoSuffix(mode)}`;
+const consumerHref = (route: ConsumerRoute) => route === 'discover' ? '/markets' : route === 'activity' ? '/me' : route === 'funds' ? '/faucet' : route === 'docs' ? '/docs' : '/leaderboard';
 const marketHref = (id: string) => `/markets/${encodeURIComponent(id)}`;
 const actorHref = (id: string, actionId?: string) => `/u/${encodeURIComponent(id)}${actionId ? `?action=${encodeURIComponent(actionId)}` : ''}`;
 const chartHref = (action: ConsumerAction) => `${marketHref(action.marketId)}?period=ALL&action=${encodeURIComponent(action.id)}`;
@@ -231,6 +230,24 @@ function consumerRead(mode: ConsumerMode) {
 }
 function consumerData<T>(load: () => Promise<T>) { return Promise.resolve().then(load).then(data => ({ data })); }
 function decodeRouteId(value: string | undefined) { try { return value ? decodeURIComponent(value) : null; } catch { return null; } }
+
+interface CatalogState { markets: ConsumerMarket[]; liveError: string; loading: boolean }
+function useUnifiedCatalog(refresh: number): CatalogState {
+  const [state, setState] = useState<CatalogState>({ markets: [], liveError: '', loading: true });
+  useEffect(() => {
+    let active = true;
+    setState(previous => ({ ...previous, loading: true }));
+    Promise.allSettled([demoConsumerReadApi.listMarkets(), liveConsumerHttp ? liveConsumerHttp.read.listMarkets() : Promise.reject(new Error('Devnet API is not configured.'))]).then(results => {
+      if (!active) return;
+      const samples = results[0].status === 'fulfilled' ? results[0].value : [];
+      const live = results[1].status === 'fulfilled' ? results[1].value : [];
+      const liveError = results[1].status === 'rejected' ? displayConsumerError(results[1].reason instanceof Error ? results[1].reason.message : null, 'Devnet markets are unavailable.') : '';
+      setState({ markets: mergeConsumerMarkets(samples, live), liveError, loading: false });
+    });
+    return () => { active = false; };
+  }, [refresh]);
+  return state;
+}
 
 interface HistoryState { value: MarketHistory | null; loading: boolean; refreshing: boolean; stale: boolean; error: string; refreshedAtMs: number | null }
 function useConsumerHistory(mode: ConsumerMode, id: string, period: ConsumerPeriod, refresh: number): HistoryState {
@@ -288,9 +305,9 @@ function useConsumerHistory(mode: ConsumerMode, id: string, period: ConsumerPeri
   return state;
 }
 
-function ConsumerDiscoveryPage({ mode, refresh }: { mode: ConsumerMode; refresh: number }) {
-  const markets = useData(() => consumerData(() => consumerRead(mode).listMarkets()), [mode, refresh]);
-  return <MarketDiscovery markets={markets.value ?? []} mode={mode} loading={markets.loading} error={markets.error} onSelectMarket={id => go(marketHref(id))} onRegister={mode === 'LIVE' ? () => go('/register') : undefined} />;
+function ConsumerDiscoveryPage({ refresh }: { refresh: number }) {
+  const catalog = useUnifiedCatalog(refresh);
+  return <MarketDiscovery markets={catalog.markets} loading={catalog.loading} liveError={catalog.liveError} onSelectMarket={id => go(marketHref(id))} onRegister={() => go('/register')} />;
 }
 
 function ConsumerMarketPage({ id, mode, refresh, changed, transport, section, initialPeriod, actionId }: {
@@ -298,29 +315,31 @@ function ConsumerMarketPage({ id, mode, refresh, changed, transport, section, in
   section: ActionTab; initialPeriod: ConsumerPeriod; actionId: string | null;
 }) {
   const [period, setPeriod] = useState<ConsumerPeriod>(initialPeriod);
+  const [artFailed, setArtFailed] = useState(false);
   const changePeriod = (next: ConsumerPeriod) => { setPeriod(next); const url = new URL(window.location.href); url.searchParams.set('period', next); window.history.replaceState(null, '', url.pathname + url.search); };
   const history = useConsumerHistory(mode, id, period, refresh);
   const validHistory = history.value && history.value.source.mode === mode && history.value.market.source.mode === mode && history.value.market.id === id;
   const selected = history.value?.actions.find(action => action.id === actionId) ?? null;
   const liveId = history.value?.market.liveMarketId ?? id;
   return <div className="au-consumer-detail">
-    <button type="button" className="back" onClick={() => go(consumerHref('discover', mode))}>← Markets</button>
+    <button type="button" className="back" onClick={() => go('/markets')}>← Explore</button>
     {history.loading ? <p className="muted">Loading market history…</p> : history.error && !history.value ? <ErrorBox message={history.error} /> : !history.value ? <Empty title="Market not found" /> : !validHistory ? <ErrorBox message="Market history identity or mode does not match this route." /> : <>
       {history.stale && <Notice tone="orange">Live chart update failed. {history.value.period !== period ? `Showing the previous ${history.value.period} period while ${period} is unavailable. ` : ''}Last successful refresh: {history.refreshedAtMs ? new Date(history.refreshedAtMs).toLocaleString('en-US', { timeZone: 'UTC' }) + ' UTC' : 'unknown'}. {history.error}</Notice>}
       {history.value.period !== period && !history.refreshing && !history.stale && <Notice tone="orange">Showing the previous {history.value.period} period. The selected {period} period will load when this tab is visible.</Notice>}
       {history.refreshing && <p className="tiny muted" role="status">{history.value.period !== period ? `Loading ${period}; showing ${history.value.period} until it arrives…` : 'Updating live chart…'}</p>}
-      <div className="au-detail-heading"><span className="eyebrow blue-text">{history.value.source.label}</span><h1>{history.value.market.title}<span className="title-dot">.</span></h1><p>{history.value.market.subtitle} · {history.value.market.priceUnit} · {mode === 'DEMO' ? 'Illustrative data' : 'Devnet observations'}</p></div>
-      {selected && <div className="au-selected-action"><strong>{selected.kind === 'CALL_OPEN' ? 'Call opened' : selected.kind === 'CALL_CLOSE' ? 'Call closed' : selected.kind}</strong><span> · {selected.actorLabel}</span>{selected.note && <SocialNote note={selected.note} />}<button type="button" onClick={() => go(actorHref(selected.actorId, selected.id))}>View actor and note ↗</button></div>}
+      <div className="au-detail-heading">{history.value.market.thumbnailUrl && !artFailed && <img className="au-detail-art" src={history.value.market.thumbnailUrl} alt={history.value.market.imageAlt ?? `${history.value.market.title} artwork`} onError={() => setArtFailed(true)} />}<span className="eyebrow blue-text">{mode === 'DEMO' ? 'REAL SUBJECT · SAMPLE HISTORY' : 'DEVNET OBSERVED MARKET'}</span><h1>{history.value.market.title}<span className="title-dot">.</span></h1><p>{history.value.market.creatorLabel && `${history.value.market.creatorLabel} · `}{history.value.market.subtitle}</p>{history.value.market.subjectUrl && <a className="text-link" href={history.value.market.subjectUrl} target="_blank" rel="noopener noreferrer">Open official subject ↗</a>}</div>
+      {selected && <div className="au-selected-action"><strong>{selected.kind === 'CALL_OPEN' ? 'Placed a chip' : selected.kind === 'CALL_CLOSE' ? 'Took back a chip' : selected.kind}</strong><span> · {selected.actorLabel}</span>{selected.note && <SocialNote note={selected.note} />}<button type="button" onClick={() => go(actorHref(selected.actorId, selected.id))}>View profile ↗</button></div>}
       <ConsumerChart history={history.value} onPeriodChange={changePeriod} onSelectAction={action => go(actorHref(action.actorId, action.id))} actorHref={id => actorHref(id)} recordHref={recordId => mode === 'DEMO' ? actorHref(history.value!.actions.find(action => action.recordId === recordId)?.actorId ?? '', history.value!.actions.find(action => action.recordId === recordId)?.id) : `/records/${encodeURIComponent(recordId)}`} noteHref={action => actorHref(action.actorId, action.id)} />
-      {mode === 'DEMO' ? <Notice tone="orange">Demo is read only. Its charts, calls, profiles and notes are simulated; no wallet action or proof is available.</Notice> : liveId !== id ? <ErrorBox message="Market execution identity does not match this chart." /> : <><ActionTabs value={section} onChange={tab => go(`${marketHref(id)}${tab === 'call' ? '' : `/${tab === 'liquidity' ? 'lp' : tab}`}`)} /><MarketPage id={liveId} refresh={refresh} changed={changed} mode={transport} section={section} /></>}
+      {mode === 'DEMO' ? <Notice tone="orange">Sample history and example activity are illustrative. This subject has no connected Devnet market, wallet action, trade, or proof.</Notice> : liveId !== id ? <ErrorBox message="Market execution identity does not match this chart." /> : <><ActionTabs value={section} onChange={tab => go(`${marketHref(id)}${tab === 'call' ? '' : `/${tab === 'liquidity' ? 'lp' : tab}`}`)} /><MarketPage id={liveId} refresh={refresh} changed={changed} mode={transport} section={section} /></>}
     </>}
   </div>;
 }
 
-function ConsumerLeaderboardPage({ mode, refresh }: { mode: ConsumerMode; refresh: number }) {
+function ConsumerLeaderboardPage({ refresh }: { refresh: number }) {
   const [period, setPeriod] = useState<'7D' | 'ALL'>('7D');
-  const board = useData(() => consumerData(() => consumerRead(mode).getLeaderboard(period)), [mode, period, refresh]);
-  return <div className="au-consumer-social-page"><div className="segmented"><button className={period === '7D' ? 'active' : ''} onClick={() => setPeriod('7D')}>7 days</button><button className={period === 'ALL' ? 'active' : ''} onClick={() => setPeriod('ALL')}>All time</button></div>{board.loading ? <p className="muted">Loading leaderboard…</p> : board.error ? <ErrorBox message={board.error} /> : board.value && <SocialLeaderboard board={board.value} onOpenProfile={id => go(actorHref(id))} />}</div>;
+  const live = useData(() => consumerData(() => consumerRead('LIVE').getLeaderboard(period)), [period, refresh]);
+  const sample = useData(() => consumerData(() => demoConsumerReadApi.getLeaderboard(period)), [period]);
+  return <div className="au-consumer-social-page"><div className="segmented"><button className={period === '7D' ? 'active' : ''} onClick={() => setPeriod('7D')}>7 days</button><button className={period === 'ALL' ? 'active' : ''} onClick={() => setPeriod('ALL')}>All time</button></div><section aria-label="Devnet leaderboard">{live.loading ? <p className="muted">Loading Devnet leaderboard…</p> : live.error ? <ErrorBox message={`Devnet leaderboard unavailable. ${live.error}`} /> : live.value && <SocialLeaderboard board={live.value} onOpenProfile={id => go(actorHref(id))} />}</section><section className="au-sample-board" aria-label="Example leaderboard"><h2>Example leaderboard</h2><p>Illustrative rankings from sample histories. No real wallets or Devnet results are included.</p>{sample.loading ? <p className="muted">Loading examples…</p> : sample.error ? <ErrorBox message={sample.error} /> : sample.value && <SocialLeaderboard board={sample.value} onOpenProfile={id => go(actorHref(id))} />}</section></div>;
 }
 
 function ConsumerNoteHistory({ actionId }: { actionId: string }) {
@@ -348,10 +367,10 @@ function ConsumerProfilePage({ actorId, mode, refresh, changed, own = false, sel
   } };
   return <div className="au-consumer-social-page">{own && <h1>My activity</h1>}
     {profile.loading ? <p className="muted">Loading profile…</p> : profile.error ? <ErrorBox message={profile.error} /> : !profile.value ? <Empty title="Profile not found" /> : <>
-      {selected && <div className="au-selected-action"><strong>{selected.kind === 'CALL_OPEN' ? 'Call opened' : 'Call closed'} · {names.get(selected.marketId) ?? selected.marketId}</strong><button type="button" onClick={() => go(chartHref(selected))}>See call on chart ↗</button>{selected.note ? <SocialNote note={selected.note} showHistory={mode === 'LIVE' && selected.note.version > 1 ? () => setShowHistory(value => !value) : undefined} /> : <p>No note for this call yet.</p>}{showHistory && mode === 'LIVE' && <ConsumerNoteHistory actionId={selected.id} />}</div>}
+      {selected && <div className="au-selected-action"><strong>{selected.kind === 'CALL_OPEN' ? 'Placed a chip' : 'Took back a chip'} · {names.get(selected.marketId) ?? selected.marketId}</strong><button type="button" onClick={() => go(chartHref(selected))}>See chip on chart ↗</button>{selected.note ? <SocialNote note={selected.note} showHistory={mode === 'LIVE' && selected.note.version > 1 ? () => setShowHistory(value => !value) : undefined} /> : <p>No note for this chip yet.</p>}{showHistory && mode === 'LIVE' && <ConsumerNoteHistory actionId={selected.id} />}</div>}
       <SocialProfile profile={profile.value} marketLabel={id => names.get(id) ?? id} onOpenMarket={id => go(marketHref(id))} onOpenAction={action => go(chartHref(action))} onOpenProfile={id => go(actorHref(id))} noteEditor={mode === 'LIVE' && wallet === actorId ? action => <SocialNoteEditor key={action.id} action={action} wallet={wallet} writer={writer} onSaved={changed} /> : undefined} />
-      {mode === 'LIVE' && <div className="au-record-links"><h3>Call records and proofs</h3>{[...new Set(profile.value.actions.map(action => action.recordId).filter((id): id is string => !!id))].map(id => <Link key={id} to={`/records/${encodeURIComponent(id)}`}>{id} ↗</Link>)}</div>}
-      {own && mode === 'LIVE' && <><Link to="/me/records" className="text-link">Detailed call records and private positions ↗</Link><PrivateFinancialPanel wallet={actorId} refresh={refresh} /></>}
+      {mode === 'LIVE' && <div className="au-record-links"><h3>Chip records and proofs</h3>{[...new Set(profile.value.actions.map(action => action.recordId).filter((id): id is string => !!id))].map(id => <Link key={id} to={`/records/${encodeURIComponent(id)}`}>{id} ↗</Link>)}</div>}
+      {own && mode === 'LIVE' && <><Link to="/me/records" className="text-link">Detailed chip records and private positions ↗</Link><PrivateFinancialPanel wallet={actorId} refresh={refresh} /></>}
     </>}
   </div>;
 }
@@ -362,23 +381,24 @@ export default function App() {
   const params = new URLSearchParams(query);
   const segment = path.split('/').filter(Boolean);
   const id = decodeRouteId(segment[1]);
-  const consumerMode: ConsumerMode = id?.startsWith('demo:') || params.get('mode') === 'demo' || (!liveConsumerHttp && params.get('mode') !== 'live' && segment[0] !== 'records' && segment[0] !== 'proofs') ? 'DEMO' : 'LIVE';
+  const consumerMode: ConsumerMode = id?.startsWith('demo:') || (path === '/me' && params.get('mode') === 'demo') ? 'DEMO' : 'LIVE';
   const [transport, setTransport] = useState(transportMode());
   useEffect(() => { const update = () => setTransport(transportMode()); window.addEventListener('ante-up-mode', update); return () => window.removeEventListener('ante-up-mode', update); }, []);
   const [refresh, setRefresh] = useState(0);
   const changed = () => setRefresh((value) => value + 1);
-  const route: ConsumerRoute = path === '/leaderboard' ? 'leaderboard' : path === '/faucet' || path === '/register' ? 'funds' : path === '/me' || segment[0] === 'u' || segment[0] === 'records' || segment[0] === 'proofs' ? 'activity' : 'discover';
+  const route: ConsumerRoute = segment[0] === 'docs' ? 'docs' : path === '/leaderboard' ? 'leaderboard' : path === '/faucet' || path === '/register' ? 'funds' : path === '/me' || segment[0] === 'u' || segment[0] === 'records' || segment[0] === 'proofs' ? 'activity' : 'discover';
   let content: ReactNode;
-  if (!segment.length || path === '/markets') content = <ConsumerDiscoveryPage mode={consumerMode} refresh={refresh} />;
+  if (!segment.length || path === '/markets') content = <ConsumerDiscoveryPage refresh={refresh} />;
   else if (segment[0] === 'markets' && id) content = <ConsumerMarketPage key={`${consumerMode}:${id}`} id={id} mode={consumerMode} refresh={refresh} changed={changed} transport={transport} section={segment[2] === 'trade' ? 'trade' : segment[2] === 'pro' ? 'pro' : segment[2] === 'lp' ? 'liquidity' : 'call'} initialPeriod={params.get('period') === '1D' || params.get('period') === '1W' || params.get('period') === '1M' ? params.get('period') as ConsumerPeriod : 'ALL'} actionId={params.get('action')} />;
-  else if (path === '/faucet') content = consumerMode === 'DEMO' ? <div className="page"><Empty title="No Demo funds">Demo is read only. Switch to Live to use the Devnet faucet.</Empty></div> : <FinancialFaucet onFinalized={changed} />;
-  else if (path === '/register') content = consumerMode === 'DEMO' ? <div className="page"><Empty title="Demo registration unavailable" /></div> : <FinancialRegistration onFinalized={changed} />;
-  else if (path === '/me/records') content = consumerMode === 'DEMO' ? <div className="page"><Empty title="Demo records are read only" /></div> : <WalletProfile>{wallet => wallet ? <ProfilePage wallet={wallet} refresh={refresh} own /> : <div className="page"><Empty title="Wallet not connected" /></div>}</WalletProfile>;
+  else if (path === '/faucet') content = <FinancialFaucet onFinalized={changed} />;
+  else if (path === '/register') content = <FinancialRegistration onFinalized={changed} />;
+  else if (path === '/me/records') content = <WalletProfile>{wallet => wallet ? <ProfilePage wallet={wallet} refresh={refresh} own /> : <div className="page"><Empty title="Wallet not connected" /></div>}</WalletProfile>;
   else if (path === '/me') content = consumerMode === 'DEMO' ? <ConsumerProfilePage key="demo-own" actorId={demoActors[0].id} mode="DEMO" refresh={refresh} changed={changed} own selectedActionId={params.get('action')} /> : <WalletProfile>{wallet => wallet ? <ConsumerProfilePage key={wallet} actorId={wallet} mode="LIVE" refresh={refresh} changed={changed} own selectedActionId={params.get('action')} /> : <div className="page"><Empty title="Wallet not connected">Connect a Devnet wallet to view your activity.</Empty></div>}</WalletProfile>;
   else if (segment[0] === 'u' && id) content = <ConsumerProfilePage key={`${consumerMode}:${id}`} actorId={id} mode={consumerMode} refresh={refresh} changed={changed} selectedActionId={params.get('action')} />;
-  else if (segment[0] === 'records' && id && consumerMode === 'LIVE') content = <RecordPage id={id} />;
-  else if (segment[0] === 'proofs' && id && consumerMode === 'LIVE') content = <ProofPage id={id} />;
-  else if (path === '/leaderboard') content = <ConsumerLeaderboardPage mode={consumerMode} refresh={refresh} />;
+  else if (segment[0] === 'records' && id && !id.startsWith('demo:')) content = <RecordPage id={id} />;
+  else if (segment[0] === 'proofs' && id && !id.startsWith('demo:')) content = <ProofPage id={id} />;
+  else if (path === '/leaderboard') content = <ConsumerLeaderboardPage refresh={refresh} />;
+  else if (segment[0] === 'docs') content = <div className="page"><Empty title="Docs are being prepared">Guides will be available here after the Docs module is integrated.</Empty></div>;
   else content = <div className="page"><Empty title="Page not found" /></div>;
-  return <ConsumerShell mode={consumerMode} route={route} onNavigate={next => go(consumerHref(next, consumerMode))} onModeChange={next => go(consumerHref(route, next))} walletSlot={consumerMode === 'LIVE' ? <WalletPanel /> : undefined}>{content}</ConsumerShell>;
+  return <ConsumerShell route={route} onNavigate={next => go(consumerHref(next))} walletSlot={<WalletPanel />}>{content}</ConsumerShell>;
 }

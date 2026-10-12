@@ -101,11 +101,11 @@ export function createLiveFreeFlow(options: FreeFlowOptions) {
     if (!rechecking && !wallet.signer) return 'This wallet cannot sign and send transactions.';
     if (!options.canSignMessage(wallet)) return 'This wallet cannot sign an API authentication message.';
     const { market, action, recordId } = requestValue;
-    if (!rechecking && projectionPending(market.id, wallet)) return 'Your call is finalized but has not appeared in your activity yet. Refresh your activity before trying again.';
+    if (!rechecking && projectionPending(market.id, wallet)) return 'Your chip action is finalized but has not appeared in your activity yet. Refresh your activity before trying again.';
     if (!market.chain || market.chain.cluster !== wallet.cluster || market.chain.programId !== ANTE_UP_PROGRAM_ADDRESS || market.chain.address !== market.id) return 'The market chain configuration does not match your wallet network.';
-    if (!rechecking && market.capabilities[action]?.allowed !== true) return 'Free calls are not currently available for this market.';
-    if (action === 'closeFree' && !recordId) return 'No open public call record is available to close.';
-    if (action === 'openFree' && recordId) return 'You already have an open free call for this market.';
+    if (!rechecking && market.capabilities[action]?.allowed !== true) return 'Chip participation is not currently available for this market.';
+    if (action === 'closeFree' && !recordId) return 'No active chip record is available to take back.';
+    if (action === 'openFree' && recordId) return 'You already have an active chip for this market.';
     return null;
   }
   const keyFor = (wallet: WalletContext, requestValue: FreeRequest) => `${wallet.cluster}:${wallet.address}:${requestValue.market.id}:${requestValue.action}`;
