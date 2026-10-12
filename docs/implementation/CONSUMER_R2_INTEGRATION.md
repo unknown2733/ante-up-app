@@ -65,3 +65,17 @@ The structured R2 auditor separately reported **13 PASS, 9 PENDING, 0 FAIL** wit
 - Desktop Phantom, Android Phantom and Seeker require a regression pass on the new deployed UI. Earlier successful wallet runs do not certify this build.
 - Archive/SAS worker follow-ups, keeper/settlement and operations work from separate branches are outside this UI integration.
 - Sample targets have no newly provisioned feeds, markets or user assets. No paid source collection was added.
+
+## Authorized publication and deployment — October 13, 2026 KST
+
+The user subsequently authorized push and live deployment. Release `6b7c9d1` was pushed to `unknown2733/ante-up-app` main and deployed as image `ante-up:consumer-r2-6b7c9d1` (SHA-256 `2a46aef04b6af7defe7eb3e274c98d0229abdae6fc2acbf19dc685e3a5983361`). This supersedes the no-deployment status of the earlier integration pass above.
+
+- Pre-push review covered 21 new commits and 92 changed historical file versions: no detected secrets or private operational endpoints. This is a scoped scan, not a comprehensive security audit.
+- The Linux image used the existing base's matching lockfiles and production settings: `/api`, fixture transport disabled, Devnet, public RPC, and the production MWA app URI. Build passed; Vite reported its existing large-chunk warning.
+- Linux regression: **44/44 web tests**, including the actual HTTP adapter test, and **25/25 Docs/chart/sample/social/audit tests**. The first disposable test run stopped on build-output permissions; rerunning only the test container as root passed. The deployed web continues to run as the unprivileged node user.
+- Only the web container was replaced. API, price history, collector, indexer and evidence container identities were unchanged. No database migration, new data collection, program deployment or wallet transaction was performed.
+- At `2026-10-12T21:46Z`, public HTTPS returned matching release HTML on 11 routes, including Docs and real/sample market details. JS `index-CqWaYqgx.js`, CSS `index-BkSLOa5l.css` and the brand favicon matched the image byte-for-byte.
+- Public API verification passed with zero findings: one observed market, 10 chip actions, five profiles, 55 curve points and 112 attention points at that observation. Unauthenticated note writes were rejected.
+- Local release receipts are under `.runtime/release-6b7c9d1/`. Browser rendering evidence remains the earlier local App passes. No public browser provider was available for an additional interactive pass; HTTP delivery is not a claim of public browser or physical-wallet QA.
+
+The operational Compose stack now appends `compose.consumer-r2.yml`, selecting the new image for web only. Future service recreation must include that overlay. To roll back web, omit this final overlay and recreate only `web` with `--no-deps`, preserving the existing environment files and other overlays. The prior `ante-up:consumer-20261013` image remains available. Do not restore old databases over new records.

@@ -16,7 +16,7 @@ All financial flows use test assets. This is an experimental implementation, not
 4. Use the in-app **Faucet** for tUSD. Devnet SOL for transaction fees is separate. Faucet and new-entry availability depend on operator limits and data readiness.
 5. **Place chip** on an eligible Devnet market, watch its attention reference, then **Take back chip** to finalize the result. A wallet can hold up to three active chips, with one per market. Attention change is not a cash return.
 
-The unified R2 catalog and Docs are integrated in this checkout. This does not update the deployed site, which may still show the older Live/Demo navigation until a verified release. The latest consumer UI needs another real-wallet regression pass. A closed chip record and its completed evidence/SAS attestation are separate states; archival and attestation may finish later. Read the [product Docs](docs/product/README.md) for the source articles.
+The unified R2 catalog and Docs were deployed to [ante-up.fun](https://ante-up.fun) on October 13, 2026 (KST), from release `6b7c9d1`. Public delivery and the existing Devnet API passed verification. The latest consumer UI still needs another real-wallet regression pass. A closed chip record and its completed evidence/SAS attestation are separate states; archival and attestation may finish later. Read the [in-app Docs](https://ante-up.fun/docs) or the [source articles](docs/product/README.md).
 
 ## What is implemented
 
