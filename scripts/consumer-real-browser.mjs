@@ -9,6 +9,7 @@ import { referenceConsumerReadApi } from '../apps/web/src/reference/referenceDat
 import { withVerifiedSubjectMedia } from '../apps/web/src/consumer-ui/catalog.ts';
 
 const args = process.argv.slice(2);
+const focusTrends = args.includes('--focus-trends');
 const option = flag => { const i = args.indexOf(flag); return i < 0 ? null : args[i + 1]; };
 if (!option('--dist')) throw new Error('Usage: node scripts/consumer-real-browser.mjs --dist apps/web/dist [--api-origin https://ante-up.fun] [--source-sha SHA]');
 const dist = path.resolve(option('--dist'));
@@ -29,6 +30,10 @@ const board = publicBoard.data;
 if (!Array.isArray(live) || !Array.isArray(board?.rows)) throw new Error('Unexpected public API response.');
 const catalog = [...live, ...references];
 const referenceHistories = await Promise.all(references.map(market => referenceConsumerReadApi.getHistory(market.id, 'ALL')));
+const livePreviewHistories = await Promise.all(live.map(async market => (await getPublic(`/api/v1/consumer/markets/${encodeURIComponent(market.id)}/history?period=1W`)).data));
+const previewHistories = new Map([...referenceHistories, ...livePreviewHistories].map(history => [history.market.id, history]));
+const previewSeries = history => (history.source.mode === 'LIVE' ? ['CURVE_PRICE', 'REFERENCE_PRICE', 'TRADE_PRICE', 'ATTENTION_INDEX', 'ACTIVITY_COUNT'] : ['ACTIVITY_COUNT', 'ATTENTION_INDEX', 'CURVE_PRICE', 'REFERENCE_PRICE', 'TRADE_PRICE']).map(kind => history.series.find(series => series.kind === kind && series.points.length)).find(Boolean);
+const expectedSparkCount = [...previewHistories.values()].filter(history => (previewSeries(history)?.points.length ?? 0) > 1).length;
 for (const history of referenceHistories) {
   if (!history || history.source.mode !== 'REFERENCE' || history.actions.length || history.series.length !== 1 ||
       history.series[0].kind !== 'ACTIVITY_COUNT' || !history.series[0].points.length ||
@@ -43,9 +48,11 @@ await mkdir(runRoot, { recursive: true });
 const run = await mkdtemp(path.join(runRoot, 'browser-'));
 await writeFile(path.join(run, 'catalog.json'), JSON.stringify(catalog, null, 2));
 await writeFile(path.join(run, 'reference-histories.json'), JSON.stringify(referenceHistories, null, 2));
+await writeFile(path.join(run, 'live-preview-histories.json'), JSON.stringify(livePreviewHistories, null, 2));
 await writeFile(path.join(run, 'public-leaderboard.json'), JSON.stringify(publicBoard, null, 2));
 await readFile(path.join(dist, 'index.html'));
 const results = [], failures = [], blockedRequests = [], browserErrors = [], publicReads = [];
+const servedHistories = new Map();
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
 const server = createServer(async (request, response) => {
@@ -60,8 +67,15 @@ const server = createServer(async (request, response) => {
       if (!url.pathname.startsWith('/api/v1/') || /\/auth(?:\/|$)/.test(url.pathname)) { send(403, 'text/plain', 'Public reads only'); return; }
       const target = new URL(url.pathname + url.search, upstream);
       const result = await fetch(target, { method: request.method, redirect: 'error', signal: AbortSignal.timeout(20_000) });
-      publicReads.push({ path: target.pathname + target.search, status: result.status });
-      send(result.status, result.headers.get('content-type') ?? 'application/json', Buffer.from(await result.arrayBuffer())); return;
+      const body = Buffer.from(await result.arrayBuffer());
+      const record = { path: target.pathname + target.search, status: result.status };
+      if (result.ok && /\/history$/.test(target.pathname)) {
+        const payload = JSON.parse(body.toString('utf8'));
+        record.history = payload.data;
+        servedHistories.set(`${payload.data.market.id}:${target.searchParams.get('period')}`, payload.data);
+      }
+      publicReads.push(record);
+      send(result.status, result.headers.get('content-type') ?? 'application/json', body); return;
     }
     let relative;
     try { relative = decodeURIComponent(url.pathname); } catch { send(400, 'text/plain', 'Invalid path'); return; }
@@ -124,7 +138,10 @@ try {
     return {url:location.href,text:document.body.innerText,language:document.documentElement.lang,
       overflow:Math.max(0,document.documentElement.scrollWidth-document.documentElement.clientWidth),
       rows:all('.au-market-row').map(e=>({label:label(e),text:e.innerText,source:e.querySelector('.au-source-cell strong')?.textContent,
-        value:e.querySelector('.au-price-cell strong')?.textContent,metric:e.querySelector('.au-price-cell small')?.textContent,change:e.querySelector('.au-change-cell')?.textContent})),
+        value:e.querySelector('.au-price-cell strong')?.textContent,metric:e.querySelector('.au-price-cell small')?.textContent,
+        spark:(()=>{const s=e.querySelector('.au-sparkline'),svg=s?.querySelector('svg');return s?{id:s.dataset.marketId,kind:s.dataset.seriesKind,text:s.innerText,visible:!!svg&&visible(svg),description:svg?.getAttribute('aria-label'),
+          points:[...s.querySelectorAll('.au-sparkline-point')].map(p=>({atMs:Number(p.dataset.atMs),value:Number(p.dataset.value)})),
+          lines:[...s.querySelectorAll('.au-sparkline-segment')].map(p=>({fromMs:Number(p.dataset.fromMs),toMs:Number(p.dataset.toMs)}))}:null})()})),
       ranks:all('.au-social-ranks .au-social-actor').map(e=>({address:e.title,label:label(e)})),
       activities:all('.au-social-activity').length,markers:all('.au-chart-marker').length,
       chart:all('.au-chart svg').map(e=>e.getAttribute('aria-label')),chartPoints:all('.au-chart svg circle').length,
@@ -141,6 +158,9 @@ try {
       periodControls:all('.au-chart-periods button').length,
       selectedPeriod:all('.au-chart-periods button').find(e=>e.getAttribute('aria-pressed')==='true')?.textContent,
       actionTabs:all('.au-action-tabs [role="tab"]').map(e=>e.textContent.trim()),
+      chartBeforeActions:(()=>{const chart=document.querySelector('.au-chart'),actions=document.querySelector('.au-action-tabs');return !!chart&&!!actions&&!!(chart.compareDocumentPosition(actions)&Node.DOCUMENT_POSITION_FOLLOWING)})(),
+      chartViewport:(()=>{const e=document.querySelector('.au-chart svg,.au-chart-snapshot');if(!e)return null;const r=e.getBoundingClientRect();const overlays=[...document.querySelectorAll('nav')].filter(n=>getComputedStyle(n).position==='fixed').map(n=>n.getBoundingClientRect()).filter(n=>n.top>innerHeight/2);const unobscuredBottom=Math.min(innerHeight,...overlays.map(n=>n.top));const visibleHeight=Math.max(0,Math.min(r.bottom,unobscuredBottom)-Math.max(r.top,60));return {top:r.top,bottom:r.bottom,height:r.height,unobscuredBottom,visibleHeight,inView:visibleHeight>0}})(),
+      chartSummary:all('.au-chart-value-summary').map(e=>e.innerText),
       executionControls:all('.au-reference-actions button[aria-describedby="reference-action-reason"]').map(e=>({disabled:e.disabled,text:e.textContent})),
       sources:all('a').filter(e=>e.textContent.includes('View data source')).map(e=>e.href),
       images:all('img').map(e=>({src:e.currentSrc||e.src,complete:e.complete,width:e.naturalWidth})),
@@ -171,6 +191,7 @@ try {
     check(probe.enabledFinancial.length === 0, 'executable financial control on reference subject');
     check(probe.markers === 0, 'reference has fabricated chip/trade markers');
     check(probe.actionTabs.join('|') === 'Chips|Buy / Sell|Pro|Liquidity', 'reference action tabs absent');
+    check(probe.chartBeforeActions, 'source chart does not precede trading actions');
     check(probe.executionControls.length === 1 && probe.executionControls.every(control => control.disabled), 'unregistered-market execution is not disabled');
     if (points.length === 1 && probe.snapshots.length) {
       const snapshot = probe.snapshots[0];
@@ -220,7 +241,7 @@ try {
   for (const viewport of viewports) {
     await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile });
     await send('Emulation.setTouchEmulationEnabled', { enabled: viewport.mobile, maxTouchPoints: viewport.mobile ? 5 : 1 });
-    const explore = await visit('/markets', viewport, 'explore', state => state.rows.length === catalog.length);
+    const explore = await visit('/markets', viewport, 'explore', state => state.rows.length === catalog.length && state.rows.filter(row => row.spark?.visible).length === expectedSparkCount);
     explore.check(explore.probe.rows.filter(row => row.source === 'Public source').length === references.length, 'reference row count mismatch');
     explore.check(explore.probe.rows.filter(row => row.source === 'Devnet observed').length === live.length, 'live row count mismatch');
     for (const market of references) {
@@ -228,8 +249,25 @@ try {
       const count = new Intl.NumberFormat('en-US', { maximumFractionDigits: 6 }).format(Number(market.activity.value));
       explore.check(row?.value === `${count} ${market.activity.unit}`, `exact platform count/unit absent for ${market.id}`);
       explore.check(row?.metric === market.activity.label, `metric label absent for ${market.id}`);
-      if (market.activity.changeFraction === null) explore.check(!!row && !row.change.includes('%'), `inferred percentage change for ${market.id}`);
     }
+    const expectedOrder = catalog.filter(market => market.source.mode === 'LIVE').length + referenceHistories.filter(history => history.series[0].aggregation === 'daily').length;
+    explore.check(explore.probe.rows.slice(0, expectedOrder).every(row => row.spark?.visible), 'first Explore rows do not show real trends');
+    for (const row of explore.probe.rows) {
+      const history = servedHistories.get(`${row.spark?.id}:1W`) ?? previewHistories.get(row.spark?.id);
+      const series = history && previewSeries(history);
+      explore.check(!!series, `Explore trend lacks source history: ${row.label}`);
+      if (!series) continue;
+      const expected = [...series.points].filter(point => point.atMs <= series.source.asOfMs).sort((a, b) => a.atMs - b.atMs).map(point => ({ atMs: point.atMs, value: Number(point.value) }));
+      if (expected.length < 2) {
+        explore.check(!row.spark.visible && !row.spark.points.length && !row.spark.lines.length && row.spark.text.includes('History not available'), `snapshot has an invented trend: ${row.label}`);
+      } else {
+        explore.check(row.spark.visible && row.spark.kind === series.kind, `genuine trend hidden or wrong metric: ${row.label}`);
+        explore.check(JSON.stringify(row.spark.points) === JSON.stringify(expected), `sparkline points differ from source: ${row.label}`);
+        explore.check(row.spark.description.includes(series.label) && row.spark.text.includes('First → last observation'), `sparkline change basis absent: ${row.label}`);
+        for (const line of row.spark.lines) explore.check(!series.gaps.some(gap => line.fromMs < gap.toMs && line.toMs > gap.fromMs), `sparkline connects a source gap: ${row.label}`);
+      }
+    }
+    if (!focusTrends) {
     const posts = references.filter(market => market.subject === 'POST');
     const clicked = await evaluate("(() => {const e=[...document.querySelectorAll('.au-subject-filter button')].find(e=>e.textContent.trim()==='Post');if(!e)return false;e.click();return true})()");
     explore.check(clicked, 'Post subject filter absent');
@@ -266,9 +304,29 @@ try {
       }
     }
     for (const [index, market] of live.entries()) {
-      const detail = await visit(`/markets/${encodeURIComponent(market.id)}`, viewport, `live-${index}`, state => state.text.includes(market.title) && state.text.includes('DEVNET OBSERVED MARKET'));
+      const detail = await visit(`/markets/${encodeURIComponent(market.id)}`, viewport, `live-${index}`, state => state.text.includes(market.title) && state.text.includes('DEVNET OBSERVED MARKET') && state.chartPoints > 0);
       detail.check(!detail.probe.text.includes('Fictional sample'), 'fictional live detail');
+      detail.check(detail.probe.chartBeforeActions && detail.probe.chartViewport?.inView, 'real live chart absent before actions or outside initial viewport');
     }
+    }
+    if (focusTrends && !viewport.mobile) {
+      console.log(JSON.stringify({ viewport: viewport.name, capturedViews: results.length, failures: failures.length }));
+      continue;
+    }
+    const routeSubjects = [referenceHistories.find(history => history.series[0].aggregation === 'daily'),
+      referenceHistories.find(history => history.series[0].aggregation === 'cumulative'),
+      !focusTrends && referenceHistories.find(history => history.series[0].points.length === 1)].filter(Boolean);
+    for (const history of routeSubjects) for (const section of ['trade', 'pro', 'lp']) {
+      const route = `/markets/${encodeURIComponent(history.market.id)}/${section}?period=ALL`;
+      const view = await visit(route, viewport, `route-${history.series[0].aggregation ?? 'snapshot'}-${section}`, state => state.actionTabs.length === 4 && (history.series[0].points.length > 1 ? state.chartPoints === history.series[0].points.length : state.snapshots.length === 1));
+      checkReferenceData(view, history);
+      view.check(!!view.probe.chartViewport?.inView, 'reference chart/snapshot outside initial trading viewport');
+    }
+    for (const [index, market] of live.entries()) for (const section of ['trade', 'pro', 'lp']) {
+      const view = await visit(`/markets/${encodeURIComponent(market.id)}/${section}`, viewport, `live-${index}-${section}`, state => state.chartPoints > 0 && state.actionTabs.length === 4);
+      view.check(view.probe.chartBeforeActions && !!view.probe.chartViewport?.inView, 'real live chart absent before trading actions or outside initial viewport');
+    }
+    if (!focusTrends) {
     const ranking = await visit('/leaderboard', viewport, 'leaderboard', state => state.ranks.length === board.rows.length && state.text.includes('Devnet records'));
     ranking.check(JSON.stringify(ranking.probe.ranks.map(row => row.address)) === JSON.stringify(board.rows.map(row => row.actorId)), 'ranked wallets differ from public API');
     for (const [index, row] of board.rows.entries()) {
@@ -276,6 +334,7 @@ try {
       const expectedActions = profile.data.actions.filter(action => action.source.mode === 'LIVE' && action.actorId === row.actorId && ['CALL_OPEN', 'CALL_CLOSE'].includes(action.kind));
       const shown = await visit(`/u/${encodeURIComponent(row.actorId)}`, viewport, `wallet-${index}`, state => state.text.includes(shortActor(row.actorId)) && state.text.includes('Devnet records'));
       shown.check(shown.probe.activities === expectedActions.length, `activity count differs from public profile: ${shown.probe.activities}/${expectedActions.length}`);
+    }
     }
     console.log(JSON.stringify({ viewport: viewport.name, capturedViews: results.length, failures: failures.length }));
   }
