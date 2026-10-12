@@ -74,10 +74,11 @@ const priceSeries = (marketId: string, kind: FinalizedPriceObservation['kind'], 
 
 /** Shared list/detail projection; current quote is never inserted into historical points. */
 export function projectConsumerMarket(market: MarketView, asOfMs: number): ConsumerMarket {
+  const synthetic=market.dataProvenance==='SYNTHETIC_QA';
   return {
-    id: market.id, title: market.keyword, subtitle: 'Keyword market', subject: 'KEYWORD',
+    id: market.id, title: market.keyword, subtitle: synthetic?'Synthetic financial test · not measured attention':'Keyword market', subject: 'KEYWORD',
     phase: market.phase === 'CURVE' ? 'CURVE' : market.phase === 'INDEXED' ? 'POOL' : 'PREVIEW',
-    source: source(asOfMs), latestPrice: market.price ? atomsToDecimal(market.price.atoms) : null,
+    source: synthetic?{mode:'LIVE',label:'Synthetic test feed · Devnet',asOfMs,observationLabel:'Operator-generated test inputs; no real-world traffic'}:source(asOfMs), latestPrice: market.price ? atomsToDecimal(market.price.atoms) : null,
     priceUnit: 'tUSD', changeFraction: null, liveMarketId: market.id,
   };
 }
@@ -94,7 +95,7 @@ export function createConsumerHistoryAdapter(input: ConsumerHistoryInputs) {
       if (!market) return null;
       const now = nowMs();
       const start = periodStart(period, now);
-      const src = source(now);
+      const src = projectConsumerMarket(market,now).source;
       const [snapshots, records, observations] = await Promise.all([
         input.snapshots(marketId), input.records(marketId), input.priceObservations(marketId),
       ]);
@@ -123,7 +124,7 @@ export function createConsumerHistoryAdapter(input: ConsumerHistoryInputs) {
         .sort((a, b) => a.atMs - b.atMs || (BigInt(a.snapshot.payload.sequence) < BigInt(b.snapshot.payload.sequence) ? -1 : 1));
       if (attention.length) {
         const points = attention.map(item => ({ atMs: item.atMs, value: item.value, observationId: item.snapshot.payloadHash }));
-        series.push({ id: `${marketId}:attention`, kind: 'ATTENTION_INDEX', label: 'Attention ratio', unit: '×', points,
+        series.push({ id: `${marketId}:attention`, kind: 'ATTENTION_INDEX', label: market.dataProvenance==='SYNTHETIC_QA'?'Synthetic test ratio':'Attention ratio', unit: '×', points,
           gaps: historyGaps(points, start, now, ATTENTION_GAP_MS), source: src });
       }
       const actions: ConsumerAction[] = [];

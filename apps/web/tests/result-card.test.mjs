@@ -23,12 +23,15 @@ test('exact rational results preserve loss, zero, missing and large integers', (
   assert.equal(formatResult({ ...record, status: 'CLOSED_NA', result: { kind: 'na', reason: 'DATA_NOT_READY' } }), 'N/A');
 });
 test('proof badge requires matching record and proof; invalid and replaced stay visible', () => {
-  const proof = { id: 'proof-1', recordId: 'record-1', state: 'ISSUED', sasId: 'sas' };
+  const ref = {contentHash:'a'.repeat(64),arweaveItemId:'A'.repeat(43),parentTransactionId:'B'.repeat(43)};
+  const proof = { id: 'proof-1', recordId: 'record-1', state: 'ISSUED', sasId: '11111111111111111111111111111111', confirmations:20, payloadHash:'a'.repeat(64), manifestRef:ref,evidence:[ref] };
   assert.equal(createResultCard(record, 'solana', 'devnet', proof).proof, 'SAS issued');
   assert.equal(createResultCard(record, 'solana', 'devnet', { ...proof, recordId: 'other' }).proof, 'Proof pending');
   assert.equal(createResultCard(record, 'solana', 'devnet', { ...proof, state: 'INVALID' }).proof, 'Proof invalid');
   assert.equal(createResultCard(record, 'solana', 'devnet', { ...proof, state: 'REPLACED' }).proof, 'Proof replaced');
   assert.equal(createResultCard(record, 'solana', 'devnet', null, true).proof, 'Proof status unavailable');
+  assert.equal(createResultCard(record, 'solana', 'devnet', {...proof,confirmations:19}).proof, 'Proof pending');
+  assert.equal(createResultCard(record, 'solana', 'devnet', {...proof,sasId:'sas:fake'}).proof, 'Proof pending');
 });
 test('standalone card escapes public text and distinguishes attention from cash return', () => {
   const svg = resultCardSvg(createResultCard(record, '<script>&"hello', 'devnet', null, false, 1791803600000), 'https://example.com/remote.png');

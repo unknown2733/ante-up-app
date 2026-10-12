@@ -5,6 +5,7 @@ import { PRO_POSITION_DISCRIMINATOR, PositionState, SettlementMode, MarketPhase,
 import type { FinancialEpochChain, FinalizedEpochState } from '../../keeper/src/flow.ts';
 import type { AcceptedCandidate, SettlementScope } from '../../keeper/src/candidate.ts';
 import type { KeeperAttempt } from '../../keeper/src/attempts.ts';
+import type {EmptyWindowState} from '../../keeper/src/lp-recovery.ts';
 import { FinalizedFinancialAccounts, FirstSliceFinancialReader } from './financial-chain.ts';
 
 const equal=(a:ReadonlyUint8Array,b:ReadonlyUint8Array)=>Buffer.from(a).equals(Buffer.from(b));
@@ -30,6 +31,18 @@ export class KitFinancialEpochChain implements FinancialEpochChain {
     const config=await this.state.config();
     if (String(config.publisher)!==this.transport.publisherAddress) throw new Error('KEEPER_PUBLISHER_MISMATCH');
     return config;
+  }
+  async readEmptyWindow(marketId:string):Promise<EmptyWindowState> {
+    if (marketId!==this.scope.marketId) throw new Error('KEEPER_SCOPE_MISMATCH');
+    const [market,fm,vault]=await Promise.all([this.state.market(marketId),this.state.financeMarket(marketId),
+      this.reader.vault(marketId)]);
+    return {marketId,cycle:fm.currentCycle.toString(),currentMaturity:Number(fm.currentMaturity),
+      openPositions:fm.openPositions,totalShares:fm.totalShares.toString(),lpGeneration:fm.lpGeneration.toString(),
+      validityGeneration:market.validityGeneration.toString(),lastLpMaturity:Number(fm.lastLpMaturity),
+      lpWindowStart:Number(fm.lpWindowStart),lpWindowEnd:Number(fm.lpWindowEnd),
+      navValid:market.phase===MarketPhase.Indexed && !!vault?.value.navAtoms && fm.totalShares>0n &&
+        (market.dataStatus===DataStatus.LowActivity ||
+          market.dataStatus===DataStatus.Valid && market.admission.state===AdmissionState.Open)};
   }
   async read(scope:SettlementScope):Promise<FinalizedEpochState> {
     if (scope.marketId!==this.scope.marketId || scope.epoch!==this.scope.epoch || scope.programId!==this.state.options.programId ||
@@ -73,6 +86,12 @@ export class KitFinancialEpochChain implements FinancialEpochChain {
     } else if (attempt.action==='SETTLE_PRO') {
       const position=await this.state.position(attempt.entity),claim=await this.state.claim(attempt.entity);
       if (position?.state===PositionState.Settled && claim && String(claim.value.market)===marketId && claim.value.position===address(attempt.entity)) return 'FINALIZED';
+    } else if (attempt.action==='RECOVER_LP_WINDOW') {
+      const [fm,market]=await Promise.all([this.state.financeMarket(marketId),this.state.market(marketId)]);
+      const [week,generation]=attempt.entity.split(':');
+      if (fm.currentCycle===cycle && fm.currentMaturity===0n && fm.lpWindowEnd>fm.lpWindowStart &&
+          fm.lastLpMaturity>=BigInt(week) && fm.lpGeneration===BigInt(generation) &&
+          market.validityGeneration===fm.lpGeneration) return 'FINALIZED';
     } else {
       const [fm,settled]=await Promise.all([this.state.financeMarket(marketId),this.state.settlement(marketId,cycle)]);
       if (settled && fm.lpWindowStart>=settled.value.acceptedAt && fm.lpWindowEnd>fm.lpWindowStart) return 'FINALIZED';
@@ -125,10 +144,11 @@ export class KitFinancialEpochChain implements FinancialEpochChain {
   async startLpWindow(marketId:string,onSigned?:(signature:string)=>void):Promise<string> {
     await this.authority();
     const fm=await this.state.financeMarket(marketId),settlement=await this.state.settlement(marketId,fm.currentCycle);
-    if (!settlement || fm.openPositions!==0) throw new Error('KEEPER_SETTLEMENT_INCOMPLETE');
+    if (fm.openPositions!==0 || fm.currentMaturity!==0n && !settlement) throw new Error('KEEPER_SETTLEMENT_INCOMPLETE');
     const vault=await this.reader.vault(marketId);
     if (!vault?.value.navAtoms) throw new Error('KEEPER_NAV_UNAVAILABLE');
-    const ix=await getStartLpWindowInstructionAsync({market:address(marketId),settlement:address(settlement.address),
+    const settlementAddress=settlement?.address??await this.state.settlementAddress(marketId,fm.currentCycle);
+    const ix=await getStartLpWindowInstructionAsync({market:address(marketId),settlement:address(settlementAddress),
       publisher:createNoopSigner(address(this.transport.publisherAddress))},{programAddress:address(this.state.options.programId)});
     return this.transport.send(ix,'publisher',onSigned);
   }

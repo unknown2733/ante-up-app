@@ -1,0 +1,59 @@
+{
+  "label": "ante-up-synthetic-finance-demo-20261013-v1",
+  "synthetic": true,
+  "cluster": "devnet",
+  "programId": "FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr",
+  "market": "CFAAiVZD1PGcRrPEikjAZjtmnc2tNnp1g7Jk5RdpK2SG",
+  "marketSeedHex": "4e3fe98cbf16ed91971da66fbb56c53b761b78c60dd18c4573c844414dae1792",
+  "stage": "prepare-demo",
+  "steps": {
+    "fund-sol": {
+      "signature": "5p2z9rnXJ1MKE3DKCo1NPShZ7Y44sN7W7arwvTvsjQzdGdGbzkAfsMbpWJjsdxmP4nPXN9RJWLapCmN2E1dZbnnz",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497661203"
+    },
+    "create-payment-ata": {
+      "signature": "3WGGUTdbNsp66TESMkwzsNfS8Hb6KdMgyN45bLqtHmvYeDR7GuCSK5A7cqYH6E9QRpjz57A2oe2uiHViXysEdwWu",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497661215"
+    },
+    "faucet": {
+      "signature": "5u6m5TWqsMCYrmf3KLJpfwnx355Zug3nf333hPJVs8sYe6g2E6pZeSgVGsALz9zJxGbp8d3vAGFa8KJj2hxiDLTm",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497661225"
+    },
+    "fund-tusd": {
+      "signature": "3N5ssBmmbvbANPbSv9Ks1umE4gkgP3uWGpp3iM5o9ZoTzk64sWroo7ofsBbZz8jWREU3pi3EjkDFJcJTW91VitQ3",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497661234"
+    },
+    "register": {
+      "signature": "4oZPP7T8a736zGjuJJU1Zj189ENSPwJLET4Gw23k55damKfDq9JjrdyoVSZSAXoCXuxF6ffdnK4FPyDBW5sPNiuH",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497661245"
+    },
+    "create-keyword-ata": {
+      "signature": "55eLCrEr7J96y1EmGn8FndfydTum1VbcTmQpEY9LdHMMKcsjAc7twv4GhwfKGAfGwPy1DVXnpunm1ZmFCXbrDKL1",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497661262"
+    },
+    "curve-buy": {
+      "signature": "4BKzZxZxdWcjWSNFgyztU3Wyh5SVUibAmZcNJPQ6k1fYh1cDT5ZtsZhimNGzgBqagDtYv1j4mJptoMHmm9EaHUVz",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497661277"
+    },
+    "curve-sell": {
+      "signature": "4G7Cz25ZPKXAT8ZQcGyJb4h9vVfXSgX6yU56qxWDdGPiMP8jhDyCaLxnU1GRzMkp4c3z5hpy6fGnt5wQsPpjJK2a",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497661289"
+    },
+    "curve-rebuy": {
+      "signature": "3RYcF1gWnXViyaxFtu58A6sFK3PDGDk4w9UCH6eExdF1sS8KovWy76fSMv9nVupyQeoofbF4ctBS94paG7BSzb7f",
+      "state": "FINALIZED",
+      "lastValidBlockHeight": "497661305"
+    }
+  },
+  "observations": [],
+  "audits": [],
+  "wallet": "4jKJoaVxSBeeaG9pio75NDyF7rveBe4qt7kuU5RDpRix"
+}

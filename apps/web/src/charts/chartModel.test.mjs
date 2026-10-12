@@ -1,6 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { actionName, actionResult, chartBounds, chartClusters, chartPoints, chartSegments, portraitImageSource, scopedChartHistory } from './chartModel.ts';
+import { actionName, actionResult, chartBounds, chartClusters, chartPoints, chartSegments, portraitImageSource, scopedChartHistory, inspectChart, chartViewport } from './chartModel.ts';
+
+test('inspection returns actual observations but never fills a missing interval', () => {
+  const points = [{ atMs: 100, value: 1 }, { atMs: 200, value: 9 }, { atMs: 300, value: 4 }];
+  const gaps = [{ fromMs: 200, toMs: 300 }];
+  assert.equal(inspectChart(points, gaps, 175), points[1]);
+  assert.equal(inspectChart(points, gaps, 250), null);
+  assert.equal(inspectChart(points, gaps, 200), points[1]);
+  assert.equal(inspectChart(points, gaps, 300), points[2]);
+  assert.equal(inspectChart([], [], 0), null);
+});
+
+test('zoom and pan preserve viewport width and cannot escape available period', () => {
+  const full = { start: 100, end: 900 };
+  assert.deepEqual(chartViewport(full, 500, 400), { start: 300, end: 700 });
+  assert.deepEqual(chartViewport(full, 0, 400), { start: 100, end: 500 });
+  assert.deepEqual(chartViewport(full, 1000, 400), { start: 500, end: 900 });
+  assert.deepEqual(chartViewport(full, 1000, 2000), full);
+});
 
 const asOfMs = Date.UTC(2026, 9, 13);
 const source = { mode: 'DEMO', label: 'Sample history', asOfMs };

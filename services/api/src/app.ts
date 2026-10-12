@@ -39,7 +39,7 @@ export class FixtureReadAdapter implements ReadAdapter {
 }
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
-const errorStatus: Record<string, number> = { INVALID_INPUT: 400, UNAUTHORIZED: 403, ALREADY_EXECUTED: 409, PENDING_CONFIRMATION: 409, REQUOTE_REQUIRED: 409, DATA_NOT_READY: 409, WRONG_PHASE: 409, LP_WINDOW_CLOSED: 409 };
+const errorStatus: Record<string, number> = { INVALID_INPUT: 400, UNAUTHORIZED: 403, ALREADY_EXECUTED: 409, PENDING_CONFIRMATION: 409, REQUOTE_REQUIRED: 409, DATA_NOT_READY: 409, ENTRY_PAUSED: 409, LIMIT_REACHED: 409, WRONG_PHASE: 409, LP_WINDOW_CLOSED: 409 };
 const fail = (code: ApiError['code'], message: string, requestId: string | null = null) => json({ code, message, retryable: code === 'PENDING_CONFIRMATION', requestId } satisfies ApiError, errorStatus[code] ?? 400);
 
 async function parseBody(request: Request): Promise<unknown> {
@@ -296,7 +296,7 @@ export function createApp(options: {
     } catch (e) {
       if (e instanceof InputError || e instanceof SyntaxError) return fail('INVALID_INPUT', e.message);
       if (e instanceof ExistingMarket) return fail('ALREADY_EXECUTED',`existing market: ${e.marketAddress}`);
-      if (e instanceof Error && (e.message === 'INVALID_INPUT' || e.message === 'ALREADY_EXECUTED' || e.message === 'DATA_NOT_READY' || e.message === 'REQUOTE_REQUIRED' || e.message === 'WRONG_PHASE' || e.message === 'LP_WINDOW_CLOSED')) return fail(e.message, e.message);
+      if (e instanceof Error && (e.message === 'INVALID_INPUT' || e.message === 'ALREADY_EXECUTED' || e.message === 'DATA_NOT_READY' || e.message === 'ENTRY_PAUSED' || e.message === 'LIMIT_REACHED' || e.message === 'REQUOTE_REQUIRED' || e.message === 'WRONG_PHASE' || e.message === 'LP_WINDOW_CLOSED')) return fail(e.message, e.message==='ENTRY_PAUSED'?'New chips are temporarily paused. Existing chips can still be taken back.':e.message==='LIMIT_REACHED'?'The shared chip limit has been reached. Existing chips can still be taken back.':e.message);
       return fail('INVALID_INPUT', 'request could not be processed');
     }
   }

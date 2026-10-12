@@ -16,13 +16,19 @@ const GENESIS='EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
 const MINT='71sfbfYrJ9E417R57Ra2d5z1gp8xCbXJbgGTpT8bgLHe';
 const ADMIN='5Fm81PP7TXvyNJHoB4DrwWETYdfqKtc45s6WRK8qdx5e';
 const LABEL='ante-up-synthetic-finance-qa-20261013-v1';
+export const DEMO_LABEL='ante-up-synthetic-finance-demo-20261013-v1';
+export function runProfile(env) {
+  const demo=env.ANTE_UP_QA_PROFILE==='demo';
+  assert.ok(!env.ANTE_UP_QA_PROFILE||demo,'unsupported QA profile');
+  return {demo,label:demo?DEMO_LABEL:LABEL,maxContribution:(demo?7200n:10000n)*UNIT};
+}
 const digest=value=>new Uint8Array(createHash('sha256').update(value).digest());
 const json=value=>JSON.stringify(value,(_,v)=>typeof v==='bigint'?v.toString():v,2);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 export const safeError=e=>String(e?.message??'QA_ERROR').replace(/https?:\/\/[^\s"'<>]+/g,'[RPC_URL_REDACTED]').slice(0,500);
 
-export function syntheticCandidate({market,sequence,queryHash,configVersion,computedAt,activity}) {
-  const evidence={source:'synthetic-financial-qa',notRealTrend:true,label:LABEL,
+export function syntheticCandidate({market,sequence,queryHash,configVersion,computedAt,activity,label=LABEL}) {
+  const evidence={source:'synthetic-financial-qa',notRealTrend:true,label,
     description:'Direct deterministic financial test inputs; not measured X activity or a replayed EWMA.',
     sequence:sequence.toString(),activityNowQ12:(activity*Q12).toString(),activity7dQ12:(100n*Q12).toString(),computedAt};
   const candidate={schemaVersion:'0.1',formulaVersion:'h3-d7-q12-v1',configVersion:configVersion.toString(),
@@ -43,7 +49,10 @@ export function auditFinance({finance:f,assets,price}) {
 
 async function run(argv,env) {
   const stage=argv[0]??'preflight';
-  assert.ok(['preflight','setup','refresh','pro','down','cleanup','status'].includes(stage));
+  const {demo,label,maxContribution}=runProfile(env);
+  assert.ok(['preflight','setup','prepare-demo','graduate-demo','refresh','pro','down','cleanup','status'].includes(stage));
+  if(stage.endsWith('-demo'))assert.ok(demo,'demo stages require ANTE_UP_QA_PROFILE=demo');
+  if(demo)assert.ok(['preflight','prepare-demo','graduate-demo','refresh','status'].includes(stage),'demo does not execute user positions');
   const dir=resolve(env.ANTE_UP_QA_STATE_DIR??'.runtime/financial-qa');
   const endpoint=(await readFile(env.ANTE_UP_QA_RPC_FILE,'utf8')).trim();
   const rpc=kit.createSolanaRpc(endpoint),transport=chain.createKitChainTransport(endpoint);
@@ -53,14 +62,14 @@ async function run(argv,env) {
   const core=(await chain.readFinalizedConfig(transport)).data;
   const fc=(await chain.readFinalizedFinanceConfig(transport)).data;
   assert.equal(core.admin,ADMIN);assert.equal(fc.admin,ADMIN);assert.equal(fc.paymentMint,MINT);
-  const seed=digest(LABEL),queryHash=digest(`SYNTHETIC QA ONLY: ${LABEL}`);
+  const seed=digest(label),queryHash=digest(`SYNTHETIC QA ONLY: ${label}`);
   const [market]=await chain.findMarketPda({marketId:seed});
   const [fmAddress]=await chain.findFinanceMarketPda({market});
   const [keywordMint]=await chain.findKeywordMintPda({market});
   const [curveInventory]=await chain.findCurveInventoryPda({market});
   const [vaultInventory]=await chain.findVaultInventoryPda({market});
   const [paymentVault]=await chain.findPaymentVaultPda({market});
-  const summary={label:LABEL,synthetic:true,cluster:'devnet',programId:chain.ANTE_UP_PROGRAM_ADDRESS,market,
+  const summary={label,synthetic:true,cluster:'devnet',programId:chain.ANTE_UP_PROGRAM_ADDRESS,market,
     marketSeedHex:Buffer.from(seed).toString('hex'),stage};
   const balance=async(address)=>{const a=await transport.getFinalizedAccount(address);
     if(!a.exists)return 0n;assert.equal(a.programAddress,spl.TOKEN_PROGRAM_ADDRESS);return spl.decodeToken(a).data.amount;};
@@ -71,10 +80,11 @@ async function run(argv,env) {
   const treasury=await balance(fc.protocolTreasury);
   if(stage==='preflight') {
     assert.ok(adminSol>=200_000_000n,'retain minimum admin gas reserve');
-    assert.ok(treasury>=10_500n*UNIT,'max graduation contribution + QA funding');
+    assert.ok(treasury>=maxContribution+500n*UNIT,'max graduation contribution + QA funding');
     assert.ok(fc.supportedMarkets<5,'QA consumes one global supported-market slot');
     console.log(json({...summary,adminSol,treasury,supportedMarkets:fc.supportedMarkets,
-      maxNewUserSol:60_000_000,maxQaTreasuryFunding:500n*UNIT,maxGraduationContribution:10_000n*UNIT,
+      maxNewUserSol:60_000_000,maxQaTreasuryFunding:500n*UNIT,maxGraduationContribution:maxContribution,
+      registryEntry:{address:market,seedHex:Buffer.from(seed).toString('hex'),keyword:'Synthetic finance demo',aliases:[],dataProvenance:'SYNTHETIC_QA'},
       normalMaturity:'next Monday UTC; cannot fast-forward on Devnet',writes:false}));return;
   }
   await mkdir(dir,{recursive:true});
@@ -86,7 +96,7 @@ async function run(argv,env) {
   const keyPath=join(dir,'qa-wallet.json');
   let keyBytes;
   try{keyBytes=JSON.parse(await readFile(keyPath,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;
-    assert.equal(stage,'setup','run setup before status');
+    assert.ok(['setup','prepare-demo'].includes(stage),'run setup/prepare-demo before status');
     const pair=generateKeyPairSync('ed25519');
     keyBytes=[...pair.privateKey.export({type:'pkcs8',format:'der'}).subarray(-32),...pair.publicKey.export({type:'spki',format:'der'}).subarray(-32)];
     await writeFile(keyPath,JSON.stringify(keyBytes),{flag:'wx',mode:0o600});}
@@ -142,14 +152,14 @@ async function run(argv,env) {
   async function observe(name,activity=125n){await send(name,async()=>{const m=await marketState(),sequence=m.latestSequence+1n;
     let item=journal.observations.find(x=>x.jobName===name);
     if(item){assert.equal(item.candidate.sequence,sequence.toString(),'prepared snapshot sequence changed');}
-    else{item={...syntheticCandidate({market,sequence,queryHash,configVersion:core.configVersion,computedAt:Number(now()),activity}),jobName:name};
+    else{item={...syntheticCandidate({market,sequence,queryHash,configVersion:core.configVersion,computedAt:Number(now()),activity,label}),jobName:name};
       journal.observations.push(item);await save();}
     const observation=item.candidate;
     // Dedicated file only. Root configures the sole public indexer to import this
     // additional candidate source before any QA publication can be submitted.
     const candidates={jobs:Object.fromEntries(journal.observations.map(x=>[x.candidate.sequence,
       {...x,market:{address:market,cluster:'devnet',programId:chain.ANTE_UP_PROGRAM_ADDRESS,
-        logicalId:LABEL,seedHex:Buffer.from(seed).toString('hex')},state:'PREPARED'}])),snapshots:{}};
+        logicalId:label,seedHex:Buffer.from(seed).toString('hex')},state:'PREPARED'}])),snapshots:{}};
     const candidatePath=join(dir,'candidates.json'),candidateTmp=candidatePath+'.tmp';
     await writeFile(candidateTmp,json(candidates),{mode:0o600});await replaceJournal(candidateTmp,candidatePath);
     assert.equal(env.ANTE_UP_QA_CANDIDATE_IMPORT_READY,'yes','sole indexer extra candidate source must be configured first');
@@ -165,8 +175,8 @@ async function run(argv,env) {
   const curveAccounts={market,keywordMint,curveInventory,paymentVault,paymentMint:kit.address(MINT),userKeyword,userPayment,protocolTreasury:fc.protocolTreasury,user};
   const spotAccounts={...curveAccounts,vaultInventory};
   const lpAccounts={market,paymentMint:kit.address(MINT),paymentVault,ownerPayment:userPayment,owner:user};
-  if(stage==='setup'){
-    assert.ok(adminSol>=200_000_000n);assert.ok(treasury>=10_500n*UNIT);
+  if(stage==='setup'||stage==='prepare-demo'){
+    assert.ok(adminSol>=200_000_000n);assert.ok(treasury>=maxContribution+500n*UNIT);
     await send('fund-sol',async()=>[system.getTransferSolInstruction({source:admin,destination:user.address,amount:60_000_000n})],admin);
     await send('create-payment-ata',async()=>[spl.getCreateAssociatedTokenIdempotentInstruction({payer:user,ata:userPayment,
       owner:user.address,mint:kit.address(MINT),tokenProgram:spl.TOKEN_PROGRAM_ADDRESS})]);
@@ -180,11 +190,21 @@ async function run(argv,env) {
     await send('curve-buy',async()=>[await chain.getCurveBuyInstructionAsync({...curveAccounts,quantity:1000n*UNIT,maxPayment:1102n*UNIT,...await quote()})]);
     await send('curve-sell',async()=>[await chain.getCurveSellInstructionAsync({...curveAccounts,quantity:UNIT,minReceipt:UNIT,...await quote()})]);
     await send('curve-rebuy',async()=>[await chain.getCurveBuyInstructionAsync({...curveAccounts,quantity:UNIT,maxPayment:2n*UNIT,...await quote()})]);
+    if(stage==='prepare-demo'){
+      const m=await marketState();assert.equal(m.phase,chain.MarketPhase.Curve);
+      console.log(json({...summary,prepared:true,graduated:false,next:'Root enables indexer candidate import, then graduate-demo when UI/user are ready',report:await status()}));return;
+    }
+  }
+  if(stage==='setup'||stage==='graduate-demo'){
     await observe('graduation-observation');
     await send('graduate',async()=>{const m=await marketState();const [snapshot]=await chain.findSnapshotPda({market,sequence:m.latestSequence});
       return [await chain.getGraduateInstructionAsync({market,snapshot,paymentMint:kit.address(MINT),paymentVault,supportPayment:fc.protocolTreasury,
-        admin,maxContribution:10000n*UNIT,...await quote()})];},admin);
+        admin,maxContribution,...await quote()})];},admin);
     await audit('graduated');
+    if(stage==='graduate-demo'){
+      const f=await finance();
+      console.log(json({...summary,graduated:true,lpWindowEnd:f.proReopenAt,next:'LP deposit/withdraw now; refresh every 240 seconds; Pro opens after lpWindowEnd',report:await status()}));return;
+    }
     await send('spot-buy',async()=>[await chain.getSpotBuyInstructionAsync({...spotAccounts,quantity:10n*UNIT,maxPayment:13n*UNIT,...await quote()})]);
     await send('spot-sell',async()=>[await chain.getSpotSellInstructionAsync({...spotAccounts,quantity:10n*UNIT,minReceipt:11n*UNIT,...await quote()})]);
     await send('lp-deposit',async()=>[await chain.getDepositLpInstructionAsync({...lpAccounts,amount:200n*UNIT,minShares:1n,...await quote()})]);
@@ -211,7 +231,10 @@ async function run(argv,env) {
     assert.equal(f.totalShares,f.lockedShares);await audit('cleanup-complete');
     console.log(json({...summary,cleanup:journal.cleanup,report:await status()}));
   } else if(stage==='refresh'){
-    await observe(`heartbeat-${Math.floor(Number(now())/240)}`);console.log(json(await status()));
+    const scenario=demo?(env.ANTE_UP_QA_SCENARIO??'baseline'):'baseline';
+    assert.ok(['baseline','up','down'].includes(scenario),'unsupported explicit synthetic scenario');
+    const activity={baseline:125n,up:150n,down:100n}[scenario];
+    await observe(`heartbeat-${scenario}-${Math.floor(Number(now())/240)}`,activity);console.log(json(await status()));
   } else if(stage==='pro'||stage==='down'){
     const f=await finance();assert.ok(now()>=f.proReopenAt,'wait for the actual 900-second LP window');
     const firstId=stage==='pro'?1n:3n,entryActivity=stage==='pro'?125n:150n,exitActivity=stage==='pro'?150n:100n;

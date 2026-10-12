@@ -1,11 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useId } from 'react';
+import type { PointerEvent, KeyboardEvent } from 'react';
 import type { ConsumerAction, ConsumerPeriod, ConsumerSeries, MarketHistory } from '../../../../contracts/consumer';
 import { actionName, actionResult, chartBounds, chartClusters, chartPoints, chartSegments, portraitImageSource, scopedChartHistory,
-  CHART_BOTTOM, CHART_LEFT, CHART_RIGHT, CHART_TOP } from './chartModel';
+  CHART_BOTTOM, CHART_LEFT, CHART_RIGHT, CHART_TOP, inspectChart, chartViewport, chartX } from './chartModel';
+import type { ChartBounds } from './chartModel';
 import './ConsumerChart.css';
 
 export interface ConsumerChartProps {
   history: MarketHistory;
+  preferredSeriesKind?: ConsumerSeries['kind'];
   onSelectAction: (action: ConsumerAction) => void;
   onPeriodChange?: (period: ConsumerPeriod) => void;
   actorHref?: (actorId: string) => string;
@@ -40,9 +43,12 @@ function Portrait({ src, label, type }: { src?: string; label: string; type: 'pe
   </span>;
 }
 
-export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHref, recordHref, noteHref }: ConsumerChartProps) {
+export function ConsumerChart({ history, preferredSeriesKind, onSelectAction, onPeriodChange, actorHref, recordHref, noteHref }: ConsumerChartProps) {
   const [seriesId, setSeriesId] = useState<string | null>(null);
   const [markerId, setMarkerId] = useState<string | null>(null);
+  const [viewport, setViewport] = useState<ChartBounds | null>(null);
+  const [cursor, setCursor] = useState<number | null>(null);
+  const instructionId = useId();
   const markerTrack = useRef<HTMLDivElement>(null);
   const [markerWidth, setMarkerWidth] = useState(640);
   useEffect(() => {
@@ -55,15 +61,19 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
     observer.observe(track);
     return () => observer.disconnect();
   }, [history.market.id, history.period, history.source.asOfMs, history.actions.length]);
-  const sourceLabel = history.source.mode === 'REFERENCE' ? 'Public source data' : history.source.mode === 'DEMO' ? 'Sample history' : 'Live Devnet';
+  const sourceLabel = history.source.mode === 'REFERENCE' ? 'Public source data' : history.source.mode === 'DEMO' ? 'Sample history' : history.source.label;
+  useEffect(() => { setSeriesId(null); }, [preferredSeriesKind]);
   const scopedHistory = scopedChartHistory(history);
   const series = scopedHistory.series.find(item => item.id === seriesId)
+    ?? scopedHistory.series.find(item => item.kind === preferredSeriesKind && item.points.length > 0)
     ?? scopedHistory.series.find(item => item.evidence === 'ILLUSTRATIVE')
     ?? scopedHistory.series.find(item => item.points.length > 0 && (item.kind === 'CURVE_PRICE' || item.kind === 'REFERENCE_PRICE'))
     ?? scopedHistory.series.find(item => item.points.length > 0)
     ?? scopedHistory.series[0] ?? null;
   const illustrative = series?.evidence === 'ILLUSTRATIVE';
-  const bounds = chartBounds({ ...scopedHistory, series: series ? [series] : [] });
+  const fullBounds = chartBounds({ ...scopedHistory, series: series ? [series] : [] });
+  const bounds = viewport ? chartViewport(fullBounds, (viewport.start + viewport.end) / 2, viewport.end - viewport.start) : fullBounds;
+  useEffect(() => { setViewport(null); setCursor(null); setMarkerId(null); }, [history.market.id, history.period, series?.id]);
   const points = chartPoints(series, bounds);
   const dateOnly = series?.timeBasis === 'REPORT_DATE';
   const axisWhen = dateOnly ? reportWhen : when;
@@ -79,6 +89,35 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
   const low = values.length ? Math.min(...values) : null;
   const high = values.length ? Math.max(...values) : null;
   const first = points[0], latest = points.at(-1);
+  const inspected = cursor === null ? null : inspectChart(points, series?.gaps ?? [], cursor);
+  const zoomed = bounds.end - bounds.start < fullBounds.end - fullBounds.start;
+  const minSpan = Math.max(1, (fullBounds.end - fullBounds.start) / 32);
+  const cursorX = cursor === null ? null : chartX(inspected?.atMs ?? cursor, bounds);
+  const inspectPointer = (event: PointerEvent<SVGSVGElement>) => {
+    if (event.pointerType !== 'mouse' && event.buttons === 0 && event.type !== 'pointerdown') return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / rect.width * 640;
+    if (x < CHART_LEFT || x > CHART_RIGHT) { setCursor(null); return; }
+    setCursor(bounds.start + (x - CHART_LEFT) / (CHART_RIGHT - CHART_LEFT) * (bounds.end - bounds.start));
+  };
+  const inspectKey = (event: KeyboardEvent<SVGSVGElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Escape'].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === 'Escape') { setCursor(null); return; }
+    const current = inspected ? points.findIndex(point => point.atMs === inspected.atMs) : points.length - 1;
+    const index = event.key === 'Home' ? 0 : event.key === 'End' ? points.length - 1 : Math.max(0, Math.min(points.length - 1, current + (event.key === 'ArrowLeft' ? -1 : 1)));
+    setCursor(points[index]?.atMs ?? null);
+  };
+  const zoom = (factor: number) => {
+    setViewport(chartViewport(fullBounds, inspected?.atMs ?? (bounds.start + bounds.end) / 2,
+      Math.max(minSpan, (bounds.end - bounds.start) * factor)));
+    setCursor(null);
+  };
+  const pan = (direction: number) => {
+    const span = bounds.end - bounds.start;
+    setViewport(chartViewport(fullBounds, (bounds.start + bounds.end) / 2 + direction * span / 2, span));
+    setCursor(null);
+  };
   const change = first && latest && points.length > 1 && first.value > 0 ? (latest.value / first.value - 1) * 100 : null;
   const actorLink = actorHref ?? ((id: string) => `/profiles/${encodeURIComponent(id)}`);
   const recordLink = recordHref ?? ((id: string) => `/records/${encodeURIComponent(id)}`);
@@ -101,6 +140,7 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
       </button>)}
     </div>}
     {illustrative && <p className="au-chart-illustrative">Illustrative trend · temporary values, not measured activity. Latest preview index = 100.</p>}
+    {preferredSeriesKind && series?.kind !== preferredSeriesKind && !seriesId && history.source.mode === 'LIVE' && <p className="au-chart-hint">{seriesName[preferredSeriesKind]} history is not available. Showing {series ? seriesName[series.kind].toLowerCase() : 'available observations'}.</p>}
     {!snapshot && latest && series && <div className="au-chart-value-summary">
       <div><strong>{number(latest.value)}</strong><span>{series.unit}</span></div>
       <span className={change !== null && change < 0 ? 'negative' : change !== null && change > 0 ? 'positive' : ''}>{change === null ? 'One observation' : `${change > 0 ? '+' : ''}${change.toFixed(2)}%`}<small>{change === null ? 'More observations needed for a trend' : `${illustrative ? 'Illustrative change' : dateOnly ? 'Activity change' : 'Series change'} · first to last shown`}</small></span>
@@ -115,7 +155,11 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
       {sourceUrl && <a href={sourceUrl}>View source <span aria-hidden="true">↗</span></a>}
     </div> : <div className="au-chart-plot">{series && points.length && low !== null && high !== null ? <>
       <div className="au-chart-canvas">
-        <svg viewBox="0 0 640 220" role="img" preserveAspectRatio="none"
+        <svg viewBox="0 0 640 220" role="img" preserveAspectRatio="none" tabIndex={0}
+          className="au-chart-interactive" aria-describedby={instructionId}
+          onPointerMove={inspectPointer} onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); inspectPointer(event); }}
+          onPointerLeave={event => { if (event.pointerType === 'mouse' && !event.buttons) setCursor(null); }}
+          onPointerCancel={() => setCursor(null)} onKeyDown={inspectKey}
           aria-label={`${illustrative ? 'Illustrative trend' : seriesName[series.kind]}, ${points.length} ${illustrative || history.source.mode === 'DEMO' ? 'illustrative' : 'observed'} points, ${number(low)} to ${number(high)} ${series.unit}. Missing intervals are not connected.`}>
           {[CHART_TOP, (CHART_TOP + CHART_BOTTOM) / 2].map(y => <line key={y} x1={CHART_LEFT} y1={y} x2={CHART_RIGHT} y2={y} className="au-chart-grid" />)}
           <line x1={CHART_LEFT} y1={CHART_BOTTOM} x2={CHART_RIGHT} y2={CHART_BOTTOM} className="au-chart-axis" />
@@ -124,17 +168,36 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
             stroke={colors[series.kind]} strokeWidth="3" strokeLinejoin="round" strokeLinecap="round"
             points={segment.map(point => `${point.x},${point.y}`).join(' ')} />)}
           {points.map((point, index) => <circle key={`${point.atMs}-${index}`} cx={point.x} cy={point.y}
-            r={series.kind === 'TRADE_PRICE' || dateOnly ? 4 : 2.5} fill={colors[series.kind]}><title>{`${axisWhen(point.atMs)} · ${number(point.value)} ${series.unit}`}</title></circle>)}
+            r={series.kind === 'TRADE_PRICE' || points.length < 5 ? 4 : 1.5} fill={colors[series.kind]} />)}
+          {cursorX !== null && <g className="au-chart-crosshair" pointerEvents="none">
+            <line x1={cursorX} x2={cursorX} y1={CHART_TOP} y2={CHART_BOTTOM} />
+            {inspected && <><line x1={CHART_LEFT} x2={CHART_RIGHT} y1={inspected.y} y2={inspected.y} />
+              <circle cx={inspected.x} cy={inspected.y} r="5" fill={colors[series.kind]} /></>}
+          </g>}
         </svg>
+        {cursor !== null && <div className="au-chart-tooltip" role="status" style={{ left: `${Math.max(28, Math.min(72, (cursorX ?? CHART_LEFT) / 640 * 100))}%` }}>
+          <span>{axisWhen(inspected?.atMs ?? cursor)}</span>
+          <strong>{inspected ? `${number(inspected.value)} ${series.unit}` : 'No observation in this gap'}</strong>
+          <small>{inspected ? illustrative ? 'Illustrative value' : 'Nearest recorded observation' : 'No interpolated value'}</small>
+        </div>}
         <span className="au-chart-ylabel au-chart-ylabel-top" aria-hidden="true">{number(high)}</span>
         <span className="au-chart-ylabel au-chart-ylabel-bottom" aria-hidden="true">{number(low)}</span>
       </div>
       <div className="au-chart-caption"><span>{axisWhen(bounds.start)}</span><span>{series.unit} · {points.length} points · {visibleGapCount} gaps</span><span>{axisWhen(bounds.end)}</span></div>
-    </> : <div className="au-chart-empty">No {history.source.mode === 'DEMO' ? 'sample' : 'observed'} {series ? seriesName[series.kind].toLowerCase() : 'chart'} data in this period.</div>}</div>}
+    </> : <div className="au-chart-empty">No {history.source.mode === 'DEMO' ? 'sample' : 'observed'} {series ? seriesName[series.kind].toLowerCase() : 'chart'} data in this period.</div>}
+      <div className="au-chart-navigation" role="group" aria-label="Chart navigation">
+        <button type="button" aria-label="Earlier observations" disabled={!zoomed || bounds.start <= fullBounds.start} onClick={() => pan(-1)}>←</button>
+        <button type="button" aria-label="Zoom in" disabled={!series || bounds.end - bounds.start <= minSpan} onClick={() => zoom(.5)}>+</button>
+        <button type="button" aria-label="Zoom out" disabled={!zoomed} onClick={() => zoom(2)}>−</button>
+        <button type="button" disabled={!zoomed && cursor === null} onClick={() => { setViewport(null); setCursor(null); }}>Reset view</button>
+        <button type="button" aria-label="Later observations" disabled={!zoomed || bounds.end >= fullBounds.end} onClick={() => pan(1)}>→</button>
+      </div>
+      <p className="au-chart-hint" id={instructionId}>Hover or drag to inspect · Zoom to explore. Keyboard: ← →, Home, End; Esc to clear.</p>
+    </div>}
 
     {dateOnly && <div className="au-chart-history-context"><strong>{series?.aggregation === 'daily' ? 'Daily activity' : 'Cumulative activity'}</strong><span>{series?.observationNote}</span><small>Report dates · ranges end at the latest available report · no live feed</small></div>}
 
-    {dateOnly && series && <details className="au-chart-observations"><summary>View {points.length} recorded observations</summary><div className="au-chart-observation-scroll"><table><thead><tr><th>Report date</th><th>{series.unit}</th><th>Source</th></tr></thead><tbody>{series.points.map(point => <tr key={point.atMs}><td><time dateTime={point.reportedDate}>{point.reportedDate}</time></td><td>{number(Number(point.value))}</td><td>{point.sourceUrl && <a href={point.sourceUrl} target="_blank" rel="noopener noreferrer">View source ↗</a>}</td></tr>)}</tbody></table></div></details>}
+    {dateOnly && series && <details className="au-chart-observations"><summary>View all {series.points.length} recorded observations</summary><div className="au-chart-observation-scroll"><table><thead><tr><th>Report date</th><th>{series.unit}</th><th>Source</th></tr></thead><tbody>{series.points.map(point => <tr key={point.atMs}><td><time dateTime={point.reportedDate}>{point.reportedDate}</time></td><td>{number(Number(point.value))}</td><td>{point.sourceUrl && <a href={point.sourceUrl} target="_blank" rel="noopener noreferrer">View source ↗</a>}</td></tr>)}</tbody></table></div></details>}
     {!snapshot && !!clusters.length && <div ref={markerTrack} className="au-chart-markers" aria-label="Chip activity on this chart">
       {clusters.map(cluster => {
         const first = cluster.actions[0];

@@ -5,16 +5,16 @@ import { ANTE_UP_PROGRAM_ADDRESS, AdmissionReason, AdmissionState, DataStatus, M
   findAdmissionPda, findMarketPda, getAdmissionEncoder, getMarketEncoder } from '../../../clients/chain/dist/index.js';
 import { SqliteProjectionStore } from '../../indexer/src/sqlite.ts';
 import { SqliteEventRepositories } from '../../indexer/src/repositories.ts';
-import { SqliteFinalizedReadAdapter } from '../src/live-read.ts';
+import { SqliteFinalizedReadAdapter, mergeMarketRegistry } from '../src/live-read.ts';
 import type { FinalizedFinancialAccounts } from '../src/financial-chain.ts';
 
 test('finalized market and global admission permit free entry before numeric data, but gate closure preserves exit',async()=>{
   const programId=String(ANTE_UP_PROGRAM_ADDRESS),seed=new Uint8Array(32).fill(3);
   const [marketAddress]=await findMarketPda({marketId:seed},{programAddress:address(programId)});
   const [admissionAddress]=await findAdmissionPda({programAddress:address(programId)});
-  let open=true;
+  let open=true,outstanding=0,recent=Array(100).fill(0n);
   const accountReader={async get(id:string){
-    if (id===String(admissionAddress)) return {ownerProgramId:programId,data:getAdmissionEncoder().encode({admin:address(programId),open,outstanding:0,recent:Array(100).fill(0n)})};
+    if (id===String(admissionAddress)) return {ownerProgramId:programId,data:getAdmissionEncoder().encode({admin:address(programId),open,outstanding,recent})};
     if (id===String(marketAddress)) return {ownerProgramId:programId,data:getMarketEncoder().encode({id:seed,admin:address(programId),
       queryHash:new Uint8Array(32),queryVersion:0n,phase:MarketPhase.Curve,dataStatus:DataStatus.Preparing,
       admission:{state:AdmissionState.Blocked,recoveryCount:0,reason:AdmissionReason.DataNotReady},
@@ -31,7 +31,14 @@ test('finalized market and global admission permit free entry before numeric dat
   open=false;
   const [closedGate]=await read.markets();
   assert.equal(closedGate.capabilities.openFree?.allowed,false);
+  assert.equal(closedGate.capabilities.openFree?.reason,'ENTRY_PAUSED');
   assert.equal(closedGate.capabilities.closeFree?.allowed,true);
+  open=true;outstanding=200;
+  assert.deepEqual((await read.markets())[0].capabilities.openFree,{allowed:false,reason:'LIMIT_REACHED',detail:'GLOBAL_OUTSTANDING_LIMIT'});
+  outstanding=0;recent=Array(100).fill(1_800_000_000n-10n);
+  assert.deepEqual((await read.markets())[0].capabilities.openFree,{allowed:false,reason:'LIMIT_REACHED',detail:'GLOBAL_DAILY_LIMIT'});
+  recent=Array(100).fill(1_800_000_000n-86_400n);
+  assert.deepEqual((await read.markets())[0].capabilities.openFree,{allowed:true,reason:null});
   repositories.close();store.close();
 });
 
@@ -69,4 +76,11 @@ test('indexed market price requires matching fresh finalized snapshot and blocks
   through=now-600;
   assert.equal((await read.markets())[0].price,null);
   repositories.close();store.close();
+});
+
+test('operator synthetic provenance cannot be stripped by an automatic registration',()=>{
+  const real={address:'same',seedHex:'00'.repeat(32),keyword:'auto label',aliases:[]};
+  const configured={...real,keyword:'Synthetic finance demo',dataProvenance:'SYNTHETIC_QA' as const};
+  assert.deepEqual(mergeMarketRegistry([configured],[real]),[configured]);
+  assert.deepEqual(mergeMarketRegistry([configured],[real,{...real,address:'other'}]),[configured,{...real,address:'other'}]);
 });

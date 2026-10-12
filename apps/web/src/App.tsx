@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { FreeRecord, MarketView, Mode, OpenPreview, ProofStatus, PublicProfile } from '../../../contracts/types';
+import type { FreeRecord, MarketView, Mode, OpenPreview } from '../../../contracts/types';
 import { useConnectedWallet } from '@solana/kit-plugin-wallet/react';
 import { api, isFixture, liveFreeFlow, transportMode } from './api';
 import { DEMO_WALLET } from './wallet';
@@ -8,7 +8,7 @@ import { currentWalletContext, walletClient, walletCluster, WalletPanel, WalletP
 import type { FreeOutcome, FreeProgress, FreeRequest } from './liveFree';
 import { FinancialFaucet, FinancialMarket, FinancialRegistration, PrivateFinancialPanel } from './Financial';
 import { displayConsumerError } from './consumer-ui/copy';
-import type { ConsumerAction, ConsumerMarket, ConsumerMode, ConsumerNote, ConsumerPeriod, MarketHistory } from '../../../contracts/consumer';
+import type { ConsumerAction, ConsumerMarket, ConsumerMode, ConsumerNote, ConsumerPeriod, ConsumerSeriesKind, MarketHistory } from '../../../contracts/consumer';
 import { ConsumerShell, MarketDiscovery, ActionTabs, mergeConsumerMarkets } from './consumer-ui';
 import type { ActionTab, ConsumerRoute } from './consumer-ui';
 import { ConsumerChart } from './charts/ConsumerChart';
@@ -19,9 +19,12 @@ import { ReferenceMarketActions } from './reference/ReferenceMarketActions';
 import { DocsPage } from './docs';
 import { ResultCardShare } from './sharing/ResultCardShare';
 import { createResultCard } from './sharing/resultCard';
+import { ExecutionResult } from './sharing/ChipExecutionResult';
+import { RecordEvidence } from './sharing/RecordEvidence';
 import { SubjectImage, WalletAvatar } from './media/SubjectImage';
 import { artworkSource } from './consumer-ui/artwork';
 import { withVerifiedSubjectMedia } from './consumer-ui/catalog';
+import './consumer-ui/tradingLayout.css';
 
 const renderAvatar = (props: { address: string; src?: string; className: string }) => <WalletAvatar {...props} />;
 const renderSubjectImage = (props: { src?: string; alt: string; className: string }) => <SubjectImage {...props} />;
@@ -49,15 +52,29 @@ function useData<T>(load: () => Promise<{ data: T }>, deps: unknown[]) {
   }, deps);
   return { value, error, loading };
 }
-function ownProfile(): Promise<{ data: PublicProfile | null }> {
-  return isFixture ? api.getProfile(DEMO_WALLET) : Promise.resolve({ data: null });
+// Retain only the same identity while refreshing. A new revision is blocked during
+// render, before the effect starts, so stale data cannot authorize an action.
+function useRetainedData<T>(load: () => Promise<{ data: T }>, identity: string, revision: string) {
+  const [state, setState] = useState<{ identity: string; revision: string; value: T | null; error: string; loading: boolean }>({ identity, revision, value: null, error: '', loading: true });
+  useEffect(() => {
+    let active = true;
+    setState(previous => ({ identity, revision, value: previous.identity === identity ? previous.value : null, error: '', loading: true }));
+    load().then(response => {
+      if (active) setState({ identity, revision, value: response.data, error: '', loading: false });
+    }).catch((cause: unknown) => {
+      if (active) setState(previous => ({ identity, revision, value: previous.identity === identity ? previous.value : null, error: displayConsumerError(cause instanceof Error ? cause.message : null, 'Could not refresh this data.'), loading: false }));
+    });
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identity, revision]);
+  const sameIdentity = state.identity === identity;
+  const current = sameIdentity && state.revision === revision;
+  return { value: sameIdentity ? state.value : null, error: current ? state.error : '', loading: !current || state.loading };
 }
 
 const marketName = (id: string) => ({ 'm-attention': 'attention', 'm-meme': 'meme', 'm-outage': 'outage', 'm-signal': 'signal', 'm-wait': 'moment', 'fixture:sol': 'solana', 'fixture:unready': 'unready' })[id as 'm-attention'] || id;
 const statusText = { PREPARING: 'Preparing data', VALID: 'Data current', LOW_ACTIVITY: 'Low activity', OUTAGE: 'Data unavailable' };
 const phaseText = { CURVE: 'Bonding curve', GRADUATION_WAIT: 'Graduation pending', INDEXED: 'Index market' };
-const reasonText: Record<string, string> = { DATA_NOT_READY: 'Preparing data', DATA_STALE: 'Observation delayed', LOW_ACTIVITY: 'New paid trades paused during low activity', WRONG_PHASE: 'Unavailable at this market stage', PENDING_CONFIRMATION: 'Chain connection unavailable', LIMIT_REACHED: 'Limit reached', BUDGET_EXHAUSTED: 'Cost limit reached', STORAGE_BACKLOG: 'Proof storage pending' };
-const proofText: Record<ProofStatus['state'], string> = { QUEUED: 'Proof pending', UPLOADED: 'Uploaded to storage', CONFIRMING: 'Confirming storage', READY_TO_ISSUE: 'Ready to issue', ISSUED: 'Proof issued', INVALID: 'Proof invalid', REPLACED: 'Replacement proof available' };
 function date(seconds: number | null) { return seconds ? new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC', hour12: false }).format(seconds * 1000) + ' UTC' : '—'; }
 function percent(value: { numerator: string; denominator: string } | null, digits = 1) {
   if (!value || value.denominator === '0') return 'N/A';
@@ -91,13 +108,19 @@ function LiveFreeAction({ market, recordId, mode, profileLoading, limitReached, 
   const [progress, setProgress] = useState<FreeProgress | null>(null);
   const [outcome, setOutcome] = useState<FreeOutcome | null>(null);
   const running = useRef(false);
+  const [outcomeAction, setOutcomeAction] = useState<FreeRequest['action']>(recordId ? 'closeFree' : 'openFree');
+  const outcomeRequest = useRef<FreeRequest | null>(null);
   const wallet = currentWalletContext();
   const requestValue: FreeRequest = { market, action: recordId ? 'closeFree' : 'openFree', recordId };
   const unavailable = mode !== walletCluster ? 'The API network does not match your wallet network.' : !liveFreeFlow ? 'Chip placement is unavailable here.' : limitReached && !recordId ? 'You have reached the three active chip limit.' : liveFreeFlow.supportReason(requestValue, wallet);
-  useEffect(() => { setProgress(null); setOutcome(liveFreeFlow?.pending(requestValue, currentWalletContext()) ?? null); }, [connected?.account.address, market.id, recordId]);
+  useEffect(() => {
+    if (outcome) return;
+    const pendingOutcome = liveFreeFlow?.pending(requestValue, currentWalletContext()) ?? null;
+    if (pendingOutcome) { outcomeRequest.current = requestValue; setOutcomeAction(requestValue.action); setOutcome(pendingOutcome); }
+  }, [recordId, outcome]);
   async function run() {
     if (!liveFreeFlow || running.current || unavailable || profileLoading) return;
-    running.current = true; setBusy(true); setOutcome(null); setProgress('AUTH');
+    running.current = true; outcomeRequest.current = requestValue; setOutcomeAction(requestValue.action); setBusy(true); setOutcome(null); setProgress('AUTH');
     try {
       const result = await liveFreeFlow.run(requestValue, setProgress);
       setOutcome(result);
@@ -108,7 +131,7 @@ function LiveFreeAction({ market, recordId, mode, profileLoading, limitReached, 
     if (!liveFreeFlow || running.current || !outcome?.requestId) return;
     running.current = true; setBusy(true);
     try {
-      const result = await liveFreeFlow.recheck(requestValue, outcome.requestId, outcome.signature);
+      const result = await liveFreeFlow.recheck(outcomeRequest.current ?? requestValue, outcome.requestId, outcome.signature);
       setOutcome(result);
       if (result.state === 'FINALIZED') changed();
     } finally { running.current = false; setBusy(false); }
@@ -119,19 +142,29 @@ function LiveFreeAction({ market, recordId, mode, profileLoading, limitReached, 
   return <>
     <button className={`button full ${disabled ? 'button-disabled' : 'button-chip'}`} disabled={disabled} onClick={run}>{busy ? progressText[progress ?? 'AUTH'] : recordId ? 'Take back chip' : 'Place chip'} <span>↗</span></button>
     {unavailable && <p className="tiny muted">{displayConsumerError(unavailable)}</p>}
-    {outcome && <Notice tone={outcome.state === 'FINALIZED' ? 'blue' : outcome.state === 'FAILED' ? 'red' : 'orange'}>{outcome.state === 'FINALIZED' ? 'Finalized. Refresh your activity to see the record.' : outcome.state === 'UNKNOWN' || outcome.state === 'CONFIRMED' || outcome.state === 'SUBMITTED' ? 'Status is not final. Check this request before trying again.' : displayConsumerError(outcome.reason)}{outcome.requestId && <span className="tiny"> Request ID: {outcome.requestId}</span>}{outcome.signature && <span className="tiny"> · Signature: {outcome.signature}</span>}</Notice>}
+    {outcome && <ExecutionResult outcome={outcome} action={outcomeAction} mode={mode} onNavigate={go} />}
+    {outcome?.state === 'FINALIZED' && <button className="button button-dark full" disabled={busy || profileLoading || projectionWaiting} onClick={() => { setOutcome(null); setProgress(null); outcomeRequest.current = null; }}>Continue in this market</button>}
     {projectionWaiting && <button className="button button-dark full" disabled={busy || profileLoading} onClick={changed}>Refresh finalized activity</button>}
     {pending && <button className="button button-dark full" disabled={busy || !connected} onClick={recheck}>Check existing request</button>}
   </>;
 }
 
-function MarketPage({ id, refresh, changed, mode, section = 'call' }: { id: string; refresh: number; changed: () => void; mode: Mode | null; section?: ActionTab }) {
-  const market = useData(() => api.getMarket(id), [id, refresh]);
+function MarketPage({ id, refresh, changed, mode, section = 'call', compact = false }: { id: string; refresh: number; changed: () => void; mode: Mode | null; section?: ActionTab; compact?: boolean }) {
+  const market = useRetainedData(async () => {
+    const response = await api.getMarket(id);
+    if (response.data && response.data.id !== id) throw new Error('Market identity could not be verified.');
+    return response;
+  }, `${mode}:${id}`, String(refresh));
   const connected = useConnectedWallet(walletClient);
   const walletAddress = connected?.account.address ?? null;
   const [profileRefresh, setProfileRefresh] = useState(0);
   const [, redrawProjection] = useState(0);
-  const profile = useData(() => isFixture ? ownProfile() : walletAddress ? api.getProfile(walletAddress) : Promise.resolve({ data: null }), [id, refresh, walletAddress, profileRefresh]);
+  const profile = useRetainedData(async () => {
+    const expectedWallet = isFixture ? DEMO_WALLET : walletAddress;
+    const response = expectedWallet ? await api.getProfile(expectedWallet) : { data: null };
+    if (response.data && response.data.wallet !== expectedWallet) throw new Error('Wallet profile identity could not be verified.');
+    return response;
+  }, `${mode}:${id}:${walletAddress ?? (isFixture ? DEMO_WALLET : 'disconnected')}`, `${refresh}:${profileRefresh}`);
   const projectionWait = liveFreeFlow?.projectionPending(id, currentWalletContext());
   useEffect(() => {
     if (!profile.loading && !profile.error && liveFreeFlow?.observeProfile(id, currentWalletContext(), profile.value)) redrawProjection(value => value + 1);
@@ -150,7 +183,7 @@ function MarketPage({ id, refresh, changed, mode, section = 'call' }: { id: stri
   const m = market.value;
   const open = profile.value?.openRecords.find((record) => record.marketId === id);
   async function mutate() {
-    if (!m) return;
+    if (!m || market.loading || market.error || profile.loading || profile.error) return;
     setBusy(true); setMessage('');
     try {
       const response = open ? await api.closeFree(DEMO_WALLET, open.id) : await api.openFree(DEMO_WALLET, m.id);
@@ -158,29 +191,32 @@ function MarketPage({ id, refresh, changed, mode, section = 'call' }: { id: stri
       else setMessage(displayConsumerError(response.reason));
     } finally { setBusy(false); }
   }
-  if (market.loading) return <div className="page"><p className="muted">Loading markets…</p></div>;
-  if (market.error) return <div className="page"><ErrorBox message={market.error} /></div>;
+  if (market.loading && !m) return <div className="page"><p className="muted">Loading markets…</p></div>;
+  if (market.error && !m) return <div className="page"><ErrorBox message={market.error} /></div>;
   if (!m) return <div className="page"><Empty title="Market not found" /></div>;
+  const refreshBlocked = market.loading || !!market.error;
   const freeAllowed = m.capabilities[open ? 'closeFree' : 'openFree'];
   const ownLimit = (profile.value?.openRecords.length || 0) >= 3;
   const duplicate = !open && profile.value?.openRecords.some((record) => record.marketId === m.id);
-  return <div className="page">
-    <div className="detail-title"><span className="eyebrow blue-text">DEVNET MARKET</span><div className="tag-row"><Tag tone="blue">{phaseText[m.phase]}</Tag><Tag tone={m.dataStatus === 'VALID' ? 'green' : m.dataStatus === 'OUTAGE' ? 'red' : 'orange'}>{statusText[m.dataStatus]}</Tag>{!m.supported && <Tag tone="orange">Data coverage pending</Tag>}</div></div>
+  return <div className={`page${compact ? ' au-order-page' : ''}`}>
+    {refreshBlocked && <Notice tone={market.error ? 'red' : 'blue'}>{market.error ? `Could not verify the latest market data. New actions are blocked. ${market.error}` : 'Refreshing market data. New actions are temporarily blocked.'}</Notice>}
+    {compact && <div className="au-order-context"><div className="tag-row"><Tag tone="blue">{phaseText[m.phase]}</Tag><Tag tone={m.dataStatus === 'VALID' ? 'green' : 'orange'}>{statusText[m.dataStatus]}</Tag>{!m.supported && <Tag tone="orange">Data coverage pending</Tag>}</div>{section !== 'call' && <div className="au-order-price"><span>{m.price?.kind === 'curve' ? 'Curve quote' : 'Index reference'}</span><strong>{m.price ? `${atoms(m.price.atoms)} tUSD` : 'Unavailable'}</strong><small>Final price confirmed in your quote</small></div>}{section === 'liquidity' && <p className="tiny muted">Reference price and vault NAV are separate. Load your balances below for current vault NAV and shares.</p>}</div>}
+    {!compact && <><div className="detail-title"><span className="eyebrow blue-text">DEVNET MARKET</span><div className="tag-row"><Tag tone="blue">{phaseText[m.phase]}</Tag><Tag tone={m.dataStatus === 'VALID' ? 'green' : m.dataStatus === 'OUTAGE' ? 'red' : 'orange'}>{statusText[m.dataStatus]}</Tag>{!m.supported && <Tag tone="orange">Data coverage pending</Tag>}</div></div>
     <div className="detail-grid"><div className="metric-card primary-metric"><span className="eyebrow">{m.price?.kind === 'curve' ? 'Curve quote' : 'Index reference'}</span><strong>{m.price ? atoms(m.price.atoms) : '—'}<small>{m.price ? ' tUSD' : ''}</small></strong><p>{isFixture ? 'Sample reference · not an execution price' : m.price?.executable ? 'Published snapshot · rechecked at execution' : 'Reference only · unavailable for execution'}</p></div><div className="metric-card"><span className="eyebrow">Fixed price cap</span><strong>{m.anchor ? `${atoms(m.anchor.maxPriceAtoms)} tUSD` : '—'}</strong><p>{m.anchor ? 'Graduation anchor' : 'Before graduation / no anchor'}</p></div></div>
-    <div className="comparison-strip"><div><span>Attention change since chip placement</span><strong>{open ? 'Chip active' : 'See activity'}</strong></div><div><span>Weekly price change</span><strong>No data</strong></div><div><span>My trade P&L</span><strong>No P&L data</strong></div></div>
+    <div className="comparison-strip"><div><span>Attention change since chip placement</span><strong>{open ? 'Chip active' : 'See activity'}</strong></div><div><span>Weekly price change</span><strong>No data</strong></div><div><span>My trade P&L</span><strong>No P&L data</strong></div></div></>}
     {section === 'call' && <section className="detail-panel"><div className="section-head"><div><span className="eyebrow orange-text">CHIPS</span><h2>{open ? 'Your chip is active' : 'Place a chip'}</h2></div><span className="au-chip-count" aria-label={`${profile.value?.openRecords.length ?? 'Unknown'} of 3 active chips`}><span aria-hidden="true">◉</span> {profile.value?.openRecords.length ?? '—'} / 3 active</span></div><p>{open ? 'Take back your chip to finalize the attention result and free up this chip.' : 'Place a chip on this keyword and take it back later. The result tracks attention change, not a cash payout.'}</p>
-      <div className="rule-list"><div><span>Active chips</span><strong>{profile.value?.openRecords.length ?? '—'} / 3</strong></div><div><span>Per market</span><strong>Maximum one</strong></div><div><span>New placements</span><strong>6 per wallet / 24 h · 100 total</strong></div></div>
+      <details className="au-chip-rules" open={compact ? undefined : true}><summary>Chip limits</summary><div className="rule-list"><div><span>Active chips</span><strong>{profile.value?.openRecords.length ?? '—'} / 3</strong></div><div><span>Per market</span><strong>Maximum one</strong></div><div><span>New placements</span><strong>6 per wallet / 24 h · 100 total</strong></div></div></details>
       {m.dataStatus === 'LOW_ACTIVITY' && <Notice tone="orange">Activity is low. Chips remain available; new paid trades are paused.</Notice>}
       {m.dataStatus === 'OUTAGE' && <Notice tone="red">You can still place or take back a chip while data is unavailable. Taking it back now may record N/A.</Notice>}
       {m.dataStatus === 'PREPARING' && <Notice tone="orange">The index is preparing. A missing entry reference will not be backfilled.</Notice>}
       {message && <Notice tone="blue">{message}</Notice>}
       {!isFixture && profile.error && <Notice tone="red">Could not verify your active chips, so another action is blocked. {profile.error}</Notice>}
-      {isFixture ? <button className="button button-chip full" disabled={busy || freeAllowed?.allowed === false || (!!ownLimit && !open) || !!duplicate} onClick={mutate}>{busy ? 'Processing…' : open ? 'Take back chip' : 'Place chip'} <span>↗</span></button> : <LiveFreeAction market={m} recordId={open?.id ?? null} mode={mode} profileLoading={profile.loading || !!profile.error} limitReached={ownLimit} projectionWaiting={!!projectionWait} changed={changed} />}
-      {(freeAllowed?.allowed === false || (ownLimit && !open)) && <p className="tiny muted">{ownLimit && !open ? 'You have reached the three active chip limit.' : reasonText[freeAllowed?.reason || ''] || displayConsumerError(freeAllowed?.reason)}</p>}
+      {isFixture ? <button className="button button-chip full" disabled={busy || refreshBlocked || profile.loading || !!profile.error || freeAllowed?.allowed === false || (!!ownLimit && !open) || !!duplicate} onClick={mutate}>{busy ? 'Processing…' : open ? 'Take back chip' : 'Place chip'} <span>↗</span></button> : <LiveFreeAction key={`${mode}:${id}:${walletAddress ?? 'disconnected'}`} market={m} recordId={open?.id ?? null} mode={mode} profileLoading={refreshBlocked || profile.loading || !!profile.error} limitReached={ownLimit} projectionWaiting={!!projectionWait} changed={changed} />}
+      {(freeAllowed?.allowed === false || (ownLimit && !open)) && <p className="tiny muted">{ownLimit && !open ? 'You have reached the three active chip limit.' : displayConsumerError(freeAllowed?.detail ?? freeAllowed?.reason)}</p>}
       <p className="tiny muted">{isFixture ? 'This changes a browser-only sample record. It does not submit a transaction or issue proof.' : 'Devnet actions require wallet signature, entry approval, and final chain confirmation.'}</p>
       {open && <RecordCard record={open} compact />}
     </section>}
-    {section !== 'call' && <><Link to="/faucet" className="text-link">Get test tUSD ↗</Link><FinancialMarket key={`${m.id}:${section}`} market={m} section={section === 'trade' ? 'money' : section === 'liquidity' ? 'lp' : 'pro'} onFinalized={changed} /></>}
+    {section !== 'call' && <><Link to="/faucet" className="text-link">Get test tUSD ↗</Link><FinancialMarket key={`${m.id}:${section}`} market={m} refreshBlocked={refreshBlocked} section={section === 'trade' ? 'money' : section === 'liquidity' ? 'lp' : 'pro'} onFinalized={changed} /></>}
     {m.snapshot && <details className="au-evidence-details"><summary>Data and market details</summary><div className="snapshot-strip"><span>Observed {date(m.snapshot.payload.dataThrough)}</span><span>Formula {m.snapshot.payload.formulaVersion}</span><span>Query {m.snapshot.payload.queryHash.slice(0, 8)}…</span><Tag tone={m.snapshot.payload.admission.state === 'OPEN' ? 'green' : 'orange'}>{m.snapshot.payload.admission.state === 'OPEN' ? 'New entries open' : m.snapshot.payload.admission.state === 'RECOVERING' ? `Recovery checks ${m.snapshot.payload.admission.recoveryCount}/2` : 'New entries paused'}</Tag></div></details>}
   </div>;
 }
@@ -220,8 +256,7 @@ function RecordPage({ id }: { id: string }) {
     <div className="result-hero"><span className="eyebrow">Attention change since chip placement</span><strong className={r.result?.kind === 'return' && Number(r.result.numerator) < 0 ? 'red' : ''}>{result}</strong><p>{r.result?.kind === 'na' ? displayConsumerError(r.result.reason) : r.status === 'OPEN' ? 'Before taking back · reference result is excluded from ranking' : 'Fixed when taken back · separate from weekly price change and trade P&L'}</p></div>
     <div className="timeline"><div><span className="timeline-dot" /><span>Placed a chip</span><strong>{date(r.entry.executedAt)}</strong><small>{r.entry.h ? 'Entry reference recorded' : r.entry.unavailableReason ? displayConsumerError(r.entry.unavailableReason) : 'No entry reference'}</small></div><div><span className="timeline-dot" /><span>Took back a chip</span><strong>{r.exit ? date(r.exit.executedAt) : 'Still active'}</strong><small>{r.exit ? r.exit.h ? 'Return reference recorded' : r.exit.unavailableReason ? displayConsumerError(r.exit.unavailableReason) : 'No return reference' : 'Chips have no scheduled return'}</small></div></div>
     <details className="au-evidence-details"><summary>Record evidence</summary><div className="au-evidence-grid"><div><span>Placement slot</span><code>{r.entry.slot}</code></div><div><span>Placement index (h)</span><code>{r.entry.h ? `${r.entry.h.numerator}/${r.entry.h.denominator}` : r.entry.unavailableReason ? displayConsumerError(r.entry.unavailableReason) : 'Unavailable'}</code></div>{r.exit && <><div><span>Return slot</span><code>{r.exit.slot}</code></div><div><span>Return index (h)</span><code>{r.exit.h ? `${r.exit.h.numerator}/${r.exit.h.denominator}` : r.exit.unavailableReason ? displayConsumerError(r.exit.unavailableReason) : 'Unavailable'}</code></div></>}</div></details>
-    <section className="detail-panel proof-panel"><span className="eyebrow orange-text">VERIFY THE CHIP</span><h2>Record and proof status</h2>{r.status === 'OPEN' ? <Notice tone="blue">An active chip has an entry record. Result proof is issued separately after it is taken back.</Notice> : proof.loading ? <p className="muted">Loading proof status…</p> : proof.error ? <ErrorBox message={proof.error} /> : p ? <><div className="proof-state"><Tag tone={p.state === 'ISSUED' ? 'green' : p.state === 'INVALID' || p.state === 'REPLACED' ? 'red' : 'orange'}>{proofText[p.state]}</Tag><span>{p.confirmations === null ? 'Confirmations unavailable' : `Storage transaction ${p.confirmations}/20 confirmations`}</span></div>{p.error && <Notice tone={p.state === 'INVALID' || p.state === 'REPLACED' ? 'red' : 'orange'}>{displayConsumerError(p.error)}</Notice>}{p.replacementId && <Link to={`/proofs/${encodeURIComponent(p.replacementId)}`} className="text-link">Replacement proof {p.replacementId} ↗</Link>}<details className="au-evidence-details"><summary>Proof evidence</summary><div className="proof-facts"><div><span>Content hash</span><code>{p.payloadHash ? `${p.payloadHash.slice(0, 12)}…` : 'Pending'}</code></div><div><span>Manifest</span><strong>{p.manifestRef?.arweaveItemId || 'Pending storage'}</strong></div><div><span>SAS ID</span><strong>{p.sasId || 'Not issued'}</strong></div><div><span>Source evidence</span><strong>{p.evidence[0]?.arweaveItemId || 'Pending storage'}</strong></div></div></details></> : <Notice tone="orange">Taking back the chip is recorded while proof is pending. The result and slot release are separate from proof issuance.</Notice>}
-      <p className="tiny muted">{isFixture ? 'Sample hashes, transactions, and SAS IDs are examples, not verifiable external links. ' : ''}Result proof is issued only after evidence storage, inclusion, and 20-confirmation checks.</p></section>
+    <RecordEvidence record={r} proof={p} mode={transportMode()} loading={proof.loading} unavailable={!!proof.error} />
     {shareCard && <ResultCardShare key={r.id} data={shareCard} />}
     <div className="record-footer"><Link to={`/u/${encodeURIComponent(r.wallet)}`} className="text-link">View public profile ↗</Link><span className="tiny muted">Shared cards are snapshots of the record</span></div>
   </div>;
@@ -229,7 +264,12 @@ function RecordPage({ id }: { id: string }) {
 
 function ProofPage({ id }: { id: string }) {
   const proof = useData(() => api.getProof(id), [id]);
-  return <div className="page"><Link to="/markets" className="back">← Explore</Link><div className="profile-header"><span className="eyebrow blue-text">PROOF HISTORY</span><h1>Proof history<span className="title-dot">.</span></h1></div>{proof.loading ? <p>Loading…</p> : proof.error ? <ErrorBox message={proof.error} /> : proof.value ? <div className="detail-panel"><h2>{proofText[proof.value.state]}</h2><p>{proof.value.error ? displayConsumerError(proof.value.error) : 'Proof status for this record.'}</p><details className="au-evidence-details"><summary>Proof evidence</summary><div className="proof-facts"><div><span>Proof ID</span><strong>{proof.value.id}</strong></div><div><span>Source record</span><Link to={`/records/${encodeURIComponent(proof.value.recordId)}`} className="text-link">{proof.value.recordId} ↗</Link></div><div><span>Content hash</span><code>{proof.value.payloadHash ? `${proof.value.payloadHash.slice(0, 12)}…` : 'Pending'}</code></div><div><span>Manifest</span><strong>{proof.value.manifestRef?.arweaveItemId || 'Pending storage'}</strong></div><div><span>SAS ID</span><strong>{proof.value.sasId || 'Not issued'}</strong></div></div></details>{proof.value.replacementId && <Link to={`/proofs/${encodeURIComponent(proof.value.replacementId)}`} className="text-link">View replacement proof ↗</Link>}</div> : <Empty title="Proof not found" />}</div>;
+  const recordId = proof.value?.recordId;
+  const record = useData(() => recordId ? api.getRecord(recordId) : Promise.resolve({ data: null }), [recordId]);
+  return <div className="page"><Link to="/markets" className="back">← Explore</Link><div className="profile-header"><span className="eyebrow blue-text">PROOF HISTORY</span><h1>Proof history<span className="title-dot">.</span></h1></div>{proof.loading ? <p>Loading…</p> : proof.error ? <ErrorBox message={proof.error} /> : proof.value ? <>
+    <Link to={`/records/${encodeURIComponent(proof.value.recordId)}`} className="text-link">View chip record ↗</Link>
+    {record.loading ? <p className="muted">Loading source record…</p> : record.error ? <ErrorBox message={record.error} /> : record.value?.id === proof.value.recordId ? <RecordEvidence record={record.value} proof={proof.value} mode={transportMode()} /> : <ErrorBox message="The proof's source record is unavailable or does not match." />}
+  </> : <Empty title="Proof not found" />}</div>;
 }
 
 const consumerHref = (route: ConsumerRoute) => route === 'discover' ? '/markets' : route === 'activity' ? '/me' : route === 'funds' ? '/faucet' : route === 'docs' ? '/docs' : '/leaderboard';
@@ -346,6 +386,7 @@ function ConsumerMarketPage({ id, mode, refresh, changed, transport, section, in
   section: ActionTab; initialPeriod: ConsumerPeriod; actionId: string | null;
 }) {
   const [period, setPeriod] = useState<ConsumerPeriod>(initialPeriod);
+  const [chartControlsExpanded, setChartControlsExpanded] = useState(false);
   const [failedArtUrl, setFailedArtUrl] = useState<string | null>(null);
   const changePeriod = (next: ConsumerPeriod) => { setPeriod(next); const url = new URL(window.location.href); url.searchParams.set('period', next); window.history.replaceState(null, '', url.pathname + url.search); };
   const history = useConsumerHistory(mode, id, period, refresh);
@@ -353,16 +394,19 @@ function ConsumerMarketPage({ id, mode, refresh, changed, transport, section, in
   const selected = history.value?.actions.find(action => action.id === actionId) ?? null;
   const liveId = history.value?.market.liveMarketId ?? id;
   const artSrc = artworkSource(history.value?.market.thumbnailUrl, failedArtUrl);
-  return <div className="au-consumer-detail">
+  const preferredSeriesKind: ConsumerSeriesKind | undefined = mode === 'REFERENCE' ? undefined : section === 'call' ? 'ATTENTION_INDEX' : section === 'trade' ? history.value?.series.some(series => series.kind === 'CURVE_PRICE' && series.points.length) ? 'CURVE_PRICE' : 'REFERENCE_PRICE' : 'REFERENCE_PRICE';
+  return <div className="au-consumer-detail au-trading-page">
     <button type="button" className="back" onClick={() => go('/markets')}>← Explore</button>
     {history.loading ? <p className="muted">Loading market history…</p> : history.error && !history.value ? <ErrorBox message={history.error} /> : !history.value ? <Empty title="Market not found" /> : !validHistory ? <ErrorBox message="Market history identity or mode does not match this route." /> : <>
       {history.stale && <Notice tone="orange">Live chart update failed. {history.value.period !== period ? `Showing the previous ${history.value.period} period while ${period} is unavailable. ` : ''}Last successful refresh: {history.refreshedAtMs ? new Date(history.refreshedAtMs).toLocaleString('en-US', { timeZone: 'UTC' }) + ' UTC' : 'unknown'}. {history.error}</Notice>}
       {history.value.period !== period && !history.refreshing && !history.stale && <Notice tone="orange">Showing the previous {history.value.period} period. The selected {period} period will load when this tab is visible.</Notice>}
       {history.refreshing && <p className="tiny muted" role="status">{history.value.period !== period ? `Loading ${period}; showing ${history.value.period} until it arrives…` : 'Updating live chart…'}</p>}
-      <div className="au-detail-heading">{artSrc && <img className="au-detail-art" src={artSrc} alt={history.value.market.imageAlt ?? `${history.value.market.title} artwork`} onError={() => setFailedArtUrl(artSrc)} />}<span className="eyebrow blue-text">{mode === 'REFERENCE' ? 'PUBLIC SOURCE' : 'DEVNET OBSERVED MARKET'}</span><h1>{history.value.market.title}<span className="title-dot">.</span></h1><p>{history.value.market.creatorLabel && `${history.value.market.creatorLabel} · `}{history.value.market.subtitle}</p>{history.value.market.subjectUrl && <a className="text-link" href={history.value.market.subjectUrl} target="_blank" rel="noopener noreferrer">View original ↗</a>}</div>
+      <div className="au-detail-heading">{artSrc && <img className="au-detail-art" src={artSrc} alt={history.value.market.imageAlt ?? `${history.value.market.title} artwork`} onError={() => setFailedArtUrl(artSrc)} />}<span className="eyebrow blue-text">{mode === 'REFERENCE' ? 'PUBLIC SOURCE' : history.value.market.source.label}</span><h1>{history.value.market.title}<span className="title-dot">.</span></h1><p>{history.value.market.creatorLabel && `${history.value.market.creatorLabel} · `}{history.value.market.subtitle}</p>{history.value.market.subjectUrl && <a className="text-link" href={history.value.market.subjectUrl} target="_blank" rel="noopener noreferrer">View original ↗</a>}</div>
       {selected && <div className="au-selected-action"><strong>{selected.kind === 'CALL_OPEN' ? 'Placed a chip' : selected.kind === 'CALL_CLOSE' ? 'Took back a chip' : selected.kind}</strong><span> · {selected.actorLabel}</span>{selected.note && <SocialNote note={selected.note} />}<button type="button" onClick={() => go(actorHref(selected.actorId, selected.id))}>View profile ↗</button></div>}
-      <ConsumerChart history={history.value} onPeriodChange={changePeriod} onSelectAction={action => go(actorHref(action.actorId, action.id))} actorHref={id => actorHref(id)} recordHref={recordId => `/records/${encodeURIComponent(recordId)}`} noteHref={action => actorHref(action.actorId, action.id)} />
-      {mode === 'REFERENCE' ? <ReferenceMarketActions section={section} onChange={tab => go(`${marketHref(id)}${tab === 'call' ? '' : `/${tab === 'liquidity' ? 'lp' : tab}`}`)} /> : liveId !== id ? <ErrorBox message="Market execution identity does not match this chart." /> : <><ActionTabs value={section} onChange={tab => go(`${marketHref(id)}${tab === 'call' ? '' : `/${tab === 'liquidity' ? 'lp' : tab}`}`)} /><MarketPage id={liveId} refresh={refresh} changed={changed} mode={transport} section={section} /></>}
+      <div className="au-trading-workspace">
+        <div className={`au-trading-chart${chartControlsExpanded ? ' au-chart-controls-expanded' : ' au-chart-controls-compact'}`}><button type="button" className="au-mobile-chart-controls" aria-expanded={chartControlsExpanded} onClick={() => setChartControlsExpanded(value => !value)}>{chartControlsExpanded ? 'Compact chart' : 'Chart controls'} <span aria-hidden="true">{chartControlsExpanded ? '−' : '+'}</span></button><ConsumerChart history={history.value} preferredSeriesKind={preferredSeriesKind} onPeriodChange={changePeriod} onSelectAction={action => go(actorHref(action.actorId, action.id))} actorHref={id => actorHref(id)} recordHref={recordId => `/records/${encodeURIComponent(recordId)}`} noteHref={action => actorHref(action.actorId, action.id)} /></div>
+        <div className="au-trading-actions">{mode === 'REFERENCE' ? <ReferenceMarketActions section={section} onChange={tab => go(`${marketHref(id)}${tab === 'call' ? '' : `/${tab === 'liquidity' ? 'lp' : tab}`}`)} /> : liveId !== id ? <ErrorBox message="Market execution identity does not match this chart." /> : <><ActionTabs value={section} onChange={tab => go(`${marketHref(id)}${tab === 'call' ? '' : `/${tab === 'liquidity' ? 'lp' : tab}`}`)} /><MarketPage id={liveId} refresh={refresh} changed={changed} mode={transport} section={section} compact /></>}</div>
+      </div>
     </>}
   </div>;
 }

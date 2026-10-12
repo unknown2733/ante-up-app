@@ -28,11 +28,21 @@ const profiles = await Promise.all(publicBoard.data.rows.map(row => getPublic(`/
 const actualRecords = [...new Map(profiles.flatMap(page => [...page.data.openRecords, ...page.data.closedRecords]).map(record => [record.id, record])).values()];
 const closed = actualRecords.filter(record => record.status === 'CLOSED_RESULT');
 if (!closed.length) throw new Error('No real closed records available for share-card QA.');
-const actualCases = [closed.find(record => Number(record.result?.numerator) >= 0) ?? closed[0], closed.find(record => Number(record.result?.numerator) < 0)].filter(Boolean);
+const issuedRecord=(await getPublic('/api/v1/records/CjbpsPJJyqKBxoAmUcMTet5HNXz6hQxeeHquAN4afJTN')).data;
+const issuedProof=(await getPublic(`/api/v1/proofs/${encodeURIComponent(issuedRecord.proofId)}`)).data;
+if(issuedProof?.state!=='ISSUED'||issuedProof.recordId!==issuedRecord.id)throw new Error('Known public issued proof unavailable.');
+const actualCases = [...new Map([issuedRecord, closed.find(record => Number(record.result?.numerator) < 0)].filter(Boolean).map(record=>[record.id,record])).values()];
 const localCases = [
   { ...closed[0], id: 'qa-local:open-exclusion', status: 'OPEN', result: null, exit: null, proofId: null },
   { ...closed[0], id: 'qa-local:missing-performance', status: 'CLOSED_NA', result: { kind: 'na', reason: 'SOURCE_UNAVAILABLE' }, proofId: null },
+  { ...issuedRecord,id:'qa-local:proof-pending',proofId:'qa-local:pending-proof' },
+  { ...issuedRecord,id:'qa-local:proof-invalid',proofId:'qa-local:invalid-proof' },
 ];
+const localProofs=[
+  {...issuedProof,id:'qa-local:pending-proof',recordId:'qa-local:proof-pending',state:'CONFIRMING',sasId:null,confirmations:19},
+  {...issuedProof,id:'qa-local:invalid-proof',recordId:'qa-local:proof-invalid',state:'INVALID',error:'CALCULATION_ERROR'},
+];
+const proofCases=[issuedProof,...localProofs];
 const cases = [...actualCases, ...localCases];
 const allowedImageOrigins = [...new Set(catalog.map(item => {
   try { const url = new URL(item.thumbnailUrl); return url.protocol === 'https:' ? url.origin : null; } catch { return null; }
@@ -40,7 +50,7 @@ const allowedImageOrigins = [...new Set(catalog.map(item => {
 const runRoot = path.join(root, '.runtime/result-card-qa');
 await mkdir(runRoot, { recursive: true });
 const run = await mkdtemp(path.join(runRoot, 'browser-'));
-await writeFile(path.join(run, 'cases.json'), JSON.stringify({ actualCases, localCases, note: 'Local cases are explicit QA-only response overrides, never public evidence.' }, null, 2));
+await writeFile(path.join(run, 'cases.json'), JSON.stringify({ actualCases, localCases, issuedProof, localProofs, note: 'Local cases are explicit QA-only response overrides, never public evidence.' }, null, 2));
 await writeFile(path.join(run, 'catalog.json'), JSON.stringify(catalog, null, 2));
 await readFile(path.join(dist, 'index.html'));
 const results = [], failures = [], blockedRequests = [], browserErrors = [], publicReads = [];
@@ -59,6 +69,8 @@ const server = createServer(async (request, response) => {
       if (!url.pathname.startsWith('/api/v1/') || /\/auth(?:\/|$)/.test(url.pathname)) { send(403, 'text/plain', 'Public reads only'); return; }
       const localCase = localCases.find(record => url.pathname === `/api/v1/records/${encodeURIComponent(record.id)}`);
       if (localCase) { send(200, 'application/json', JSON.stringify({ schemaVersion: '0.1', mode: 'devnet', asOf: Math.floor(Date.now()/1000), nextCursor: null, data: localCase })); return; }
+      const localProof = localProofs.find(proof => url.pathname === `/api/v1/proofs/${encodeURIComponent(proof.id)}`);
+      if (localProof) { send(200, 'application/json', JSON.stringify({ schemaVersion: '0.1', mode: 'devnet', asOf: Math.floor(Date.now()/1000), nextCursor: null, data: localProof })); return; }
       const target = new URL(url.pathname + url.search, upstream);
       const result = await fetch(target, { method: request.method, redirect: 'error', signal: AbortSignal.timeout(20_000) });
       const body = Buffer.from(await result.arrayBuffer());
@@ -155,6 +167,19 @@ try {
     const magnitude=Math.abs(value).toFixed(2);
     return `${Number(magnitude)===0?'':value<0?'−':'+'}${magnitude}%`;
   };
+  const proofProbe=()=>evaluate(`(()=>({text:document.body.innerText,overflow:Math.max(0,document.documentElement.scrollWidth-innerWidth),links:[...document.querySelectorAll('.au-proof-links a')].map(a=>({text:a.textContent,href:a.href})),panel:!!document.querySelector('.au-proof-links')}))()`);
+  const checkProof=async(proof,name)=>{
+    let state;
+    for(let i=0;i<60;i++){await delay(100);state=await proofProbe();if(state.panel&&!state.text.includes('Checking proof status'))break;}
+    const assert=(ok,message)=>{if(!ok)failures.push(`${name}: ${message}`);};
+    assert(state.panel,'proof panel missing');
+    const archive=state.links.filter(l=>l.href.startsWith('https://arweave.net/'));
+    const sas=state.links.filter(l=>l.text.includes('SAS attestation'));
+    assert(proof.state==='ISSUED'?archive.length===proof.evidence.length+1&&sas.length===1:archive.length===0&&sas.length===0,'issued/pending/invalid external proof links incorrect');
+    if(proof.state==='ISSUED')await evaluate("document.querySelector('.au-proof-artifacts')?.setAttribute('open','')");
+    state=await proofProbe();assert(state.overflow===0,`expanded proof overflow ${state.overflow}px`);
+    return state;
+  };
   for(const viewport of [{name:'desktop-1440',width:1440,height:900,mobile:false},{name:'mobile-390',width:390,height:844,mobile:true},{name:'mobile-320',width:320,height:568,mobile:true}]){
     await send('Emulation.setDeviceMetricsOverride',{...viewport,name:undefined,deviceScaleFactor:1});
     await send('Emulation.setTouchEmulationEnabled',{enabled:viewport.mobile,maxTouchPoints:viewport.mobile?5:1});
@@ -164,13 +189,20 @@ try {
       await send('Page.navigate',{url:new URL(`/records/${encodeURIComponent(record.id)}`,base).href});
       let probe=await waitFor(state=>record.status==='OPEN'?state.text.includes('Active'):state.shareSection);
       check(probe.overflow===0,`record page overflow ${probe.overflow}px`);
+      const recordProof=proofCases.find(p=>p.id===record.proofId);
+      if(recordProof){const evidence=await checkProof(recordProof,name);await screenshot(`${name}-evidence`);check(evidence.panel,'record proof evidence absent');}
       if(record.status==='OPEN'){
         check(!probe.shareSection&&!probe.dialog,'open record offers a result card');
         results.push({name,recordId:record.id,localOverride:true,probe,image:await screenshot(name)});
         continue;
       }
+      // Record, market and proof fetch independently; a provisional share section may disappear
+      // while a later useData effect starts. Recheck after proof assertions before interacting.
+      probe=await waitFor(state=>state.shareSection&&state.text.includes('Create result card'));
       check(probe.shareSection,'closed record share section absent');
-      check(await click('Create result card ↗'),'create result card control absent');
+      const created=await click('Create result card ↗');
+      check(created,'create result card control absent');
+      if(!created){results.push({name,recordId:record.id,probe,image:await screenshot(name)});continue;}
       probe=await waitFor(state=>state.dialog&&state.image?.complete&&state.image.width>0);
       check(probe.dialog&&probe.image?.width===1080&&probe.image.height===1080,'PNG preview did not render at1080×1080');
       check(probe.bounds?.left>=0&&probe.bounds.right<=viewport.width&&probe.bounds.scroll<=probe.bounds.client,'share dialog has horizontal overflow');
@@ -200,10 +232,10 @@ try {
         for(const mode of ['success','cancel','fail']){
           await evaluate(`window.__qaShareMode=${JSON.stringify(mode)};window.__qaShared=null`);
           check(await click('Share image'),'native image share control absent with supported file API');
-          const state=await waitFor(value=>!!value.shared&&(mode!=='fail'||value.feedback.includes('Sharing did not complete')));
+          const state=await waitFor(value=>!!value.shared&&(mode!=='fail'||value.feedback?.includes('Sharing did not complete')));
           check(state.shared?.files.length===1&&state.shared.files[0].type==='image/png'&&state.shared.files[0].size===download?.bytes&&state.shared.files[0].sha256===download?.sha256,'native share did not receive the same prepared PNG bytes');
           check(state.shared?.text.includes(expectedLink)&&state.shared.text.includes('Not a cash return'),'native share text omits result context or canonical record URL');
-          check(mode==='fail'?state.feedback.includes('Sharing did not complete'):state.feedback==='',`native ${mode} feedback is incorrect`);
+          check(mode==='fail'?state.feedback?.includes('Sharing did not complete'):state.feedback==='',`native ${mode} feedback is incorrect`);
           check(state.actions.includes('Save PNG')&&state.actions.includes('Copy record link'),'native share removed fallback controls');
           attempts.push({mode,shared:state.shared,feedback:state.feedback});
         }
@@ -214,13 +246,25 @@ try {
       check(await evaluate("(()=>{const e=document.querySelector('[aria-label=\"Close result card\"]');if(!e)return false;e.click();return true})()"),'dialog close control absent');
       check(!(await waitFor(state=>!state.dialog)).dialog,'dialog did not close');
     }
+    for(const proof of proofCases){
+      const name=`${viewport.name}-proof-${proof.state.toLowerCase()}`;
+      await send('Page.navigate',{url:new URL(`/proofs/${encodeURIComponent(proof.id)}`,base).href});
+      const probe=await checkProof(proof,name);
+      results.push({name,proofId:proof.id,localOverride:localProofs.some(p=>p.id===proof.id),probe,image:await screenshot(name)});
+      if(proof.state==='ISSUED'){
+        await evaluate("document.querySelector('.au-proof-artifacts')?.scrollIntoView({block:'start'})");
+        await delay(100);
+        results[results.length-1].artifactImage=await screenshot(`${name}-artifacts`);
+      }
+    }
     console.log(JSON.stringify({viewport:viewport.name,cases:results.length,failures:failures.length}));
   }
   if(blockedRequests.length)failures.push(`${blockedRequests.length} disallowed requests attempted and blocked`);
   if(browserErrors.length)failures.push(`${browserErrors.length} browser errors`);
   const output=path.join(run,'report.json');
-  await writeFile(output,JSON.stringify({sourceSha:option('--source-sha'),run,results,failures,browserErrors,blockedRequests,publicReads,
-    boundary:'Actual closed records use public GETs. OPEN and missing-result variants are explicit localhost-only QA response overrides. Clipboard and native file sharing are mocked inside the isolated page. No user wallet/browser, writes, social posting or transaction.'},null,2));
+  const assets=[];for(const filename of (await readdir(path.join(dist,'assets'))).filter(name=>/\.(js|css)$/.test(name))){assets.push({file:filename,sha256:createHash('sha256').update(await readFile(path.join(dist,'assets',filename))).digest('hex')});}
+  await writeFile(output,JSON.stringify({sourceSha:option('--source-sha'),assets,run,results,failures,browserErrors,blockedRequests,publicReads,
+    boundary:'Actual closed records/issued proof use public GETs. OPEN, missing-result, pending and invalid proof variants are explicit localhost-only QA response overrides. Clipboard and native file sharing are mocked inside the isolated page. No user wallet/browser, writes, social posting or transaction.'},null,2));
   console.log(JSON.stringify({output,cases:results.length,failureCount:failures.length,failures},null,2));
   if(failures.length)process.exitCode=1;
 }catch(error){

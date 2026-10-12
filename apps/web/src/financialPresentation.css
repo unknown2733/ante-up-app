@@ -1,0 +1,5 @@
+.finance-holdings>div{display:flex;flex-direction:column;gap:5px;overflow-wrap:anywhere}
+.finance-holdings>div>span,.finance-holdings>div>small{font-size:12px;color:var(--au-muted,#68717c)}
+.au-finance-outcome code{display:block;overflow-wrap:anywhere;white-space:normal;font-size:11px;margin-top:6px}
+.au-finance-outcome details{margin-top:8px}.au-finance-outcome summary{cursor:pointer;min-height:32px}
+.au-finance-outcome a{display:inline-flex;align-items:center;min-height:44px;color:var(--au-blue,#275eaf)}

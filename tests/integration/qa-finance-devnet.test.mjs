@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {auditFinance,syntheticCandidate,safeError} from '../../scripts/qa-finance-devnet.mjs';
+import {auditFinance,syntheticCandidate,safeError,runProfile,DEMO_LABEL} from '../../scripts/qa-finance-devnet.mjs';
 import {UNIT,pro,indexPrice} from '../../contracts/reference.mjs';
 import {verifyPublishedSnapshot} from '../../services/indexer/src/snapshot.ts';
 
@@ -42,4 +42,14 @@ test('synthetic rise and fall exercise both 5x payoff directions independently o
   assert.equal(pro(100n*UNIT,50000n,base.price,up.price,base.maximum,'short').payout,0n);
   assert.equal(pro(100n*UNIT,50000n,up.price,down.price,base.maximum,'long').payout,0n);
   assert.equal(pro(100n*UNIT,50000n,up.price,down.price,base.maximum,'short').payout,266666666n);
+});
+
+test('demo profile has distinct identity, bounded support and honest candidate provenance',()=>{
+  const profile=runProfile({ANTE_UP_QA_PROFILE:'demo'});
+  assert.equal(profile.label,DEMO_LABEL);assert.equal(profile.maxContribution,7200n*UNIT);
+  assert.notEqual(profile.label,runProfile({}).label);
+  assert.throws(()=>runProfile({ANTE_UP_QA_PROFILE:'arbitrary'}));
+  const item=syntheticCandidate({market:'test-market',sequence:1n,queryHash:new Uint8Array(32),
+    configVersion:1n,computedAt:1800000000,activity:125n,label:profile.label});
+  assert.equal(item.syntheticEvidence.label,DEMO_LABEL);assert.equal(item.syntheticEvidence.notRealTrend,true);
 });

@@ -5,10 +5,21 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FreeRecord, MarketView, PublishedSnapshot } from '../../../contracts/types.ts';
-import { createConsumerHistoryAdapter, historyGaps, SqliteFinalizedQuoteHistory } from '../src/consumer-history.ts';
+import { createConsumerHistoryAdapter, projectConsumerMarket, historyGaps, SqliteFinalizedQuoteHistory } from '../src/consumer-history.ts';
 
 const now = 1_800_000_000_000;
 const market = { id: 'market-1', keyword: 'solana', phase: 'CURVE', price: { kind: 'curve', atoms: '1250000', executable: true } } as MarketView;
+test('synthetic executable Devnet market retains explicit provenance in catalog and history',async()=>{
+  const synthetic={...market,dataProvenance:'SYNTHETIC_QA' as const};
+  const projected=projectConsumerMarket(synthetic,now);
+  assert.equal(projected.liveMarketId,market.id);
+  assert.match(projected.source.label,/Synthetic test feed/);
+  assert.match(projected.subtitle,/not measured attention/);
+  const reader=createConsumerHistoryAdapter({namespace:'devnet:program-1',market:async()=>synthetic,
+    snapshots:async()=>[snapshot('1',now-1000,'125','100')],records:async()=>[],priceObservations:async()=>[],nowMs:()=>now});
+  const history=await reader.getHistory(market.id,'ALL');
+  assert.match(history!.source.label,/Synthetic/);assert.equal(history!.series[0].label,'Synthetic test ratio');
+});
 const snapshot = (sequence: string, atMs: number, nowQ12: string | null, d7Q12: string | null): PublishedSnapshot => ({
   finality: 'finalized', payloadHash: `hash-${sequence}`, payload: { marketId: market.id, sequence, dataThrough: atMs / 1000, dataStatus: 'VALID',
     activityNowQ12: nowQ12, activity7dQ12: d7Q12 },

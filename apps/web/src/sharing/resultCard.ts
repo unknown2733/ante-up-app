@@ -1,4 +1,5 @@
 import type { FreeRecord, Mode, ProofStatus } from '../../../../contracts/types';
+import { proofIsVerified } from './proofLinks.ts';
 
 export interface ResultCardData {
   title: string; result: string; negative: boolean; wallet: string; recordId: string;
@@ -17,9 +18,9 @@ export function formatResult(record: FreeRecord): string {
 const utc = (seconds: number) => new Date(seconds * 1000).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
 export function createResultCard(record: FreeRecord, title: string, mode: Mode | null, proof: ProofStatus | null, proofUnavailable = false, now = Date.now()): ResultCardData | null {
   if (record.status === 'OPEN' || record.finality !== 'finalized' || !record.exit) return null;
-  const matched = proof?.recordId === record.id && proof.id === record.proofId ? proof : null;
+  const matched = !proofUnavailable && proof?.recordId === record.id && proof.id === record.proofId ? proof : null;
   const state = matched?.state;
-  const proofLabel = state === 'ISSUED' && matched?.sasId ? 'SAS issued' : state === 'INVALID' ? 'Proof invalid' : state === 'REPLACED' ? 'Proof replaced' : proofUnavailable ? 'Proof status unavailable' : 'Proof pending';
+  const proofLabel = mode !== 'fixture' && proofIsVerified(matched) ? 'SAS issued' : state === 'INVALID' ? 'Proof invalid' : state === 'REPLACED' ? 'Proof replaced' : proofUnavailable ? 'Proof status unavailable' : 'Proof pending';
   return { title, result: formatResult(record), negative: record.result?.kind === 'return' && /^-\d+$/.test(record.result.numerator), wallet: record.wallet, recordId: record.id,
     placed: utc(record.entry.executedAt), closed: utc(record.exit.executedAt), proof: proofLabel,
     network: mode === 'devnet' ? 'SOLANA DEVNET' : mode === 'localnet' ? 'LOCALNET TEST' : mode === 'fixture' ? 'SAMPLE RECORD' : 'NETWORK UNAVAILABLE',

@@ -1,0 +1,32 @@
+services:
+  keeper:
+    image: ante-up:${ANTE_UP_RELEASE:?Set reviewed release}
+    user: "${ANTE_UP_UID:-1000}:${ANTE_UP_GID:-1000}"
+    restart: "on-failure:3"
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 45s
+    mem_limit: 768m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+    command: [flock, -n, -F, /state/keeper.lock, node, services/keeper/src/service.ts]
+    environment:
+      ANTE_UP_KEEPER_ENABLED: ${ANTE_UP_KEEPER_ENABLED:?Set yes after preflight}
+      ANTE_UP_KEEPER_MAX_PASSES: ${ANTE_UP_KEEPER_MAX_PASSES:-9007199254740991}
+      ANTE_UP_KEEPER_SCOPE: /state/keeper/scope.json
+      ANTE_UP_KEEPER_JOURNAL: /state/live-smoke/candidates.json
+      ANTE_UP_KEEPER_ATTEMPTS: /state/keeper/attempts.sqlite
+      ANTE_UP_KEEPER_GENESIS_HASH: ${ANTE_UP_KEEPER_GENESIS_HASH:?Set verified Devnet genesis hash}
+      ANTE_UP_RPC_URL_FILE: /run/secrets/rpc.url
+      ANTE_UP_PUBLISHER_KEYPAIR_FILE: /run/secrets/publisher.json
+      ANTE_UP_KEEPER_KEYPAIR_FILE: /run/secrets/keeper.json
+    volumes:
+      - ${ANTE_UP_STATE_DIR:?Set state directory}:/state
+      - ${ANTE_UP_SECRET_DIR:?Set secret directory}/devnet-rpc.url:/run/secrets/rpc.url:ro
+      - ${ANTE_UP_SECRET_DIR:?Set secret directory}/devnet-publisher.json:/run/secrets/publisher.json:ro
+      - ${ANTE_UP_KEEPER_KEYPAIR_HOST_FILE:?Set reviewed keeper signer file}:/run/secrets/keeper.json:ro

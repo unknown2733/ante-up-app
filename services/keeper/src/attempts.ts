@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 
-export type KeeperAction='ACCEPT_SETTLEMENT'|'SETTLE_PRO'|'START_LP_WINDOW';
+export type KeeperAction='ACCEPT_SETTLEMENT'|'SETTLE_PRO'|'START_LP_WINDOW'|'RECOVER_LP_WINDOW';
 export interface KeeperAttemptKey {action:KeeperAction;marketId:string;cycle:string;entity:string}
 export interface KeeperAttempt extends KeeperAttemptKey {
   fingerprint:string;generation:number;state:'UNKNOWN'|'SUBMITTED'|'FINALIZED'|'FAILED';signature:string|null;
@@ -24,9 +24,15 @@ export class SqliteKeeperAttempts {
     if (!row) return null;
     return {...key,fingerprint:String(row.fingerprint),generation:Number(row.generation),state:String(row.state) as KeeperAttempt['state'],signature:row.signature===null?null:String(row.signature)};
   }
+  unresolved(action:KeeperAction,marketId:string):KeeperAttempt[] {
+    const rows=this.db.prepare("SELECT cycle,entity FROM keeper_attempts WHERE action=? AND market_id=? AND state IN ('UNKNOWN','SUBMITTED')")
+      .all(action,marketId) as Array<{cycle:string;entity:string}>;
+    return rows.map(row=>this.get({action,marketId,cycle:row.cycle,entity:row.entity})!);
+  }
   reserve(key:KeeperAttemptKey,fingerprint:string,now:number):{created:boolean;attempt:KeeperAttempt} {
     if (!hash.test(fingerprint) || !Number.isSafeInteger(now) || now<0 || !/^(0|[1-9][0-9]*)$/.test(key.cycle) ||
-        !key.marketId || key.action==='SETTLE_PRO' && !key.entity || key.action!=='SETTLE_PRO' && key.entity!=='') throw new Error('KEEPER_ATTEMPT_INVALID');
+        !key.marketId || ['SETTLE_PRO','RECOVER_LP_WINDOW'].includes(key.action) && !key.entity ||
+        !['SETTLE_PRO','RECOVER_LP_WINDOW'].includes(key.action) && key.entity!=='') throw new Error('KEEPER_ATTEMPT_INVALID');
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const prior=this.get(key);

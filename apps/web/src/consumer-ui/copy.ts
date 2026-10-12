@@ -16,6 +16,9 @@ export const consumerCopy = {
 } as const;
 
 const errors: Record<string, string> = {
+  ENTRY_PAUSED: 'New chips are temporarily paused. Existing chips can still be taken back.',
+  GLOBAL_OUTSTANDING_LIMIT: 'The market-wide active chip limit has been reached. Existing chips can still be taken back.',
+  GLOBAL_DAILY_LIMIT: 'The daily placement limit has been reached. Existing chips can still be taken back.',
   DATA_NOT_READY: 'Market data is still being prepared.',
   DATA_STALE: 'Market data is delayed. Try again when it updates.',
   LOW_ACTIVITY: 'New paid trades are paused while activity is low.',

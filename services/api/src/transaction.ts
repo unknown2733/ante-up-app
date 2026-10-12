@@ -53,7 +53,7 @@ export class KitFreeTransactionAdapter implements TransactionAdapter {
     let recordId: string;
     let instruction;
     if (input.action === 'openFree') {
-      if (market.capabilities.openFree?.allowed !== true) throw new Error('DATA_NOT_READY');
+      if (market.capabilities.openFree?.allowed !== true) throw new Error(market.capabilities.openFree?.reason??'DATA_NOT_READY');
       const nonce = this.options.nextRecordNonce?.() ?? randomBytes(8).readBigUInt64LE();
       if (nonce < 0n || nonce > 18_446_744_073_709_551_615n) throw new Error('INVALID_RECORD_NONCE');
       const [recordAddress] = await findRecordPda({market: address(market.id), owner: address(input.wallet), recordId: nonce}, {programAddress: address(this.options.programId)});

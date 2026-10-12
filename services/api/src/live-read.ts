@@ -1,7 +1,7 @@
 import { address } from '@solana/kit';
 import { AdmissionState, DataStatus, MarketPhase, findMarketPda, findAdmissionPda, getMarketDecoder, getAdmissionDecoder,
   MARKET_DISCRIMINATOR, ADMISSION_DISCRIMINATOR } from '../../../clients/chain/dist/index.js';
-import type { FreeRecord, MarketView, ProofStatus } from '../../../contracts/types.ts';
+import type { Capability, FreeRecord, MarketView, ProofStatus } from '../../../contracts/types.ts';
 import { SqliteProjectionStore } from '../../indexer/src/sqlite.ts';
 import { SqliteEventRepositories, type FinalizedAccountReader } from '../../indexer/src/repositories.ts';
 import type { ReadAdapter } from './app.ts';
@@ -10,7 +10,10 @@ import { FinalizedFinancialAccounts, financialEpochPhase } from './financial-cha
 import type { SqliteFinancialRegistrationStore } from './registration.ts';
 import { UNIT, indexPrice } from '../../../contracts/reference.mjs';
 
-export interface MarketRegistryEntry {address:string;seedHex:string;keyword:string;aliases:string[]}
+export interface MarketRegistryEntry {address:string;seedHex:string;keyword:string;aliases:string[];dataProvenance?:'SYNTHETIC_QA'}
+export function mergeMarketRegistry(registry:MarketRegistryEntry[],registrations:MarketRegistryEntry[]):MarketRegistryEntry[] {
+  return [...new Map([...registrations,...registry].map(entry=>[entry.address,entry])).values()];
+}
 export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader {
   readonly mode: 'localnet'|'devnet';
   private readonly programId: string;
@@ -37,9 +40,13 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
     if (!admissionRaw || admissionRaw.ownerProgramId!==this.programId || !Buffer.from(admissionRaw.data.subarray(0,8)).equals(Buffer.from(ADMISSION_DISCRIMINATOR))) throw new Error('FINALIZED_ADMISSION_UNAVAILABLE');
     const admission=getAdmissionDecoder().decode(admissionRaw.data);
     const recent=admission.recent.filter(at=>at>0n && BigInt(this.now())-at<86_400n).length;
-    const freeGate=admission.open && admission.outstanding<200 && recent<100;
+    const freeEntry:Capability=!admission.open ? {allowed:false,reason:'ENTRY_PAUSED'}
+      : admission.outstanding>=200 ? {allowed:false,reason:'LIMIT_REACHED',detail:'GLOBAL_OUTSTANDING_LIMIT'}
+      : recent>=100 ? {allowed:false,reason:'LIMIT_REACHED',detail:'GLOBAL_DAILY_LIMIT'}
+      : {allowed:true,reason:null};
     const result:MarketView[]=[];
-    const entries=[...new Map([...this.registry,...(this.registrations?.finalized()??[])].map(entry=>[entry.address,entry])).values()];
+    // Operator registry is authoritative for display/provenance; auto registrations cannot relabel a synthetic feed.
+    const entries=mergeMarketRegistry(this.registry,this.registrations?.finalized()??[]);
     for (const entry of entries) {
       if (!/^[0-9a-f]{64}$/.test(entry.seedHex)) throw new Error('INVALID_MARKET_SEED');
       const seed=Uint8Array.from(Buffer.from(entry.seedHex,'hex'));
@@ -55,7 +62,6 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
       const latest=snapshots.filter(s=>s.payload.marketId===entry.address).sort((a,b)=>BigInt(a.payload.sequence)<BigInt(b.payload.sequence)?1:-1)[0]??null;
       const matched=latest && latest.payload.sequence===chain.latestSequence.toString() && Buffer.from(chain.latestHash).toString('hex')===latest.payloadHash;
       const snapshot=matched?latest:null;
-      const openAllowed=freeGate;
       let anchor=null,price=null,epochPhase=null;
       if (this.financial) {
         try {
@@ -78,9 +84,10 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
         } catch (error) { if (this.registrations?.finalized().some(r=>r.address===entry.address)) throw error; }
       }
       result.push({id:entry.address,keyword:entry.keyword,aliases:entry.aliases,phase,dataStatus,epochPhase,supported:true,
+        ...(entry.dataProvenance==='SYNTHETIC_QA'?{dataProvenance:'SYNTHETIC_QA' as const}:{}),
         chain:{cluster:this.mode,programId:this.programId,address:entry.address},snapshot,anchor,price,
         capabilities:{curveBuy:{allowed:phase==='CURVE',reason:phase==='CURVE'?null:'WRONG_PHASE'},curveSell:{allowed:phase==='CURVE',reason:phase==='CURVE'?null:'WRONG_PHASE'},
-          openFree:{allowed:openAllowed,reason:openAllowed?null:'DATA_NOT_READY'},
+          openFree:entry.dataProvenance==='SYNTHETIC_QA'?{allowed:false,reason:'ENTRY_PAUSED'}:freeEntry,
           closeFree:{allowed:true,reason:null}}});
     }
     return result;

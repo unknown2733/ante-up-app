@@ -13,6 +13,18 @@ export interface ChartBounds { start: number; end: number }
 export interface ChartPoint { atMs: number; value: number; x: number; y: number }
 export interface ChartCluster { id: string; x: number; actions: ConsumerAction[] }
 
+/** Inspect stored observations, never synthesize a value inside a missing interval. */
+export function inspectChart(points: ChartPoint[], gaps: ConsumerSeries['gaps'], atMs: number) {
+  if (gaps.some(gap => atMs > gap.fromMs && atMs < gap.toMs)) return null;
+  return points.reduce<ChartPoint | null>((best, point) => !best || Math.abs(point.atMs - atMs) < Math.abs(best.atMs - atMs) ? point : best, null);
+}
+
+export function chartViewport(full: ChartBounds, center: number, width: number): ChartBounds {
+  const span = Math.min(full.end - full.start, Math.max(1, width));
+  const start = Math.max(full.start, Math.min(full.end - span, center - span / 2));
+  return { start, end: start + span };
+}
+
 /** A single catalog may show both sources; a chart must keep its own evidence lane. */
 export function scopedChartHistory(history: MarketHistory): MarketHistory {
   return { ...history,

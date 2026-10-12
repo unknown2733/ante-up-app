@@ -32,6 +32,7 @@ const oneOf = <T extends string>(v: unknown, values: readonly T[], name: string)
 
 export function validateMarket(v: unknown): MarketView {
   const m = object(v);
+  if(m.dataProvenance!==undefined)oneOf(m.dataProvenance,['SYNTHETIC_QA'] as const,'market.dataProvenance');
   string(m.id, 'market.id'); string(m.keyword, 'market.keyword');
   if (!Array.isArray(m.aliases) || !m.aliases.every(x => typeof x === 'string')) throw new InputError('market.aliases invalid');
   oneOf(m.phase, ['CURVE', 'GRADUATION_WAIT', 'INDEXED'] as const, 'market.phase');
@@ -68,6 +69,10 @@ export function validateMarket(v: unknown): MarketView {
   for (const [name, value] of Object.entries(capabilities)) {
     const c = object(value);
     if (typeof c.allowed !== 'boolean' || (c.reason !== null && typeof c.reason !== 'string')) throw new InputError(`capability ${name} invalid`);
+    if (c.detail !== undefined) {
+      oneOf(c.detail,['GLOBAL_OUTSTANDING_LIMIT','GLOBAL_DAILY_LIMIT'] as const,`capability ${name}.detail`);
+      if (c.allowed || c.reason!=='LIMIT_REACHED') throw new InputError(`capability ${name} limit detail mismatch`);
+    }
   }
   return v as MarketView;
 }

@@ -6,6 +6,8 @@ import { apiClock, isFixture, liveFinancialFlow } from './api';
 import { currentWalletContext, walletClient, walletCluster } from './walletSdk';
 import type { FinancialOutcome, FinancialProgress } from './liveFinancial';
 import { displayConsumerError } from './consumer-ui/copy';
+import { transactionHref } from './sharing/proofLinks';
+import './financialPresentation.css';
 
 function atomAmount(input: string): string {
   const value = input.trim();
@@ -74,10 +76,10 @@ export function PrivateFinancialPanel({ wallet, refresh }: { wallet: string; ref
   </section>;
 }
 
-export function FinancialMarket({ market, section, onFinalized }: { market: MarketView; section: 'money' | 'pro' | 'lp'; onFinalized: () => void }) {
+export function FinancialMarket({ market, section, onFinalized, refreshBlocked = false }: { market: MarketView; section: 'money' | 'pro' | 'lp'; onFinalized: () => void; refreshBlocked?: boolean }) {
   const connected = useConnectedWallet(walletClient);
   const wallet = currentWalletContext();
-  const actions = financialActions.filter((action) => section === 'money' ? moneyActions.has(action) : section === 'pro' ? proActions.has(action) : lpActions.has(action));
+  const actions = financialActions.filter((action) => section === 'money' ? moneyActions.has(action) && action.startsWith(market.phase === 'INDEXED' ? 'spot' : 'curve') : section === 'pro' ? proActions.has(action) : lpActions.has(action));
   const [action, setAction] = useState<FinancialAction>(actions[0]);
   const [quantity, setQuantity] = useState('');
   const [direction, setDirection] = useState<'long' | 'short'>('long');
@@ -97,10 +99,14 @@ export function FinancialMarket({ market, section, onFinalized }: { market: Mark
   useEffect(() => { setQuote(null); setOutcome(null); setError(''); }, [action, quantity, direction, leverage, positionId, claimId]);
   const modeProblem = isFixture || !liveFinancialFlow ? 'Financial actions are unavailable.' : !wallet ? 'Connect a wallet.' : wallet.cluster !== walletCluster || market.chain?.cluster !== wallet.cluster || market.chain.address !== market.id ? 'Wallet network does not match this market.' : null;
   const capability = market.capabilities[action as Action];
-  const unavailable = modeProblem ?? (capability?.allowed !== true ? `${actionLabel[action]} unavailable: ${displayConsumerError(capability?.reason, 'Execution unavailable')}` : null);
+  const unavailable = refreshBlocked ? 'Refreshing market conditions. Wait for a current quote.' : modeProblem ?? (capability?.allowed !== true ? `${actionLabel[action]} unavailable: ${displayConsumerError(capability?.reason, 'Execution unavailable')}` : null);
   const activePosition = portfolio?.positions.filter((item) => item.marketId === market.id && item.owner === wallet?.address && item.status === 'OPEN') ?? [];
   const unpaidClaims = portfolio?.claims.filter((item) => item.marketId === market.id && item.owner === wallet?.address && item.status === 'UNPAID') ?? [];
   const shares = portfolio?.lpShares.find((item) => item.marketId === market.id);
+  const heldTokens = portfolio?.tokenBalances.find(item => item.marketId === market.id);
+  const outcomeLink = outcome && (outcome.state === 'FINALIZED' || outcome.state === 'CONFIRMED')
+    ? transactionHref(outcome.signature, wallet?.cluster === 'devnet' ? 'devnet' : null) : null;
+  useEffect(() => { if (!actions.includes(action)) { setAction(actions[0]); setQuote(null); } }, [market.phase]);
 
   async function loadPrivate() {
     if (!liveFinancialFlow || !wallet) return;
@@ -126,7 +132,7 @@ export function FinancialMarket({ market, section, onFinalized }: { market: Mark
     finally { setBusy(false); setProgress(null); }
   }
   async function execute() {
-    if (!liveFinancialFlow || !quote || busy) return;
+    if (!liveFinancialFlow || !quote || busy || refreshBlocked) return;
     setBusy(true); setError('');
     try {
       const result = await liveFinancialFlow.execute(quote, setProgress);
@@ -144,9 +150,12 @@ export function FinancialMarket({ market, section, onFinalized }: { market: Mark
   }
 
   return <section className="detail-panel finance-panel"><span className="eyebrow orange-text">{section === 'money' ? 'TRADING' : section === 'pro' ? 'PRO' : 'LIQUIDITY'}</span><h2>{section === 'money' ? 'Curve and spot trading' : section === 'pro' ? 'Pro positions and settlement' : 'Liquidity deposits and withdrawals'}</h2>
+    {market.dataProvenance === 'SYNTHETIC_QA' && <Notice>Synthetic test feed · Devnet. This market demonstrates financial execution with test assets, not measured public attention.</Notice>}
     <p>Trades use test tUSD. Display prices and quotes do not guarantee execution; market state, available capital, balance, and time window are checked again when you sign.</p>
     <div className="finance-tabs">{actions.map((item) => <button key={item} type="button" className={action === item ? 'active' : ''} onClick={() => setAction(item)}>{actionLabel[item]}</button>)}</div>
-    {section !== 'money' && <button className="button button-dark" disabled={busy || !!modeProblem} onClick={() => void loadPrivate()}>{portfolio ? 'Refresh my positions and balances' : 'View my positions and balances'}</button>}
+    <button className="button button-dark" disabled={busy || !!modeProblem} onClick={() => void loadPrivate()}>{portfolio ? 'Refresh my balances' : 'View my balances'}</button>
+    {portfolio && <div className="finance-facts" aria-label="Your market balances"><Fact label="Test balance">{amount(portfolio.quoteBalanceAtoms)} tUSD</Fact>{section === 'money' && <Fact label="Your market tokens">{amount(heldTokens?.atoms ?? '0')}</Fact>}{section === 'lp' && <Fact label="Your liquidity shares">{amount(shares?.sharesAtoms ?? '0')}</Fact>}</div>}
+    {section === 'pro' && portfolio && <div className="finance-holdings" aria-label="Your open positions">{activePosition.length === 0 ? <p className="tiny muted">No open positions in this market.</p> : activePosition.map(item => <div key={item.id}><strong>{item.direction === 'long' ? 'Long' : 'Short'} · {amount(item.collateralAtoms)} tUSD collateral</strong><span>Entry {amount(item.entryPriceAtoms)} tUSD · Notional {amount(item.notionalAtoms)} tUSD</span><small>Matures {date(item.maturityAt)}</small></div>)}</div>}
     {section === 'lp' && vault && <div className="finance-facts"><Fact label="Available capital">{amount(vault.freeCapitalAtoms)} tUSD</Fact><Fact label="Vault NAV">{amount(vault.navAtoms)} tUSD</Fact><Fact label="Settlement stage">{vault.epochPhase ?? 'Unavailable'}</Fact><Fact label="My withdrawable amount">{amount(shares?.withdrawableAtoms)}</Fact></div>}
     <div className="finance-form">
       {['curveBuy', 'curveSell', 'spotBuy', 'spotSell', 'openPro', 'depositLP', 'withdrawLP'].includes(action) && <label>{action === 'openPro' ? 'Collateral (tUSD)' : action === 'depositLP' ? 'Deposit (tUSD)' : action === 'withdrawLP' ? 'Shares to withdraw' : 'Market token amount'}<input inputMode="decimal" placeholder="0.000000" value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>}
@@ -157,12 +166,12 @@ export function FinancialMarket({ market, section, onFinalized }: { market: Mark
     {unavailable && <Notice>{unavailable}</Notice>}
     {pending && <Notice>This wallet has an unresolved request. Check it before sending another. Request ID: {pending.requestId}{pending.signature && ` · Signature: ${pending.signature}`}</Notice>}
     {error && <Notice error>{error}</Notice>}
-    {outcome && <Notice error={outcome.state === 'FAILED'}>{outcome.state === 'FINALIZED' ? 'Finalized on chain. Your account has been refreshed.' : outcome.reason ? displayConsumerError(outcome.reason) : `Request status: ${outcome.state}`} · Request ID: {outcome.requestId}{outcome.signature && ` · Signature: ${outcome.signature}`}</Notice>}
+    {outcome && <div className="au-finance-outcome" role="status"><Notice error={outcome.state === 'FAILED'}>{outcome.state === 'FINALIZED' ? 'Trade confirmed on Devnet.' : outcome.reason ? displayConsumerError(outcome.reason) : `Request status: ${outcome.state}`}{outcomeLink && <p><a href={outcomeLink} target="_blank" rel="noopener noreferrer">View transaction ↗</a></p>}<details><summary>Request details</summary><code>{outcome.requestId}</code>{outcome.signature && <code>{outcome.signature}</code>}</details></Notice></div>}
     {pending && <button className="button button-dark full" disabled={busy || !connected} onClick={() => void recheck()}>Check existing request</button>}
     {!quote && <button className="button button-blue full" disabled={busy || !!unavailable || !!pending} onClick={() => void getQuote()}>{busy && progress === 'QUOTING' ? 'Getting quote…' : `${actionLabel[action]} · review quote`}</button>}
     {quote && <div className="finance-quote">{!busy && <QuoteExpiry remaining={quoteRemaining} />}<h3>Review quote before signing</h3><div className="finance-facts"><Fact label="Market · stage">{market.keyword} · {quote.phase ?? 'N/A'}</Fact><Fact label="Price">{amount(quote.priceAtoms)} tUSD</Fact><Fact label="Gross amount">{amount(quote.grossAtoms)} tUSD</Fact><Fact label="Trading fee">{amount(quote.tradeFeeAtoms)} tUSD</Fact><Fact label="Prepaid time cost">{amount(quote.timePrepaidAtoms)} tUSD</Fact><Fact label="Maximum payment">{amount(quote.maxPaymentAtoms)} tUSD</Fact><Fact label="Minimum received">{amount(quote.minReceiveAtoms)}</Fact><Fact label="Maximum payout reserve">{amount(quote.maxPayoutAtoms)} tUSD</Fact><Fact label="Maturity">{date(quote.maturityAt)}</Fact><Fact label="Quote expiry">{date(quote.expiresAt)}</Fact><Fact label="Config · state version">{quote.configVersion} · {quote.stateVersion}</Fact><Fact label="Snapshot">{quote.snapshot?.sequence ?? 'N/A'}</Fact></div><p>A quote does not reserve capital. Execution checks current state again and may fail or require a new quote.</p>
       {!liveFinancialFlow?.canExecute(action) && <Notice>Signing is unavailable because this action's chain accounts or data verifier is not connected.</Notice>}
-      <div className="finance-buttons"><button className="button button-dark" onClick={() => setQuote(null)}>Cancel · new quote</button><button className="button button-blue" disabled={busy || !liveFinancialFlow?.canExecute(action) || quoteRemaining === 0} onClick={() => void execute()}>{busy ? `${progress ?? 'Processing'}…` : 'Review and sign in wallet'}</button></div>
+      <div className="finance-buttons"><button className="button button-dark" onClick={() => setQuote(null)}>Cancel · new quote</button><button className="button button-blue" disabled={busy || refreshBlocked || !liveFinancialFlow?.canExecute(action) || quoteRemaining === 0} onClick={() => void execute()}>{busy ? `${progress ?? 'Processing'}…` : 'Review and sign in wallet'}</button></div>
     </div>}
   </section>;
 }

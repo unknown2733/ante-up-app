@@ -66,6 +66,9 @@ test('B keeper adapter verifies finalized cycle then builds accept, settle and L
   fm.openPositions=0;
   assert.equal(await chain.startLpWindow(marketId),'publisher-sig');
   assert.deepEqual([...sent[3].ix.data.subarray(0,8)],[...START_LP_WINDOW_DISCRIMINATOR]);
+  settlement=null;fm.currentMaturity=0n;
+  assert.equal(await chain.startLpWindow(marketId),'publisher-sig');
+  assert.equal(String(sent[4].ix.accounts[3].address),settlementAddress);
 });
 
 test('keeper signer transport signs one generated instruction and returns its signature',async()=>{
