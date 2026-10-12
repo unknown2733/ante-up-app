@@ -92,6 +92,27 @@ test('production App has no synthetic consumer adapter or example leaderboard', 
   assert.doesNotMatch(app, /\bdemoConsumerReadApi\b|\bdemoActors\b|Example leaderboard|mode=demo/);
 });
 
+test('unconnected subjects retain all action tabs without enabling quotes or wallet execution', async () => {
+  const { ReferenceMarketActions } = await server.ssrLoadModule('/src/reference/ReferenceMarketActions.tsx');
+  for (const section of ['call', 'trade', 'pro', 'liquidity']) {
+    const html = render(ReferenceMarketActions, { section, onChange: noAction });
+    assert.equal((html.match(/role="tab"/g) ?? []).length, 4);
+    assert.match(html, /Chips/);
+    assert.match(html, /Buy \/ Sell/);
+    assert.match(html, /Pro/);
+    assert.match(html, /Liquidity/);
+    assert.match(html, /Not connected/);
+    assert.match(html, /disabled="" aria-describedby="reference-action-reason"/);
+    assert.ok(html.includes('href="/docs/markets-trading"'));
+    assert.doesNotMatch(html, /Sign in wallet|Get quote|Connect wallet to trade/);
+    if (section !== 'call') assert.match(html, /disabled="" placeholder="Available when this market opens"/);
+  }
+  const app = readFileSync(resolve(appDir, 'src/App.tsx'), 'utf8');
+  assert.match(app, /mode === 'REFERENCE' \? <ReferenceMarketActions/);
+  const panel = readFileSync(resolve(appDir, 'src/reference/ReferenceMarketActions.tsx'), 'utf8');
+  assert.doesNotMatch(panel, /liveFinancialFlow|liveFreeFlow|FinancialMarket|currentWalletContext|fetch\(/);
+});
+
 test('single captured platform count renders its date and source without inventing a history', async () => {
   const { ConsumerChart } = await server.ssrLoadModule('/src/charts/ConsumerChart.tsx');
   const { referenceConsumerReadApi: api } = await server.ssrLoadModule('/src/reference/referenceData.ts');

@@ -133,7 +133,7 @@ try {
       periodControls:all('.au-chart-periods button').length,
       sources:all('a').filter(e=>e.textContent.includes('View data source')).map(e=>e.href),
       images:all('img').map(e=>({src:e.currentSrc||e.src,complete:e.complete,width:e.naturalWidth})),
-      enabledFinancial:all('button').filter(e=>!e.disabled&&/^(Place chip|Buy|Sell|Open Pro|Deposit liquidity)$/i.test(label(e))).map(label),
+      enabledFinancial:all('button').filter(e=>!e.disabled&&!e.hasAttribute('aria-pressed')&&/^(Place chip|Buy|Sell|Open Pro|Deposit liquidity)$/i.test(label(e))).map(label),
       unnamed:all('button,a,input').filter(e=>!label(e)&&!e.getAttribute('placeholder')&&!e.closest('label')).map(e=>e.outerHTML.slice(0,100))};
   })()`;
   async function visit(route, viewport, name, waitFor, navigate = true) {

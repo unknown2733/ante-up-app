@@ -15,6 +15,7 @@ import { ConsumerChart } from './charts/ConsumerChart';
 import { SocialLeaderboard, SocialNote, SocialNoteEditor, SocialNoteHistory, SocialProfile } from './social/Social';
 import { liveConsumerHttp } from './api';
 import { referenceConsumerReadApi, isReferenceConsumerId } from './reference/referenceData';
+import { ReferenceMarketActions } from './reference/ReferenceMarketActions';
 import { DocsPage } from './docs';
 import { SubjectImage, WalletAvatar } from './media/SubjectImage';
 import { artworkSource } from './consumer-ui/artwork';
@@ -341,7 +342,7 @@ function ConsumerMarketPage({ id, mode, refresh, changed, transport, section, in
       <div className="au-detail-heading">{artSrc && <img className="au-detail-art" src={artSrc} alt={history.value.market.imageAlt ?? `${history.value.market.title} artwork`} onError={() => setFailedArtUrl(artSrc)} />}<span className="eyebrow blue-text">{mode === 'REFERENCE' ? 'PUBLIC SOURCE' : 'DEVNET OBSERVED MARKET'}</span><h1>{history.value.market.title}<span className="title-dot">.</span></h1><p>{history.value.market.creatorLabel && `${history.value.market.creatorLabel} · `}{history.value.market.subtitle}</p>{history.value.market.subjectUrl && <a className="text-link" href={history.value.market.subjectUrl} target="_blank" rel="noopener noreferrer">View original ↗</a>}</div>
       {selected && <div className="au-selected-action"><strong>{selected.kind === 'CALL_OPEN' ? 'Placed a chip' : selected.kind === 'CALL_CLOSE' ? 'Took back a chip' : selected.kind}</strong><span> · {selected.actorLabel}</span>{selected.note && <SocialNote note={selected.note} />}<button type="button" onClick={() => go(actorHref(selected.actorId, selected.id))}>View profile ↗</button></div>}
       <ConsumerChart history={history.value} onPeriodChange={changePeriod} onSelectAction={action => go(actorHref(action.actorId, action.id))} actorHref={id => actorHref(id)} recordHref={recordId => `/records/${encodeURIComponent(recordId)}`} noteHref={action => actorHref(action.actorId, action.id)} />
-      {mode === 'REFERENCE' ? <Notice tone="blue">Explore this subject using its published source data. Chip placement and trading open when a Devnet market is connected.</Notice> : liveId !== id ? <ErrorBox message="Market execution identity does not match this chart." /> : <><ActionTabs value={section} onChange={tab => go(`${marketHref(id)}${tab === 'call' ? '' : `/${tab === 'liquidity' ? 'lp' : tab}`}`)} /><MarketPage id={liveId} refresh={refresh} changed={changed} mode={transport} section={section} /></>}
+      {mode === 'REFERENCE' ? <ReferenceMarketActions section={section} onChange={tab => go(`${marketHref(id)}${tab === 'call' ? '' : `/${tab === 'liquidity' ? 'lp' : tab}`}`)} /> : liveId !== id ? <ErrorBox message="Market execution identity does not match this chart." /> : <><ActionTabs value={section} onChange={tab => go(`${marketHref(id)}${tab === 'call' ? '' : `/${tab === 'liquidity' ? 'lp' : tab}`}`)} /><MarketPage id={liveId} refresh={refresh} changed={changed} mode={transport} section={section} /></>}
     </>}
   </div>;
 }

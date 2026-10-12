@@ -8,6 +8,8 @@ The collected Devnet `solana` keyword is the previously verified market in this 
 
 Preview snapshots name the platform metric, such as YouTube views, X post likes, or Spotify track streams. The linked source, UTC capture time, and any provider report date identify the count. Spotify counts reported by a third party retain that attribution and report date. A single count appears as a snapshot; histories and changes need additional observations.
 
+The **Chips**, **Buy / Sell**, **Pro**, and **Liquidity** tabs remain visible for preview subjects. You can explore each action, but inputs and submission stay disabled with **Not open yet** until the required market is connected. Adding a chart or another observation does not by itself enable trading.
+
 Data can be preparing, current, low activity, or unavailable. New paid entry may be blocked during a gap or recovery while an existing exit remains allowed. The action area explains unavailability. An API failure appears as unavailable data.
 
 ## Buy and sell
