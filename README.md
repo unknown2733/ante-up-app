@@ -2,7 +2,7 @@
 
 **Call it. Ante up. Prove it.**
 
-Ante Up is a mobile-first app for taking a view on internet attention. Make a free Call, follow how attention changes, and close it when you want to record the result. Optional Devnet trading connects the same markets to keyword tokens, leveraged positions and liquidity vaults.
+Ante Up is a mobile-first app for taking a view on internet attention. Place a no-money chip, follow how attention changes, and take back the chip to record the result. Optional Devnet trading connects eligible markets to keyword tokens, leveraged positions and liquidity vaults.
 
 **[Open the app](https://ante-up.fun)** · **Solana Devnet MVP** · **Updated October 13, 2026**
 
@@ -10,23 +10,23 @@ All financial flows use test assets. This is an experimental implementation, not
 
 ## Try it
 
-1. Open **Demo** to explore charts, Calls, profiles and rankings without a wallet. The 15 preset markets use explicitly simulated histories, including keywords, videos, music and accounts.
-2. Switch to **Live** for collected data and Devnet records. At the last deployment check, live collection covered one approved keyword: `solana`. Demo categories do not imply live API coverage.
+1. Open **Explore** to browse charts and subjects without a wallet. The R2 catalog combines the existing Devnet market with 15 recognizable subjects whose histories remain explicitly synthetic. A real title or image does not imply a live feed or executable pool.
+2. Check each item's source and action state. At the last deployment check, collected data covered one approved keyword: `solana`. Sample history and example activity stay separate from Devnet records and rankings.
 3. Connect a Devnet wallet. Desktop Phantom, Android Phantom's in-app browser, and Seeker Chrome with Seed Vault Wallet have completed real-device flows on an earlier UI release.
 4. Use the in-app **Faucet** for tUSD. Devnet SOL for transaction fees is separate. Faucet and new-entry availability depend on operator limits and data readiness.
-5. Place a free **Call**, watch its attention performance, and close it to record the result. A wallet can hold up to three concurrent Calls, with one per market. Free performance is not a cash return.
+5. **Place chip** on an eligible Devnet market, watch its attention reference, then **Take back chip** to finalize the result. A wallet can hold up to three active chips, with one per market. Attention change is not a cash return.
 
-The latest consumer UI still needs another real-wallet regression pass. A closed Call and its completed evidence/SAS attestation are separate states; archival and attestation may finish later.
+The unified R2 catalog and Docs are being integrated; the previously deployed site may still show the older Live/Demo navigation until a verified release. The latest consumer UI needs another real-wallet regression pass. A closed chip record and its completed evidence/SAS attestation are separate states; archival and attestation may finish later. Read the [product Docs](docs/product/README.md) for the source articles.
 
 ## What is implemented
 
 | Area | Current implementation |
 | --- | --- |
-| Consumer app | English mobile web, Live/Demo discovery, price and attention charts, Call markers, public free-Call profiles, leaderboard and authenticated notes |
-| Free Calls | Wallet-authorized entry and close, on-chain records, performance display and evidence status |
+| Consumer app | English mobile web, price and attention charts, participation markers, public profiles, leaderboard and authenticated notes; unified Explore is in R2 integration |
+| Chips | Wallet-authorized no-money entry and close, on-chain records, attention result and evidence status |
 | Test-asset trading | Faucet, registration, bonding-curve buy/sell, graduation, spot exchange, Pro long/short and LP participation |
 | Data | X Counts collector, validation, EWMA calculation and Solana snapshot publishing on a five-minute cycle |
-| Charts | Finalized-chain price samples every five minutes; visible Live charts refresh from the API every 60 seconds |
+| Charts | Finalized-chain price samples every five minutes; visible observed Devnet charts refresh from the API every 60 seconds |
 | Evidence | Raw inputs and calculation evidence archived through Arweave/Turbo; Solana records and SAS attestations link results to evidence |
 | Operations | API, indexer and bounded workers; provider budgets, stale-data handling and restart recovery |
 
@@ -42,7 +42,7 @@ flowchart TD
   E --> AR[Arweave via Turbo]
   W[Mobile and desktop web] --> API[API and wallet authorization]
   W --> WAL[User wallet]
-  WAL --> P[Anchor program: Calls, tokens, Pro and vaults]
+  WAL --> P[Anchor program: chips, tokens, Pro and vaults]
   S --> P
   P --> I[Finalized indexer and price sampler]
   I --> DB[SQLite read models and history]
@@ -52,7 +52,7 @@ flowchart TD
   SAS --> API
 ```
 
-The MVP has one operator-controlled data publisher. Recording a statement on-chain does not independently verify the truth of the source data. Profile notes are not SAS attestations. Fixture, Demo and Devnet data remain distinguishable.
+The MVP has one operator-controlled data publisher. Recording a statement on-chain does not independently verify the truth of the source data. Profile notes are not SAS attestations. Sample and observed Devnet data remain distinguishable.
 
 ## Repository layout
 
@@ -120,7 +120,7 @@ Completed checks on October 13, 2026; these are not continuous service guarantee
 | Web regression | 40/40 passed, including HTTP integration |
 | Consumer browser QA | 38 checks at desktop and mobile viewport sizes, using a local mock API |
 | Public deployment | Seven routes and JS/CSS/favicon matched the release; real API cross-view checks passed |
-| Real wallets | Earlier UI completed PC/Android Phantom and Seeker free-Call flows; Seeker curve buy/sell also finalized |
+| Real wallets | Earlier UI completed PC/Android Phantom and Seeker chip flows; Seeker curve buy/sell also finalized |
 | Financial program | Synthetic Devnet market exercised curve, graduation, spot, LP and 5× long/short flows |
 | Evidence | Real Arweave storage and SAS issuance verified for test records; pending records may still be incomplete |
 
@@ -128,17 +128,17 @@ Deployed consumer source: `8023388`. Integrated development baseline: `e66e708`.
 
 ### Remaining work
 
-- Repeat wallet approval, cancellation and response-loss recovery on the latest UI; verify an owning wallet's note write.
+- Integrate the R2 catalog, activity, Docs routes, and navigation; then repeat wallet approval, cancellation and response-loss recovery on the latest UI and verify an owning wallet's note write.
 - Integrate remaining proof-worker, keeper and operational follow-up changes from separate development branches.
 - Validate broader live source coverage, economic assumptions and production security before considering real assets.
 
 ## Design documentation
 
-Start with the [MVP specification](docs/implementation/MVP_SPEC.md), [contract revision 0.2](docs/implementation/CONTRACT_V02.md) and implementation sources. The older [product vision](docs/PRODUCT_VISION.md), [context](docs/CONTEXT.md), [PRD](docs/PRD.md) and [glossary](docs/GLOSSARY.md) preserve design history; their October 11 technical TBDs are superseded by later implementation decisions. They are not current deployment reports.
+For app guidance, start with [product Docs](docs/product/start.md). For implementation, read the [MVP specification](docs/implementation/MVP_SPEC.md), [contract revision 0.2](docs/implementation/CONTRACT_V02.md) and sources. The older [product vision](docs/PRODUCT_VISION.md), [context](docs/CONTEXT.md), [PRD](docs/PRD.md) and [glossary](docs/GLOSSARY.md) preserve design history; their October 11 technical TBDs are superseded by later implementation decisions. They are not current deployment reports.
 
 ## Publication and license
 
-A separate public repository is being prepared from the existing development project. Its initial publication commit is a snapshot, not the date all development began. Private operational records and credentials are excluded from the publication package.
+This public repository began as a snapshot of the development project. Its initial publication commit is not the date all development began. Private operational records and credentials are excluded from the publication package.
 
 Original source code and documentation are licensed under the [MIT License](LICENSE).
 Brand images are excluded; third-party components retain their own licenses. See
