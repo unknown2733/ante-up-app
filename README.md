@@ -16,13 +16,13 @@ All financial flows use test assets. This is an experimental implementation, not
 4. Use the in-app **Faucet** for tUSD. Devnet SOL for transaction fees is separate. Faucet and new-entry availability depend on operator limits and data readiness.
 5. **Place chip** on an eligible Devnet market, watch its attention reference, then **Take back chip** to finalize the result. A wallet can hold up to three active chips, with one per market. Attention change is not a cash return.
 
-The unified R2 catalog and Docs are being integrated; the previously deployed site may still show the older Live/Demo navigation until a verified release. The latest consumer UI needs another real-wallet regression pass. A closed chip record and its completed evidence/SAS attestation are separate states; archival and attestation may finish later. Read the [product Docs](docs/product/README.md) for the source articles.
+The unified R2 catalog and Docs are integrated in this checkout. This does not update the deployed site, which may still show the older Live/Demo navigation until a verified release. The latest consumer UI needs another real-wallet regression pass. A closed chip record and its completed evidence/SAS attestation are separate states; archival and attestation may finish later. Read the [product Docs](docs/product/README.md) for the source articles.
 
 ## What is implemented
 
 | Area | Current implementation |
 | --- | --- |
-| Consumer app | English mobile web, price and attention charts, participation markers, public profiles, leaderboard and authenticated notes; unified Explore is in R2 integration |
+| Consumer app | English mobile web, unified Explore, price and attention charts, participation markers, public profiles, leaderboard, authenticated notes and in-app Docs |
 | Chips | Wallet-authorized no-money entry and close, on-chain records, attention result and evidence status |
 | Test-asset trading | Faucet, registration, bonding-curve buy/sell, graduation, spot exchange, Pro long/short and LP participation |
 | Data | X Counts collector, validation, EWMA calculation and Solana snapshot publishing on a five-minute cycle |
