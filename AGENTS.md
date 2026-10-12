@@ -4,7 +4,9 @@ Read README.md for current implementation and verification boundaries. Then read
 docs/implementation/CONTRACT_V02.md and the relevant source/tests. Historical
 design notes preserve earlier decisions; do not treat their old TBDs as current.
 
-Preserve Live/Demo separation, wallet authorization, finalized-chain validation,
+Read docs/implementation/CONSUMER_UNIFIED_R2.md for the current parallel work contract.
+The user approved a unified catalog without a Live/Demo mode switch. Preserve
+observed/sample provenance and execution boundaries, wallet authorization, finalized-chain validation,
 liability reservations and existing user data. Never place private credentials
 in VITE_* inputs, commit operator keys, or claim simulated data is live evidence.
 

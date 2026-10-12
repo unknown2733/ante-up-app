@@ -9,6 +9,7 @@ export interface ConsumerMarket {
   phase: 'CURVE' | 'POOL' | 'PREVIEW'; source: ConsumerSource;
   latestPrice: string | null; priceUnit: string; changeFraction: number | null;
   thumbnailUrl?: string; liveMarketId?: string;
+  subjectUrl?: string; creatorLabel?: string; imageAlt?: string; imageSourceUrl?: string;
 }
 export interface ConsumerPoint { atMs: number; value: string; observationId?: string; }
 export interface ConsumerSeries {
@@ -23,6 +24,7 @@ export interface ConsumerNote {
 }
 export interface ConsumerAction {
   id: string; marketId: string; actorId: string; actorLabel: string;
+  actorAvatarUrl?: string;
   kind: 'CALL_OPEN' | 'CALL_CLOSE' | 'BUY' | 'SELL'; atMs: number;
   seriesId: string | null; value: string | null; recordId?: string;
   returnFraction: number | null; note: ConsumerNote | null; source: ConsumerSource;
@@ -33,6 +35,7 @@ export interface MarketHistory {
 }
 export interface ConsumerProfile {
   actorId: string; actorLabel: string; source: ConsumerSource;
+  avatarUrl?: string; avatarAlt?: string;
   closedCallCount: number; openCallCount: number; meanReturnFraction: number | null;
   actions: ConsumerAction[];
 }
