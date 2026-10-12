@@ -12,11 +12,12 @@ function logo() {
 
 export function ResultCardShare({ data }: { data: ResultCardData }) {
   const [open, setOpen] = useState(false), [retry, setRetry] = useState(0);
+  const [snapshot, setSnapshot] = useState(data);
   const [image, setImage] = useState<{ blob: Blob; url: string } | null>(null);
   const [error, setError] = useState(''), [message, setMessage] = useState('');
   const [sharing, setSharing] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
-  const key = JSON.stringify(data);
+  const key = JSON.stringify(snapshot);
   useEffect(() => {
     if (!open) return;
     dialog.current?.showModal();
@@ -28,30 +29,30 @@ export function ResultCardShare({ data }: { data: ResultCardData }) {
     }).catch(reason => { if (active) setError(reason instanceof Error ? reason.message : 'Could not create the card. Please retry.'); });
     return () => { active = false; if (url) URL.revokeObjectURL(url); };
   }, [open, key, retry]);
-  const filename = `ante-up-chip-${data.recordId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64)}.png`;
+  const filename = `ante-up-chip-${snapshot.recordId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64)}.png`;
   const file = image ? new File([image.blob], filename, { type: 'image/png' }) : null;
   const canShare = !!file && typeof navigator !== 'undefined' && !!navigator.canShare?.({ files: [file] });
   async function share() {
     if (!file || !canShare || sharing) return;
     setSharing(true); setMessage('');
-    try { await navigator.share({ files: [file], title: `${data.title} · Ante Up`, text: `Chip result: ${data.result} attention change. Not a cash return.${data.url ? `\n${data.url}` : ''}` }); }
+    try { await navigator.share({ files: [file], title: `${snapshot.title} · Ante Up`, text: `Chip result: ${snapshot.result} attention change. Not a cash return.${snapshot.url ? `\n${snapshot.url}` : ''}` }); }
     catch (reason) { if (!(reason instanceof DOMException && reason.name === 'AbortError')) setMessage('Sharing did not complete. Save the PNG or copy the record link instead.'); }
     finally { setSharing(false); }
   }
   async function copy() {
-    if (!data.url) return;
-    try { await navigator.clipboard.writeText(data.url); setMessage('Record link copied.'); }
+    if (!snapshot.url) return;
+    try { await navigator.clipboard.writeText(snapshot.url); setMessage('Record link copied.'); }
     catch { setMessage('Select and copy the record link below.'); }
   }
   return <section className="au-result-share"><div><span className="eyebrow orange-text">TAKE YOUR RESULT WITH YOU</span><h2>Share your chip</h2><p>A result card with the subject, timing and public record.</p></div>
-    <button type="button" className="button button-chip" onClick={() => setOpen(true)}>Create result card ↗</button>
+    <button type="button" className="button button-chip" onClick={() => { setSnapshot({ ...data, captured: new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC' }); setOpen(true); }}>Create result card ↗</button>
     {open && <dialog ref={dialog} className="au-share-dialog" aria-labelledby="result-card-heading" onCancel={() => setOpen(false)} onClose={() => setOpen(false)}>
       <div className="au-share-heading"><h2 id="result-card-heading">Your chip, on the record.</h2><button type="button" aria-label="Close result card" onClick={() => { dialog.current?.close(); setOpen(false); }}>×</button></div>
-      {image ? <img className="au-share-preview" src={image.url} width="1080" height="1080" alt={`${data.title}: ${data.result} attention change. ${data.network}. ${data.proof}. Not a cash return.`} /> : <div className="au-share-loading" role="status">{error || 'Creating your card…'}</div>}
+      {image ? <img className="au-share-preview" src={image.url} width="1080" height="1080" alt={`${snapshot.title}: ${snapshot.result} attention change. ${snapshot.network}. ${snapshot.proof}. Not a cash return.`} /> : <div className="au-share-loading" role="status">{error || 'Creating your card…'}</div>}
       {error && <button type="button" className="button" onClick={() => setRetry(value => value + 1)}>Retry image</button>}
-      <div className="au-share-actions">{canShare && <button type="button" className="button button-chip" disabled={sharing} onClick={share}>{sharing ? 'Sharing…' : 'Share image'}</button>}{image && <a className="button" href={image.url} download={filename}>Save PNG</a>}{data.url && <button type="button" className="button" onClick={copy}>Copy record link</button>}</div>
+      <div className="au-share-actions">{canShare && <button type="button" className="button button-chip" disabled={sharing} onClick={share}>{sharing ? 'Sharing…' : 'Share image'}</button>}{image && <a className="button" href={image.url} download={filename}>Save PNG</a>}{snapshot.url && <button type="button" className="button" onClick={copy}>Copy record link</button>}</div>
       <p className="tiny muted">1080 × 1080 PNG · Public chip record · Proof status is a snapshot.</p>
-      {data.url && <input className="au-share-url" aria-label="Public record link" readOnly value={data.url} onFocus={event => event.target.select()} />}
+      {snapshot.url && <input className="au-share-url" aria-label="Public record link" readOnly value={snapshot.url} onFocus={event => event.target.select()} />}
       <p className="au-share-feedback" role="status">{message}</p>
     </dialog>}
   </section>;
