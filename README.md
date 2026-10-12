@@ -144,6 +144,6 @@ Original source code and documentation are licensed under the [MIT License](LICE
 Brand images are excluded; third-party components retain their own licenses. See
 [licensing scope](LICENSING.md).
 
-The intended separate repository is `unknown2733/ante-up-app`, owned by the shared
-GitHub organization. This local publication
-snapshot has not yet been pushed to GitHub.
+Public repository: [unknown2733/ante-up-app](https://github.com/unknown2733/ante-up-app),
+owned by the shared GitHub organization. See [publication provenance](PUBLICATION.md)
+for the development baseline and publication scope.

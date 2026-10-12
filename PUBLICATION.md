@@ -12,9 +12,10 @@ evidence exports are omitted; personal paths and server identifiers in included
 operational documents are replaced with examples. Deployment reports describe
 historical checks, not readiness of a newly installed instance.
 
-No remote is configured by this preparation step. No GitHub repository has been
-created and no push or deployment has been performed. The intended separate
-repository is `unknown2733/ante-up-app`, owned by the shared GitHub organization.
+The snapshot was initially prepared locally without a remote or a push.
+On 2026-10-13 the owner authorized publication to the separate public repository
+`unknown2733/ante-up-app`, owned by the shared GitHub organization.
+Publishing source code does not deploy or change the running service.
 Original source code and documentation use
 MIT; brand images and third-party materials follow [LICENSING.md](LICENSING.md).
 
