@@ -1,0 +1,2 @@
+# Public response evidence must retain exact bytes on every checkout.
+contracts/reference/raw/*.json -text
