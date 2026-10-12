@@ -94,3 +94,19 @@ The user's correction required removing fictitious histories and identities from
 - At `2026-10-12T22:07Z`, public HTTPS verified 11 routes plus matching JS `index-DlNoocb8.js`, CSS `index-ll9K8hHv.css` and favicon. API verification had zero findings: one observed market, 10 chip actions, five profiles, 59 curve points and 116 attention points. Unauthorized note writes were rejected.
 
 The same final Compose overlay now selects `ante-up:consumer-real-e910fad`. Rollback this correction by selecting `ante-up:consumer-r2-6b7c9d1` in that overlay and recreating only web. Keep all other overlays, environment files and current data. Remaining work is physical-wallet regression and additional genuine feeds; this release does not claim video/music playback data or newly provisioned financial markets.
+
+## Native platform counts — October 13, 2026 KST
+
+The user requested the actual video's views, meme post's likes and song's streams rather than Wikipedia proxies, permitting static captures before automatic feed integration. Release `0d6967a` replaces production references with three YouTube videos, three X posts and three Spotify tracks. Original thumbnails, attached post images and track covers are linked. The earlier Wikipedia catalog and original evidence remain historical and are no longer imported by the production adapter.
+
+YouTube counts come from the exact watch page's `videoDetails.viewCount`; X likes come from the exact post's public embed `favorite_count`. Spotify identity/artwork is verified against the exact official track, and cumulative streams are explicitly attributed to dated Kworb reports (September 25, October 2 and October 9). Capture time and report date are separate; no exact timezone is invented for date-only reports. [Count/source table and evidence rules](../../contracts/reference/README.md).
+
+A single observation renders as a metric snapshot with unit, timestamp, report context and source link. It has no inferred growth, line chart, chip records or executable quote. A Post filter was added. Existing real wallet ranking/profile logic is unchanged. Minimal count-bearing source extracts and hashes are published; full original responses are retained locally without exposing large anonymous page payloads.
+
+- Linux build succeeded; **50/50 web tests** including single-snapshot SSR and HTTP, **18/18 source/chart/social/Docs tests**. Existing Vite bundle-size and test teardown warnings remain non-blocking.
+- Browser QA used the final compiled assets with read-only public API data: **51 desktop/mobile views, zero failures**, nine platform snapshots, 27 loaded detail images, three Post filter checks, and actual wallet rankings/profiles. Evidence: `.runtime/real-catalog-qa/browser-FDq5Ph/report.json`; marker `platform-native-working`, assets `index-ChsPMbkY.js` / `index-D6M8tDPH.css`. Root visually checked the mobile Spotify snapshot.
+- Scoped public review of 31 files and 584 added lines found no credentials or private operational details. The public X embed token parameter is not a bearer credential. All nine exact item/count mappings and extract hashes match.
+- Public main was pushed, and web-only image `ante-up:platform-metrics-0d6967a` was deployed (SHA-256 `a57e5a23b1555958d9503a635f9419748238a92a2aef3657bdca17728af35c0d`). Existing API, collector, indexer, evidence and price-history services are preserved. The final `compose.consumer-r2.yml` overlay now selects this image; rollback selects `ante-up:consumer-real-e910fad` and recreates only web.
+- At `2026-10-12T22:18Z`, public HTTPS verified 11 routes and matching JS/CSS/favicon bytes. Actual API checks returned zero findings, 10 chip actions, five profiles, 61 curve points and 118 attention points. Unauthorized note writes were rejected.
+
+No automatic platform data refresh, new market, oracle publishing, paid collection or wallet transaction was added. Further captures and physical-wallet regression remain separate work.
