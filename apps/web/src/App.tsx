@@ -15,6 +15,11 @@ import { ConsumerChart } from './charts/ConsumerChart';
 import { SocialLeaderboard, SocialNote, SocialNoteEditor, SocialNoteHistory, SocialProfile } from './social/Social';
 import { demoConsumerReadApi, liveConsumerHttp } from './api';
 import { demoActors } from '../../../contracts/fixtures/consumer/catalog';
+import { DocsPage } from './docs';
+import { SubjectImage, WalletAvatar } from './media/SubjectImage';
+
+const renderAvatar = (props: { address: string; src?: string; className: string }) => <WalletAvatar {...props} />;
+const renderSubjectImage = (props: { src?: string; alt: string; className: string }) => <SubjectImage {...props} />;
 
 function go(path: string) { window.history.pushState(null, '', path); window.dispatchEvent(new PopStateEvent('popstate')); window.scrollTo(0, 0); }
 function Link({ to, children, className = '' }: { to: string; children: ReactNode; className?: string }) {
@@ -339,7 +344,7 @@ function ConsumerLeaderboardPage({ refresh }: { refresh: number }) {
   const [period, setPeriod] = useState<'7D' | 'ALL'>('7D');
   const live = useData(() => consumerData(() => consumerRead('LIVE').getLeaderboard(period)), [period, refresh]);
   const sample = useData(() => consumerData(() => demoConsumerReadApi.getLeaderboard(period)), [period]);
-  return <div className="au-consumer-social-page"><div className="segmented"><button className={period === '7D' ? 'active' : ''} onClick={() => setPeriod('7D')}>7 days</button><button className={period === 'ALL' ? 'active' : ''} onClick={() => setPeriod('ALL')}>All time</button></div><section aria-label="Devnet leaderboard">{live.loading ? <p className="muted">Loading Devnet leaderboard…</p> : live.error ? <ErrorBox message={`Devnet leaderboard unavailable. ${live.error}`} /> : live.value && <SocialLeaderboard board={live.value} onOpenProfile={id => go(actorHref(id))} />}</section><section className="au-sample-board" aria-label="Example leaderboard"><h2>Example leaderboard</h2><p>Illustrative rankings from sample histories. No real wallets or Devnet results are included.</p>{sample.loading ? <p className="muted">Loading examples…</p> : sample.error ? <ErrorBox message={sample.error} /> : sample.value && <SocialLeaderboard board={sample.value} onOpenProfile={id => go(actorHref(id))} />}</section></div>;
+  return <div className="au-consumer-social-page"><div className="segmented"><button className={period === '7D' ? 'active' : ''} onClick={() => setPeriod('7D')}>7 days</button><button className={period === 'ALL' ? 'active' : ''} onClick={() => setPeriod('ALL')}>All time</button></div><section aria-label="Devnet leaderboard">{live.loading ? <p className="muted">Loading Devnet leaderboard…</p> : live.error ? <ErrorBox message={`Devnet leaderboard unavailable. ${live.error}`} /> : live.value && <SocialLeaderboard renderAvatar={renderAvatar} board={live.value} onOpenProfile={id => go(actorHref(id))} />}</section><section className="au-sample-board" aria-label="Example leaderboard"><h2>Example leaderboard</h2><p>Illustrative rankings from sample histories. No real wallets or Devnet results are included.</p>{sample.loading ? <p className="muted">Loading examples…</p> : sample.error ? <ErrorBox message={sample.error} /> : sample.value && <SocialLeaderboard renderAvatar={renderAvatar} board={sample.value} onOpenProfile={id => go(actorHref(id))} />}</section></div>;
 }
 
 function ConsumerNoteHistory({ actionId }: { actionId: string }) {
@@ -357,6 +362,10 @@ function ConsumerProfilePage({ actorId, mode, refresh, changed, own = false, sel
   const [showHistory, setShowHistory] = useState(false);
   const selected = profile.value?.actions.find(action => action.id === selectedActionId) ?? null;
   const names = new Map(markets.value?.map(market => [market.id, market.title]) ?? []);
+  const marketMedia = Object.fromEntries((markets.value ?? []).map(market => [market.id, {
+    title: market.title, subtitle: market.creatorLabel ?? market.subtitle,
+    thumbnailUrl: market.thumbnailUrl, imageAlt: market.imageAlt,
+  }]));
   const writer = { save: async (actionId: string, body: string, expectedVersion: number): Promise<ConsumerNote> => {
     const context = currentWalletContext();
     if (mode !== 'LIVE' || !liveFreeFlow || !liveConsumerHttp || !context || context.address !== actorId || context.cluster !== 'devnet') throw new Error('Connect the owning Devnet wallet to edit this note.');
@@ -368,7 +377,7 @@ function ConsumerProfilePage({ actorId, mode, refresh, changed, own = false, sel
   return <div className="au-consumer-social-page">{own && <h1>My activity</h1>}
     {profile.loading ? <p className="muted">Loading profile…</p> : profile.error ? <ErrorBox message={profile.error} /> : !profile.value ? <Empty title="Profile not found" /> : <>
       {selected && <div className="au-selected-action"><strong>{selected.kind === 'CALL_OPEN' ? 'Placed a chip' : 'Took back a chip'} · {names.get(selected.marketId) ?? selected.marketId}</strong><button type="button" onClick={() => go(chartHref(selected))}>See chip on chart ↗</button>{selected.note ? <SocialNote note={selected.note} showHistory={mode === 'LIVE' && selected.note.version > 1 ? () => setShowHistory(value => !value) : undefined} /> : <p>No note for this chip yet.</p>}{showHistory && mode === 'LIVE' && <ConsumerNoteHistory actionId={selected.id} />}</div>}
-      <SocialProfile profile={profile.value} marketLabel={id => names.get(id) ?? id} onOpenMarket={id => go(marketHref(id))} onOpenAction={action => go(chartHref(action))} onOpenProfile={id => go(actorHref(id))} noteEditor={mode === 'LIVE' && wallet === actorId ? action => <SocialNoteEditor key={action.id} action={action} wallet={wallet} writer={writer} onSaved={changed} /> : undefined} />
+      <SocialProfile marketMedia={marketMedia} renderAvatar={renderAvatar} renderSubjectImage={renderSubjectImage} profile={profile.value} marketLabel={id => names.get(id) ?? id} onOpenMarket={id => go(marketHref(id))} onOpenAction={action => go(chartHref(action))} onOpenProfile={id => go(actorHref(id))} noteEditor={mode === 'LIVE' && wallet === actorId ? action => <SocialNoteEditor key={action.id} action={action} wallet={wallet} writer={writer} onSaved={changed} /> : undefined} />
       {mode === 'LIVE' && <div className="au-record-links"><h3>Chip records and proofs</h3>{[...new Set(profile.value.actions.map(action => action.recordId).filter((id): id is string => !!id))].map(id => <Link key={id} to={`/records/${encodeURIComponent(id)}`}>{id} ↗</Link>)}</div>}
       {own && mode === 'LIVE' && <><Link to="/me/records" className="text-link">Detailed chip records and private positions ↗</Link><PrivateFinancialPanel wallet={actorId} refresh={refresh} /></>}
     </>}
@@ -398,7 +407,7 @@ export default function App() {
   else if (segment[0] === 'records' && id && !id.startsWith('demo:')) content = <RecordPage id={id} />;
   else if (segment[0] === 'proofs' && id && !id.startsWith('demo:')) content = <ProofPage id={id} />;
   else if (path === '/leaderboard') content = <ConsumerLeaderboardPage refresh={refresh} />;
-  else if (segment[0] === 'docs') content = <div className="page"><Empty title="Docs are being prepared">Guides will be available here after the Docs module is integrated.</Empty></div>;
+  else if (segment[0] === 'docs') content = <DocsPage slug={segment.length > 2 ? '__not_found__' : segment[1] ? id ?? '__not_found__' : undefined} />;
   else content = <div className="page"><Empty title="Page not found" /></div>;
   return <ConsumerShell route={route} onNavigate={next => go(consumerHref(next))} walletSlot={<WalletPanel />}>{content}</ConsumerShell>;
 }
