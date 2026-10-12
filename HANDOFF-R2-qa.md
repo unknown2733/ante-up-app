@@ -1,56 +1,31 @@
-# R2 QA handoff — 2026-10-13
+# R2 integrated App QA handoff — 2026-10-13 KST
 
-## Scope and status
+## Scope
 
-Branch `consumer/r2-qa` in this dedicated clone started at public common contract `9da25f7`. This worker owns only `scripts/consumer-r2-*`, ignored `.runtime/consumer-r2-qa/` outputs, and this handoff. No product source, service, deploy file, HOME, decision note, wallet, provider, or remote branch was changed by this work.
+Branch `consumer/r2-qa` owns only `scripts/consumer-r2-*`, ignored `.runtime/consumer-r2-qa/` evidence, and this handoff. QA did not change product source, deploy configuration, HOME, wallet state, or remote branches. The integration clone is `../ante-up-r2-integration`. Many unrelated files in the QA clone show line-ending-only unstaged changes; they were left untouched and unstaged.
 
-The R2 product modules have not been integrated into this clone yet. **This is a preparation handoff, not R2 acceptance.** The pre-existing checkout reports many unstaged changes outside QA ownership; `git diff --ignore-space-at-eol --numstat` showed no substantive content change in them. They were left untouched and unstaged.
+## Reproducible checks
 
-## Delivered
+- `node --experimental-strip-types --test scripts/consumer-r2-audit.test.mjs`: **4/4 passed**. Cases include malformed catalog identity and six rendered regression examples that fail before correction and pass after.
+- `node scripts/consumer-r2-export-mock.mjs --integration-root ../ante-up-r2-integration`: exports 15 integrated sample markets and one **local QA Live shell** into ignored `integrated-mock-catalog.json` and `integrated-mock-read-model.json`. The shell has no observations/actions and is not a real Devnet market.
+- Run `consumer-r2-audit.mjs` from the integration clone against those exports: **13 PASS, 9 PENDING, 0 FAIL**. [Audit output](../ante-up-r2-integration/.runtime/consumer-r2-qa/audit.json). The nine pending gates need actual rendered evidence or execution/provenance review; the mock does not satisfy `--require-integrated`.
+- `npm --prefix apps/web run build` on integrated `2fd5de0` with `VITE_API_BASE_URL=/api`, `VITE_ALLOW_FIXTURE_API=true`: passed. Output CSS `index-BkSLOa5l.css`, JS `index-DKPTRSQE.js`.
 
-- `scripts/consumer-r2-audit.mjs`: read-only catalog/source/DTO auditor. It reports `PASS/PENDING/FAIL`, writes ignored `.runtime/consumer-r2-qa/audit.json`, and exits nonzero for pending/fail only with `--require-integrated`. It verifies 15 scenario IDs, optional subject/media metadata, separate sample/Live identities, combined Explore catalog, source copy/navigation/Docs/media candidates, and cross-view read-model integrity. Static checks have explicit limits; execution capability and provenance remain pending until integration evidence exists.
-- `scripts/consumer-r2-audit.test.mjs`: three targeted tests for full catalog acceptance, missing media/duplicate/mixed identity rejection, and source-state detection.
-- `scripts/consumer-r2-matrix.md`: acceptance matrix and exact post-integration data exports, browser, device and evidence requirements.
+## Browser evidence
 
-## Baseline run
+The browser runner starts a same-process, read-only local App server, intercepts all requests, blocks writes and external requests by default, and never connects or signs a wallet. Captures include DOM state, overflow, labels, screenshots, requests, and browser errors. Reports are under ignored `.runtime/consumer-r2-qa/` in this QA clone.
 
-From this clone:
+| Integrated source | Report | Result |
+| --- | --- | --- |
+| `c771690` | [Full default pass](.runtime/consumer-r2-qa/browser-C6UuSC/report.json) | 91 views, 0 failures, 0 blocked requests, 0 unexpected JS errors; 1440×900, 390×844, 320×568; Explore, 15 sample details per viewport, Docs topics and click journeys. |
+| `6055e17` | [15-detail media pass](.runtime/consumer-r2-qa/browser-UIYUVF/report.json) | 16 views, 0 failures; all 15 sample detail images had `naturalWidth > 0`. |
+| `6055e17` | [Bounded Explore image pass](.runtime/consumer-r2-qa/browser-amvR4L/report.json) | 2 views, 0 failures; all 15 Explore catalog images finished loading within the bounded wait and had `naturalWidth > 0`. |
+| `2fd5de0` | [Final targeted smoke](.runtime/consumer-r2-qa/browser-QoKGQn/report.json) | 28 views, 0 failures, 0 blocked requests, 0 unexpected browser errors; latest profile badge, unknown and malformed Docs client routes, mobile recovery link and three viewport sizes. An independent [repeat](.runtime/consumer-r2-qa/browser-4jWggU/report.json) also passed 28/28. |
 
-```powershell
-node --experimental-strip-types --test scripts/consumer-r2-audit.test.mjs tests/consumer/audit.test.mjs tests/consumer/demo.integration.mjs tests/consumer/roundtrip.integration.mjs
-node --experimental-strip-types scripts/consumer-r2-audit.mjs
-```
+The [latest mobile profile screenshot](.runtime/consumer-r2-qa/browser-4jWggU/mobile-390-journey-profile-note.png) shows the sample source badge legibly in two lines. A previous smoke found the unknown Docs page's “Browse all Docs” link had a 20px mobile target. Product owner fixed it in `2fd5de0`; the final pass has no small mobile standalone targets on unknown or malformed Docs pages. The local QA server intentionally returns HTTP 400 to a malformed percent-encoded URL. The App's own fallback was checked by client-side history navigation without that server request. One earlier cross-sandbox Chromium/server run produced connection error pages and was discarded; none of its captures are acceptance evidence.
 
-The first command passed **15/15**: three new auditor tests and twelve existing synthetic adapter/identity tests. The audit JSON reports **4 PASS, 8 PENDING, 0 FAIL**. Passing baseline items: 15 unique scenarios across five types, stable sample IDs, sample source separation, and the existing sample adapter's 15 markets × four periods = 60 histories, eight fictional profiles and two leaderboards with zero DTO findings. Pending: real-subject/media mapping, one combined catalog with actual Devnet market, public copy, removal of global mode control, Docs wiring, media fallback, execution boundary, and integrated read-model export. This baseline contains old fictional titles, old Free Call copy and the old Live/Demo control; those are expected incomplete implementation states, not accepted R2 behavior.
+The media pass permits only HTTPS GET image requests to thumbnail origins found in the catalog, strips cookie/auth headers, and verifies the actual pixels loaded. Media licensing and continued availability still need source-owner review. Sample image failure fallback was observed in the default CSP-blocked pass. The read-only QA Live shell must not be conflated with the real public API market. Root separately read the public Devnet API, including market ID `7kmhXsn6GsFf1rZX5jYZ5xtPeProB6Vqtbx4ghUaFJGT`; that result belongs in root's independent provenance evidence.
 
-## Root integration handoff
+## Remaining acceptance work
 
-1. Merge worker modules into the integration clone. Export the actual combined `ConsumerMarket[]` Explore list to ignored `.runtime/consumer-r2-qa/unified-catalog.json`. It must contain all 15 mapped samples plus the current Devnet market with original ID and unique IDs.
-2. Export `{markets,histories,profiles,leaderboards}` from the integrated read adapters to ignored `.runtime/consumer-r2-qa/unified-read-model.json`; include all sample periods and rank periods, selected Live finalized IDs, negative/N/A/ongoing outcomes, and empty/missing Live history. No keys or private wallet state.
-3. Run:
-
-```powershell
-node --experimental-strip-types --test scripts/consumer-r2-audit.test.mjs
-node --experimental-strip-types scripts/consumer-r2-audit.mjs --catalog-json .runtime/consumer-r2-qa/unified-catalog.json --read-model-json .runtime/consumer-r2-qa/unified-read-model.json --require-integrated
-```
-
-4. Review every source candidate against rendered UI and accessibility labels, then follow `scripts/consumer-r2-matrix.md` for desktop 1440, mobile 390/320, all 15 subject/detail routes, image failure, Docs deep links, old URL compatibility, no global mode toggle, source/execution boundary, and marker→profile→note/chart identity. The old `actual-app-check.mjs` expects a Demo switch and must not be cited as R2 acceptance. A local browser mock is not physical-wallet or finalized-chain evidence.
-5. Root supplies the final integration SHA/build for QA's actual App pass. Physical Android Phantom, Seeker Seed Vault, real notes/signatures, and public deployment readback remain root-coordinated; no real transaction was attempted here.
-
-No new product decision was made. Open question for integration: if mapped subjects change any legacy sample IDs, provide an explicit old→new deep-link mapping and demonstrate that sample identities still cannot reach wallet execution or real ranking.
-
-## Regression acceptance addendum
-
-QA follow-up added six explicit R2 regression gates without touching product files: closed record placement rows must not remain Active/Open; SVG data-URI avatars must render or show a stable fallback; App must wire real-subject `marketMedia` into profile/Activity; Docs must have no visible placeholder; synthetic notes must fit their mapped real subjects; and Live public profile text/accessibility labels must not say Free Call. These are separate from the existing DTO snapshot, which can pass while the UI is wrong.
-
-`scripts/consumer-r2-audit.mjs` now accepts `--regression-json` with rendered evidence fields documented in [the matrix](scripts/consumer-r2-matrix.md). Missing evidence is `PENDING`; known bad evidence is `FAIL`; only checked evidence is `PASS`. The baseline audit is **4 PASS, 18 PENDING, 0 FAIL**. Its source-risk detail detects the old `CALL_OPEN ? 'Open'` presentation and the old Live-profile Free Call copy, but these remain pending R2 integration rather than reporting the unfinished product as a final failure. The targeted test injects six bad examples and six corrected examples and confirms FAIL→PASS; the full baseline suite now passes **16/16**. The new `consumer-r2-browser.mjs` is prepared for root's integrated local server and catalog; it requires a loopback URL, blocks writes and external requests, and captures 1440×900, 390×844 and 320×568. Its syntax and non-local URL rejection were checked; it has **not** been run on an R2 App.
-
-After root sends the integrated source SHA and local server/read-model exports, rerun the commands in the matrix and review the browser screenshots plus rendered regression evidence. In particular, an SVG fallback Boolean or note-match Boolean in a hand-authored JSON file is not independently sufficient; capture the actual image state and review each note alongside the mapped subject. No R2 final browser or wallet claim is made by this handoff.
-
-## Follow-up QA gates before the first R2 integration run
-
-The auditor now keeps six regression areas separate from the old synthetic DTO PASS: closed placement state, SVG avatar data/fallback, App market media wiring, Docs placeholders, real-subject note fit, and Live public-profile Free Call copy. `--regression-json` takes rendered evidence; omitted fields are **PENDING**. The new targeted test supplies bad and corrected evidence for all six and proves FAIL→PASS. The baseline audit is **4 PASS, 18 PENDING, 0 FAIL**; both old `CALL_OPEN ? 'Open'` presentation and Live-profile Free Call source risks are explicitly reported as pending. The augmented old-adapter/new-QA suite is **16/16 passed**, which certifies the auditor and existing synthetic data only.
-
-`scripts/consumer-r2-browser.mjs` is ready for a root-owned local server: it restricts URLs to loopback, intercepts and blocks browser writes/external requests, and captures Explore, all 15 sample details, and Docs topics at 1440×900, 390×844, and 320×568. A nine-view `--smoke` on an **old pre-R2 dist** verified navigation/screenshots/request interception and deliberately exited 1 on its obsolete Korean/missing-R2 UI; [smoke report](.runtime/consumer-r2-qa/browser-ccXb3x/report.json). This report must never be called an R2 App result. Syntax check and non-local URL rejection also passed.
-
-Root has since identified the first integration clone at `../ante-up-r2-integration` for read-only QA; its final SHA and UI follow-up were still pending at this handoff update. Next: run source/catalog/DTO checks there, then final local browser pass after the UI follow-up. Product edits remain with their owners.
+The browser and DTO passes do not prove actual wallet/chain behavior, physical Phantom/Seeker flows, finalized Live identity, media rights, or human note-to-subject review. The auditor's rendered regression input (`activityRows`, SVG avatar, market media, note reviews, Live profile copy, Docs pages) remains pending unless captured from the final App and reviewed as specified in [the matrix](scripts/consumer-r2-matrix.md). Do not mark these gates PASS by inventing Boolean evidence. Root owns controlled Devnet/device verification and final release decision.

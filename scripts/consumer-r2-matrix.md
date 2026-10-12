@@ -27,16 +27,20 @@ Record source SHA, built asset hash, local time/timezone, environment, viewport/
 
 ## Commands after integration
 
-From the R2 repository root, Node 24+:
+From the QA clone root, Node 24+; the source audit changes into the integrated clone:
 
 ```powershell
 node --experimental-strip-types --test scripts/consumer-r2-audit.test.mjs
-node --experimental-strip-types scripts/consumer-r2-audit.mjs --catalog-json .runtime/consumer-r2-qa/unified-catalog.json --read-model-json .runtime/consumer-r2-qa/unified-read-model.json --regression-json .runtime/consumer-r2-qa/rendered-regressions.json --require-integrated
-node scripts/consumer-r2-browser.mjs --url http://127.0.0.1:5194 --catalog-json .runtime/consumer-r2-qa/unified-catalog.json --source-sha FINAL_SHA
+node scripts/consumer-r2-export-mock.mjs --integration-root ../ante-up-r2-integration
+Push-Location ../ante-up-r2-integration
+node --experimental-strip-types scripts/consumer-r2-audit.mjs --catalog-json ../ante-up-r2-qa/.runtime/consumer-r2-qa/integrated-mock-catalog.json --read-model-json ../ante-up-r2-qa/.runtime/consumer-r2-qa/integrated-mock-read-model.json
+Pop-Location
+node scripts/consumer-r2-browser.mjs --dist ../ante-up-r2-integration/apps/web/dist --catalog-json .runtime/consumer-r2-qa/integrated-mock-catalog.json --source-sha SOURCE_SHA
+node scripts/consumer-r2-browser.mjs --dist ../ante-up-r2-integration/apps/web/dist --catalog-json .runtime/consumer-r2-qa/integrated-mock-catalog.json --source-sha SOURCE_SHA --allow-catalog-images --media-only
 ```
 
-`unified-catalog.json` is the actual combined Explore `ConsumerMarket[]`; `unified-read-model.json` has `{markets,histories,profiles,leaderboards}` from both read adapters. Include all 15 samples, all four periods, both ranking periods, an empty/missing Live history, and selected finalized Live IDs. The auditor writes `.runtime/consumer-r2-qa/audit.json`; it does not call paid APIs or write application data. Without the JSON exports, `PENDING` is expected and `--require-integrated` exits nonzero. Root must confirm live market identity and sampled times against the deployed read API/finalized chain; a DTO snapshot alone cannot prove origin.
+The exporter reads the integrated Demo adapter and creates a local QA Live shell with no observations or actions. It proves the App can render the combined shape, not that a real Devnet market is present. Run the auditor from the integration clone against those exports to scan the integrated source. It writes `.runtime/consumer-r2-qa/audit.json`; `--require-integrated` must remain reserved for actual complete evidence. Root must confirm Live identity and sampled times against the deployed read API and finalized chain; a mock DTO cannot prove origin.
 
 `rendered-regressions.json` is evidence collected from the integrated App, not an assertion file to fill with guessed booleans. Its fields are `activityRows:[{actionId,visibleState}]` for every closed sample placement; `svgAvatar:{src,naturalWidth,fallbackVisible}`; `marketMedia:[{marketId,subjectTitle,imageVisible,fallbackVisible,reviewedSubject}]` for all 15; `noteReviews:[{marketId,matched,evidence}]` after human subject-note review; `liveProfile:{route,visibleText,accessibleLabels}`; and `docsPages:[{route,visibleText,linkAccessible}]` for home plus at least seven topics. Missing evidence remains `PENDING`. The unit test reproduces the old Active placement, broken SVG avatar, wrong media title, mismatched note, Live Free Call copy, and Docs placeholder as `FAIL`, then checks corrected examples as `PASS`.
 
-`consumer-r2-browser.mjs` accepts only a local HTTP server, blocks writes/external requests in Chromium, and captures Explore, 15 sample details, Docs home/topic links at 1440×900, 390×844, and 320×568. It requires a root-owned integrated local server and has not run against R2 yet. Run source English audit and module tests separately. The old `apps/web/qa/consumer/actual-app-check.mjs` expects a Demo switch and is **not** an R2 acceptance runner. Browser mocks/emulated touch cannot replace Android Phantom or Seeker Seed Vault evidence. Never click wallet write controls in a read-only browser pass.
+`consumer-r2-browser.mjs` accepts only a local HTTP server or `--dist` for its same-process read-only QA server. It blocks writes and external requests in Chromium. Optional `--allow-catalog-images` permits HTTPS GETs only to origins in catalog thumbnail URLs and strips auth/cookie headers; `--media-only` limits the capture to Explore and 15 details at 390px. The default captures Explore, 15 sample details, Docs home/topics, unknown/malformed Docs routes and click journeys at 1440×900, 390×844, and 320×568. Malformed percent encoding is rejected by the QA HTTP server with 400; the browser checks the App's not-found state through client-side routing. The old `apps/web/qa/consumer/actual-app-check.mjs` expects a Demo switch and is **not** an R2 acceptance runner. Browser mocks/emulated touch cannot replace Android Phantom or Seeker Seed Vault evidence. Never click wallet write controls in a read-only browser pass.
