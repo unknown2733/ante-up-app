@@ -95,8 +95,9 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
     </div>
     {(!snapshot || scopedHistory.series.length > 1) && <div className="au-chart-series" role="group" aria-label="Chart data">
       {scopedHistory.series.map(item => <button key={item.id} type="button" aria-pressed={item.id === series?.id}
+        title={item.label}
         onClick={() => { setSeriesId(item.id); setMarkerId(null); }}>
-        <span className="au-chart-swatch" style={{ background: colors[item.kind] }} />{item.evidence === 'ILLUSTRATIVE' ? 'Illustrative trend' : item.kind === 'ACTIVITY_COUNT' ? item.label : seriesName[item.kind]}
+        <span className="au-chart-swatch" style={{ background: colors[item.kind] }} />{item.evidence === 'ILLUSTRATIVE' ? 'Illustrative trend' : scopedHistory.series.some(candidate => candidate.evidence === 'ILLUSTRATIVE') ? 'Measured data' : item.kind === 'ACTIVITY_COUNT' ? item.label : seriesName[item.kind]}
       </button>)}
     </div>}
     {illustrative && <p className="au-chart-illustrative">Illustrative trend · temporary values, not measured activity. Latest preview index = 100.</p>}
