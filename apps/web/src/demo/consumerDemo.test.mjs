@@ -5,7 +5,7 @@ import { demoActors, demoScenarioFixtures } from '../../../../contracts/fixtures
 
 const approx = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-10, `${actual} != ${expected}`);
 
-test('fifteen fictional markets cover every subject and several time narratives', async () => {
+test('fifteen real subjects retain fictional market identities and time narratives', async () => {
   const markets = await demoConsumerReadApi.listMarkets();
   assert.equal(markets.length, 15);
   assert.deepEqual(new Set(markets.map(market => market.subject)), new Set(['KEYWORD', 'VIDEO', 'TRACK', 'ALBUM', 'ACCOUNT']));
@@ -14,6 +14,18 @@ test('fifteen fictional markets cover every subject and several time narratives'
   assert.ok(markets.every(market => isDemoConsumerId(market.id) && !market.liveMarketId && market.source.mode === 'DEMO'));
   assert.ok(markets.every(market => market.source.asOfMs === DEMO_AS_OF_MS && !market.source.sourceUrl));
   assert.equal(markets.filter(market => market.phase === 'PREVIEW').length, 1);
+  assert.deepEqual(markets.map(market => market.id), demoScenarioFixtures.map(scenario => `demo:market:${scenario.slug}`));
+  for (const market of markets) {
+    const fixture = demoScenarioFixtures.find(scenario => market.id.endsWith(scenario.slug));
+    assert.equal(market.subjectUrl, fixture.subjectUrl);
+    assert.equal(market.creatorLabel, fixture.creatorLabel);
+    assert.equal(market.thumbnailUrl, fixture.imageUrl);
+    assert.equal(market.imageAlt, fixture.imageAlt);
+    assert.equal(market.imageSourceUrl, fixture.imageSourceUrl);
+    assert.ok(market.subtitle.includes('sample history'));
+    for (const url of [market.subjectUrl, market.thumbnailUrl, market.imageSourceUrl])
+      assert.equal(new URL(url).protocol, 'https:');
+  }
 });
 
 test('each market has a fixed five-week history with typed prices and no false fills', async () => {
@@ -115,7 +127,9 @@ test('call markers, notes and closed performance refer to their own entry and ex
           assert.equal(action.note.proofCoverage, 'NONE');
           assert.ok(action.note.createdAtMs >= action.atMs && action.note.updatedAtMs <= DEMO_AS_OF_MS);
           assert.ok([...action.note.body].length <= 280);
+          assert.ok(action.note.body.startsWith('Fictional sample view: '));
         }
+        assert.ok(action.actorAvatarUrl.startsWith('data:image/svg+xml,'));
       }
       if (close) {
         assert.ok(close.atMs > open.atMs);
@@ -133,6 +147,8 @@ test('demo profiles and leaderboards use closed calls only and keep time windows
     demoConsumerReadApi.getHistory(market.id, 'ALL')))).flatMap(history => history.actions);
   for (const actor of demoActors) {
     const profile = await demoConsumerReadApi.getProfile(actor.id);
+    assert.ok(profile.avatarUrl.startsWith('data:image/svg+xml,'));
+    assert.ok(profile.avatarAlt.includes('Generated avatar'));
     const actorActions = actions.filter(action => action.actorId === actor.id);
     const closed = actorActions.filter(action => action.kind === 'CALL_CLOSE');
     assert.equal(profile.closedCallCount, closed.length);

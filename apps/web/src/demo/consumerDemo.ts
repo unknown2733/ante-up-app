@@ -4,6 +4,7 @@ import type {
 } from '../../../../contracts/consumer.ts';
 import { demoActors, demoScenarioFixtures } from '../../../../contracts/fixtures/consumer/catalog.ts';
 import type { DemoCallFixture, DemoScenarioFixture } from '../../../../contracts/fixtures/consumer/catalog.ts';
+import { exampleAvatarUrl } from '../media/exampleAvatar.ts';
 
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
@@ -14,7 +15,7 @@ export const DEMO_MARKET_PREFIX = 'demo:market:';
 const START_MS = DEMO_AS_OF_MS - DAYS * DAY_MS;
 const SOURCE: ConsumerSource = {
   mode: 'DEMO',
-  label: 'Synthetic demo · deterministic generated history · no external feed',
+  label: 'Sample history · fictional activity and generated values · no external feed',
   asOfMs: DEMO_AS_OF_MS,
 };
 
@@ -91,7 +92,8 @@ function noteFor(actionId: string, actorId: string, body: string | undefined, at
   const createdAtMs = atMs + delayDays * DAY_MS;
   if (createdAtMs > DEMO_AS_OF_MS) throw new Error(`Demo note lies after scenario as-of: ${actionId}`);
   return {
-    id: `demo:note:${actionId}`, actionId, authorId: actorId, body,
+    id: `demo:note:${actionId}`, actionId, authorId: actorId,
+    body: `Fictional sample view: ${body}`,
     createdAtMs, updatedAtMs: createdAtMs, version: 1,
     timing: delayDays > 0 ? 'ADDED_LATER' : 'AT_ACTION', proofCoverage: 'NONE',
   };
@@ -109,6 +111,7 @@ function actionsFor(scenario: DemoScenarioFixture): ConsumerAction[] {
     const recordId = `demo:record:${scenario.slug}:${index + 1}`;
     const openId = `demo:action:${scenario.slug}:${index + 1}:open`;
     const shared = { marketId: marketId(scenario.slug), actorId: actor.id, actorLabel: actor.label,
+      actorAvatarUrl: exampleAvatarUrl(actor.id),
       seriesId: `demo:series:${scenario.slug}:h`, recordId, source: SOURCE };
     actions.push({ ...shared, id: openId, kind: 'CALL_OPEN', atMs: entryAtMs, value: entryValue,
       returnFraction: null, note: noteFor(openId, actor.id, call.openNote, entryAtMs, call.noteDelayDays) });
@@ -135,7 +138,9 @@ function buildMarket(scenario: DemoScenarioFixture): BuiltMarket {
   return {
     market: { id: marketId(scenario.slug), title: scenario.title, subtitle: scenario.subtitle,
       subject: scenario.subject, phase: scenario.phase, source: SOURCE, latestPrice,
-      priceUnit: 'demo price units', changeFraction },
+      priceUnit: 'demo price units', changeFraction,
+      subjectUrl: scenario.subjectUrl, creatorLabel: scenario.creatorLabel,
+      thumbnailUrl: scenario.imageUrl, imageAlt: scenario.imageAlt, imageSourceUrl: scenario.imageSourceUrl },
     scenario, actions: actionsFor(scenario),
   };
 }
@@ -178,6 +183,7 @@ export function createDemoConsumerReadApi(): ConsumerReadApi {
       const actions = allActions.filter(action => action.actorId === actorId).sort((a, b) => b.atMs - a.atMs || a.id.localeCompare(b.id));
       const closed = actions.filter(action => action.kind === 'CALL_CLOSE' && action.returnFraction !== null);
       const profile: ConsumerProfile = { actorId, actorLabel: actor.label, source: SOURCE,
+        avatarUrl: exampleAvatarUrl(actorId), avatarAlt: `Generated avatar for ${actor.label}`,
         closedCallCount: closed.length, openCallCount: actions.filter(action => action.kind === 'CALL_OPEN').length - closed.length,
         meanReturnFraction: closed.length ? Number((closed.reduce((sum, action) => sum + action.returnFraction!, 0) / closed.length).toFixed(12)) : null,
         actions };
