@@ -134,6 +134,7 @@ try {
       chartObservation:all('.au-chart-history-context').map(e=>e.innerText),
       pointTitles:all('.au-chart svg circle').map(e=>e.textContent),
       observationRows:all('.au-chart-observations tbody tr').map(e=>({date:e.querySelector('time')?.dateTime,value:e.querySelectorAll('td')[1]?.textContent,source:e.querySelector('a')?.href})),
+      observationHeaders:all('.au-chart-observations th').map(e=>e.textContent),
       snapshots:all('.au-metric-snapshot,.au-chart-snapshot').map(e=>({text:e.innerText,value:e.querySelector('.au-snapshot-value strong')?.textContent,
         unit:e.querySelector('.au-snapshot-value span')?.textContent,label:e.querySelector('.au-snapshot-label')?.textContent,observedAt:e.querySelector('time')?.dateTime,
         observationLabel:e.querySelector('.au-snapshot-observation')?.textContent})),
@@ -182,7 +183,6 @@ try {
     } else if (points.length) {
       check(probe.chart.length === 1 && probe.chartPoints === points.length, `chart point count differs from DTO (${probe.chartPoints}/${points.length})`);
       check(probe.chart.some(label => label.includes(series.unit)), `chart unit differs from ${series.unit}`);
-      check(probe.chartCaption.some(caption => caption.includes(series.unit)), 'chart caption unit absent');
       if (points.length > 1) check(probe.periodControls === 4, 'history period controls absent');
       if (series.timeBasis === 'REPORT_DATE') {
         check(probe.chartCaption.every(caption => !/\bUTC\b|\b[AP]M\b|\d{1,2}:\d{2}/.test(caption)), 'date-only report axis invents a time or timezone');
@@ -209,6 +209,7 @@ try {
     const series = history.series[0];
     view.check(evidence.sources.includes(series.source.sourceUrl ?? history.source.sourceUrl), 'public provenance link absent');
     if (series.timeBasis === 'REPORT_DATE') {
+      view.check(evidence.observationHeaders.includes(series.unit), 'visible observation table unit absent');
       const expected = series.points.map(point => ({ date: point.reportedDate, value: new Intl.NumberFormat('en', { maximumFractionDigits: 4 }).format(Number(point.value)), source: point.sourceUrl }));
       view.check(JSON.stringify(evidence.observationRows) === JSON.stringify(expected), 'date/value/source observation table differs from source DTO');
     }

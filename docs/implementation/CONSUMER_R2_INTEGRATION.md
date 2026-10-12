@@ -110,3 +110,24 @@ A single observation renders as a metric snapshot with unit, timestamp, report c
 - At `2026-10-12T22:18Z`, public HTTPS verified 11 routes and matching JS/CSS/favicon bytes. Actual API checks returned zero findings, 10 chip actions, five profiles, 61 curve points and 118 attention points. Unauthorized note writes were rejected.
 
 No automatic platform data refresh, new market, oracle publishing, paid collection or wallet transaction was added. Further captures and physical-wallet regression remain separate work.
+
+## Verified historical activity — October 13, 2026 KST
+
+The user authorized connecting the researched historical observations and adding videos/tracks with daily history. Product release `ac78186` was pushed to public main and deployed. The catalog now contains twelve actual subjects; five have 61 observed history points:
+
+- Bonobo, Rosewood: three dated cumulative stream totals, June 28–October 2.
+- Khruangbin, May Ninth: three dated cumulative stream totals, February 27–October 9.
+- Rumi - Topic, Free: twelve daily YouTube view counts, September 30–October 11.
+- officialpsy, GANGNAM STYLE: twelve daily YouTube view counts, September 28–October 9.
+- The Weeknd, Blinding Lights: 31 daily Spotify Global chart stream counts, September 11–October 11.
+
+These are captured third-party Kworb reports. Spotify chart streams are not the all-stream cumulative counter. Official subject identities and artwork are verified separately. Date-only reports do not imply an exact observation time or timezone. Period controls end at the latest available reported date. Sparse totals render as separate points, without fabricated interpolation; missing dates are not zeros. Expandable tables expose each date, value and source. Seven other references retain their verified single snapshots. Reference action panels remain visible with execution disabled until an actual market is connected.
+
+Five minimal source extracts retain response/extract hashes and source URLs. Full responses remain in local research evidence. Raw byte preservation, exact values and subject IDs pass the source tests. No fictional price returns, chip events, counterparties or liquidity were introduced.
+
+- Linux production image: **51 web tests passed**, one pre-existing independent HTTP test skipped; **15 source/adapter/chart-model/Docs tests passed**. Existing bundle-size warning remains non-blocking.
+- Final compiled browser QA: **105 views** at 1440/390/320, zero failures, browser errors or blocked requests. All 459 rendered observation rows matched the DTO, all 36 detail images loaded, and periods, sparse gaps, units, disabled reference actions and real API profiles passed. Six additional mobile visual views passed. Evidence: `.runtime/real-catalog-qa/browser-jK5eI4/report.json` and `.runtime/history-visual-qa/browser-HdLpnS/report.json`. A first run's mobile caption assertions were corrected to check the chart accessible unit and visible table unit; product assets did not change.
+- Web-only image `ante-up:historical-activity-ac78186`, SHA-256 `b437f45e105e166e14f50bd254e4bd6afd218aa4a83dbf9ab2b362c9b036a677`, runs as 1000:1000 and passes service health. API, collector, indexer, evidence and price-history service images remain unchanged.
+- At `2026-10-12T22:42:39Z` (October 13, 07:42 KST), public HTTPS verified 11 routes and exact JS `index-CMDvWtod.js`, CSS `index-epywGWZM.css` and favicon bytes. This is delivery verification, not a new physical-wallet test.
+
+The final Compose overlay selects the new image. Rollback selects `ante-up:reference-actions-a2e5740` and recreates web only with the other overlays and current data preserved. Automatic updates, more historical sources and physical-wallet regression remain separate work; no additional API collection or wallet transaction was run in this release.
