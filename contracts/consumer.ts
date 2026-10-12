@@ -11,13 +11,15 @@ export interface ConsumerMarket {
   thumbnailUrl?: string; liveMarketId?: string;
   subjectUrl?: string; creatorLabel?: string; imageAlt?: string; imageSourceUrl?: string;
   /** Actual public-source activity; never a token quote or a settlement input. */
-  activity?: { value: string; unit: string; label: string; changeFraction: number | null; asOfMs: number };
+  activity?: { value: string; unit: string; label: string; changeFraction: number | null; asOfMs: number; historyLabel?: string };
 }
-export interface ConsumerPoint { atMs: number; value: string; observationId?: string; }
+export interface ConsumerPoint { atMs: number; value: string; observationId?: string; reportedDate?: string; sourceUrl?: string; }
 export interface ConsumerSeries {
   id: string; kind: ConsumerSeriesKind; label: string; unit: string;
   /** gaps forbid connecting across an interval; observed boundary points are allowed. */
   points: ConsumerPoint[]; gaps: Array<{ fromMs: number; toMs: number }>; source: ConsumerSource;
+  /** Date-only provider reports use UTC midnight for layout, not an observed instant. */
+  timeBasis?: 'REPORT_DATE'; aggregation?: 'cumulative' | 'daily'; observationNote?: string;
 }
 export interface ConsumerNote {
   id: string; actionId: string; authorId: string; body: string;

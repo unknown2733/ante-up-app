@@ -68,3 +68,7 @@
   .au-chart-periods button, .au-chart-series button { min-width: 44px; min-height: 44px; }
   .au-chart-caption { font-size: .73rem; }
 }
+.au-chart-history-context{display:flex;flex-direction:column;gap:5px;margin:12px 0 18px;font-size:13px;line-height:1.5;color:#59636c}
+.au-chart-history-context strong{color:#171717}.au-chart-history-context small{font-size:11px}
+.au-chart-observations{font-size:12px;margin:12px 0}.au-chart-observations summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-weight:700;color:#275eaf}
+.au-chart-observation-scroll{overflow-x:auto;max-height:300px}.au-chart-observations table{width:100%;border-collapse:collapse;text-align:left}.au-chart-observations th,.au-chart-observations td{padding:10px 8px;border-bottom:1px solid #e5e2dc;white-space:nowrap}.au-chart-observations a{color:#275eaf;display:inline-flex;min-height:32px;align-items:center}

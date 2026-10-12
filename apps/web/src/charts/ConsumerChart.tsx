@@ -29,6 +29,7 @@ const observedWhen = (ms: number) => new Intl.DateTimeFormat('en-US', {
   hour12: false, timeZone: 'UTC', timeZoneName: 'short',
 }).format(ms);
 const shortName = (value: string) => value.length > 20 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value;
+const reportWhen = (ms: number) => new Intl.DateTimeFormat('en', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(ms);
 
 function Portrait({ src, label, type }: { src?: string; label: string; type: 'person' | 'subject' }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
@@ -61,7 +62,9 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
     ?? scopedHistory.series[0] ?? null;
   const bounds = chartBounds(scopedHistory);
   const points = chartPoints(series, bounds);
-  const snapshot = history.source.mode === 'REFERENCE' && series?.kind === 'ACTIVITY_COUNT' && series.points.length === 1
+  const dateOnly = series?.timeBasis === 'REPORT_DATE';
+  const axisWhen = dateOnly ? reportWhen : when;
+  const snapshot = history.source.mode === 'REFERENCE' && !dateOnly && series?.kind === 'ACTIVITY_COUNT' && series.points.length === 1
     ? series.points[0] : null;
   const snapshotOnly = !!snapshot && history.period === 'ALL' && scopedHistory.series.every(item => item.kind === 'ACTIVITY_COUNT' && item.points.length <= 1);
   const sourceUrl = series?.source.sourceUrl ?? history.source.sourceUrl;
@@ -91,6 +94,7 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
         <span className="au-chart-swatch" style={{ background: colors[item.kind] }} />{item.kind === 'ACTIVITY_COUNT' ? item.label : seriesName[item.kind]}
       </button>)}
     </div>}
+    {dateOnly && <div className="au-chart-history-context"><strong>{series?.aggregation === 'daily' ? 'Daily activity' : 'Cumulative activity'}</strong><span>{series?.observationNote}</span><small>Report dates · ranges end at the latest available report · no live feed</small></div>}
     {snapshot && series ? <div className="au-chart-snapshot">
       <p className="au-snapshot-label">{series.label}</p>
       <div className="au-snapshot-value"><strong>{number(Number(snapshot.value))}</strong><span>{series.unit}</span></div>
@@ -108,14 +112,15 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
             stroke={colors[series.kind]} strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round"
             points={segment.map(point => `${point.x},${point.y}`).join(' ')} />)}
           {points.map((point, index) => <circle key={`${point.atMs}-${index}`} cx={point.x} cy={point.y}
-            r={series.kind === 'TRADE_PRICE' ? 4 : 2.5} fill={colors[series.kind]} />)}
+            r={series.kind === 'TRADE_PRICE' || dateOnly ? 4 : 2.5} fill={colors[series.kind]}><title>{`${axisWhen(point.atMs)} · ${number(point.value)} ${series.unit}`}</title></circle>)}
         </svg>
         <span className="au-chart-ylabel au-chart-ylabel-top" aria-hidden="true">{number(high)}</span>
         <span className="au-chart-ylabel au-chart-ylabel-bottom" aria-hidden="true">{number(low)}</span>
       </div>
-      <div className="au-chart-caption"><span>{when(bounds.start)}</span><span>{series.unit} · {points.length} points · {visibleGapCount} gaps</span><span>{when(bounds.end)}</span></div>
+      <div className="au-chart-caption"><span>{axisWhen(bounds.start)}</span><span>{series.unit} · {points.length} points · {visibleGapCount} gaps</span><span>{axisWhen(bounds.end)}</span></div>
     </> : <div className="au-chart-empty">No {history.source.mode === 'DEMO' ? 'sample' : 'observed'} {series ? seriesName[series.kind].toLowerCase() : 'chart'} data in this period.</div>}</div>}
 
+    {dateOnly && series && <details className="au-chart-observations"><summary>View {points.length} recorded observations</summary><div className="au-chart-observation-scroll"><table><thead><tr><th>Report date</th><th>{series.unit}</th><th>Source</th></tr></thead><tbody>{series.points.map(point => <tr key={point.atMs}><td><time dateTime={point.reportedDate}>{point.reportedDate}</time></td><td>{number(Number(point.value))}</td><td>{point.sourceUrl && <a href={point.sourceUrl} target="_blank" rel="noopener noreferrer">View source ↗</a>}</td></tr>)}</tbody></table></div></details>}
     {!snapshot && !!clusters.length && <div ref={markerTrack} className="au-chart-markers" aria-label="Chip activity on this chart">
       {clusters.map(cluster => {
         const first = cluster.actions[0];
@@ -153,7 +158,7 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
       </article>)}
     </div>}
     <details className="au-chart-source"><summary>About this {snapshot ? 'snapshot' : 'chart'}</summary>
-      <p>{history.source.label}. Updated {when(history.source.asOfMs)}. {history.source.mode === 'DEMO'
+      <p>{history.source.label}. {dateOnly ? `Latest report ${reportWhen(history.source.asOfMs)} (time zone not supplied)` : `Updated ${when(history.source.asOfMs)}`}. {history.source.mode === 'DEMO'
         ? 'Sample values and example activity are illustrative; they are not real wallet results or executable markets.'
         : history.source.mode === 'REFERENCE' ? snapshot ? 'A captured count from the linked source. A provider report date describes the measurement; the capture time records when the source was retrieved.' : 'Historical observations from the linked public source. The date range and metric apply to this source.' : 'Observed history comes from Devnet records. Chip activity tracks attention, not cash profit.'}</p>
       {series && <p>{series.kind === 'ACTIVITY_COUNT' ? series.label : seriesName[series.kind]} · {series.unit}. {snapshot ? 'This snapshot does not establish a trend or a continuously updated feed.' : 'Missing intervals are left blank.'} {history.source.mode === 'REFERENCE' ? 'This activity is not a token price or a trade return.' : 'Chart values are informational; current quotes and receipts govern transactions.'}</p>}

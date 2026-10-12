@@ -119,6 +119,7 @@ test('single captured platform count renders its date and source without inventi
   const markets = await api.listMarkets();
   for (const subject of markets) {
     const history = await api.getHistory(subject.id, 'ALL');
+    if (history.series[0].timeBasis === 'REPORT_DATE') continue;
     const html = render(ConsumerChart, { history, onSelectAction: noAction, onPeriodChange: noAction });
     assert.match(html, /au-chart-snapshot/);
     assert.ok(html.includes(new Intl.NumberFormat('en').format(Number(subject.activity.value))));
@@ -127,6 +128,31 @@ test('single captured platform count renders its date and source without inventi
     assert.ok(html.includes(`href="${subject.source.sourceUrl}"`));
     assert.doesNotMatch(html, /<svg|Chart period|au-chart-marker /);
     if (subject.subject === 'TRACK') assert.match(html, /Kworb report dated.*time zone not supplied/);
+  }
+});
+
+test('historical reports display dated values and preserve sparse gaps across periods', async () => {
+  const { ConsumerChart } = await server.ssrLoadModule('/src/charts/ConsumerChart.tsx');
+  const { referenceConsumerReadApi: api } = await server.ssrLoadModule('/src/reference/referenceData.ts');
+  const subjects = (await api.listMarkets()).filter(market => market.activity.historyLabel);
+  assert.equal(subjects.length, 5);
+  for (const subject of subjects) {
+    for (const period of ['ALL', '1D', '1W', '1M']) {
+      const history = await api.getHistory(subject.id, period);
+      const series = history.series[0];
+      const html = render(ConsumerChart, { history, onSelectAction: noAction, onPeriodChange: noAction });
+      assert.match(html, /Chart period/);
+      assert.match(html, /Report dates/);
+      assert.match(html, /no live feed/);
+      assert.equal((html.match(/<circle /g) ?? []).length, series.points.length);
+      for (const point of series.points) {
+        assert.ok(html.toLowerCase().includes(`datetime="${point.reportedDate}"`));
+        assert.ok(html.includes(new Intl.NumberFormat('en').format(Number(point.value))));
+        assert.ok(html.includes(`href="${point.sourceUrl.replace(/&/g, '&amp;')}"`));
+      }
+      if (series.aggregation === 'cumulative') assert.doesNotMatch(html, /<polyline/);
+      assert.doesNotMatch(html, /au-chart-snapshot|au-chart-marker |12:00 AM/);
+    }
   }
 });
 

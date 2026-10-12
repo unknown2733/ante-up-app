@@ -32,7 +32,7 @@ export function ReferenceMarketActions({ section, onChange }: { section: ActionT
         <div><span>{section === 'call' ? 'Participation' : section === 'liquidity' ? 'Vault' : 'Execution quote'}</span><strong>{section === 'call' ? 'No money required' : 'Not available'}</strong></div>
         <div><span>Market connection</span><strong>Not connected</strong></div>
       </div>
-      <p id="reference-action-reason">{info.requirement} The public count above is a source snapshot.</p>
+      <p id="reference-action-reason">{info.requirement} The public activity above is source data, not an execution price.</p>
       <button type="button" className={`button full ${section === 'call' ? 'button-chip' : 'button-blue'}`} disabled aria-describedby="reference-action-reason">{action} · Not open yet</button>
       <div className="au-reference-action-links"><a className="text-link" href="/markets">Explore markets ↗</a><a className="text-link" href="/docs/markets-trading">How markets work ↗</a></div>
     </section>

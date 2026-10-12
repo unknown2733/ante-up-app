@@ -27,7 +27,7 @@ This source revision replaces synthetic catalog histories and fictional profiles
 | Test-asset trading | Faucet, registration, bonding-curve buy/sell, graduation, spot exchange, Pro long/short and LP participation |
 | Data | X Counts collector, validation, EWMA calculation and Solana snapshot publishing on a five-minute cycle |
 | Charts | Finalized-chain price samples every five minutes; visible observed Devnet charts refresh from the API every 60 seconds |
-| Reference catalog | Nine actual subjects: three YouTube view totals, three X post like totals, three Spotify stream totals reported by Kworb; original images, exact sources and capture/report dates; no fabricated history |
+| Reference catalog | Twelve actual subjects: five YouTube videos, three X posts, four Spotify tracks; five dated histories (61 observations), seven single snapshots, original media and per-observation source links |
 | Evidence | Raw inputs and calculation evidence archived through Arweave/Turbo; Solana records and SAS attestations link results to evidence |
 | Operations | API, indexer and bounded workers; provider budgets, stale-data handling and restart recovery |
 

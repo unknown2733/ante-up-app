@@ -31,8 +31,9 @@ const catalog = [...live, ...references];
 const referenceHistories = await Promise.all(references.map(market => referenceConsumerReadApi.getHistory(market.id, 'ALL')));
 for (const history of referenceHistories) {
   if (!history || history.source.mode !== 'REFERENCE' || history.actions.length || history.series.length !== 1 ||
-      history.series[0].kind !== 'ACTIVITY_COUNT' || history.series[0].points.length !== 1 || history.market.activity?.changeFraction !== null)
-    throw new Error('Platform references must contain one observed activity count without actions or an inferred change.');
+      history.series[0].kind !== 'ACTIVITY_COUNT' || !history.series[0].points.length ||
+      history.series[0].points.some(point => !Number.isFinite(point.atMs) || !Number.isFinite(Number(point.value))))
+    throw new Error('Platform references must contain observed activity counts without synthetic wallet actions.');
 }
 const allowedImageOrigins = [...new Set(catalog.map(item => {
   try { const url = new URL(item.thumbnailUrl); return url.protocol === 'https:' ? url.origin : null; } catch { return null; }
@@ -127,10 +128,19 @@ try {
       ranks:all('.au-social-ranks .au-social-actor').map(e=>({address:e.title,label:label(e)})),
       activities:all('.au-social-activity').length,markers:all('.au-chart-marker').length,
       chart:all('.au-chart svg').map(e=>e.getAttribute('aria-label')),chartPoints:all('.au-chart svg circle').length,
+      circles:all('.au-chart svg circle').map(e=>({x:Number(e.getAttribute('cx')),y:Number(e.getAttribute('cy'))})),
+      lines:all('.au-chart svg polyline').map(e=>e.getAttribute('points')),
+      chartCaption:all('.au-chart-caption').map(e=>e.innerText),
+      chartObservation:all('.au-chart-history-context').map(e=>e.innerText),
+      pointTitles:all('.au-chart svg circle').map(e=>e.textContent),
+      observationRows:all('.au-chart-observations tbody tr').map(e=>({date:e.querySelector('time')?.dateTime,value:e.querySelectorAll('td')[1]?.textContent,source:e.querySelector('a')?.href})),
       snapshots:all('.au-metric-snapshot,.au-chart-snapshot').map(e=>({text:e.innerText,value:e.querySelector('.au-snapshot-value strong')?.textContent,
         unit:e.querySelector('.au-snapshot-value span')?.textContent,label:e.querySelector('.au-snapshot-label')?.textContent,observedAt:e.querySelector('time')?.dateTime,
         observationLabel:e.querySelector('.au-snapshot-observation')?.textContent})),
       periodControls:all('.au-chart-periods button').length,
+      selectedPeriod:all('.au-chart-periods button').find(e=>e.getAttribute('aria-pressed')==='true')?.textContent,
+      actionTabs:all('.au-action-tabs [role="tab"]').map(e=>e.textContent.trim()),
+      executionControls:all('.au-reference-actions button[aria-describedby="reference-action-reason"]').map(e=>({disabled:e.disabled,text:e.textContent})),
       sources:all('a').filter(e=>e.textContent.includes('View data source')).map(e=>e.href),
       images:all('img').map(e=>({src:e.currentSrc||e.src,complete:e.complete,width:e.naturalWidth})),
       enabledFinancial:all('button').filter(e=>!e.disabled&&!e.hasAttribute('aria-pressed')&&/^(Place chip|Buy|Sell|Open Pro|Deposit liquidity)$/i.test(label(e))).map(label),
@@ -153,6 +163,57 @@ try {
     check(!probe.images.some(image => image.complete && !image.width), 'broken image');
     return { probe, check };
   }
+  function checkReferenceData(view, history) {
+    const { probe, check } = view;
+    const series = history.series[0];
+    const points = [...series.points].sort((a, b) => a.atMs - b.atMs);
+    check(probe.enabledFinancial.length === 0, 'executable financial control on reference subject');
+    check(probe.markers === 0, 'reference has fabricated chip/trade markers');
+    check(probe.actionTabs.join('|') === 'Chips|Buy / Sell|Pro|Liquidity', 'reference action tabs absent');
+    check(probe.executionControls.length === 1 && probe.executionControls.every(control => control.disabled), 'unregistered-market execution is not disabled');
+    if (points.length === 1 && probe.snapshots.length) {
+      const snapshot = probe.snapshots[0];
+      const count = new Intl.NumberFormat('en', { maximumFractionDigits: 4 }).format(Number(points[0].value));
+      check(snapshot.value === count && snapshot.unit === series.unit && snapshot.label === series.label, 'snapshot count/unit/metric does not match source DTO');
+      check(snapshot.observedAt === new Date(points[0].atMs).toISOString(), 'snapshot observation time does not match DTO');
+      const observationLabel = series.source.observationLabel ?? history.source.observationLabel;
+      if (observationLabel) check(snapshot.observationLabel === observationLabel, 'provider observation/report date context absent');
+      check(probe.chartPoints === 0, 'snapshot also presents a historical line chart');
+    } else if (points.length) {
+      check(probe.chart.length === 1 && probe.chartPoints === points.length, `chart point count differs from DTO (${probe.chartPoints}/${points.length})`);
+      check(probe.chart.some(label => label.includes(series.unit)), `chart unit differs from ${series.unit}`);
+      check(probe.chartCaption.some(caption => caption.includes(series.unit)), 'chart caption unit absent');
+      if (points.length > 1) check(probe.periodControls === 4, 'history period controls absent');
+      if (series.timeBasis === 'REPORT_DATE') {
+        check(probe.chartCaption.every(caption => !/\bUTC\b|\b[AP]M\b|\d{1,2}:\d{2}/.test(caption)), 'date-only report axis invents a time or timezone');
+        check(probe.pointTitles.every(title => !/\bUTC\b|\b[AP]M\b|\d{1,2}:\d{2}/.test(title)), 'date-only point label invents a time or timezone');
+        check(probe.chartObservation.some(label => label.includes(series.aggregation === 'daily' ? 'Daily activity' : 'Cumulative activity') && label.includes('no live feed')), 'aggregation/report-date context absent');
+        if (series.observationNote) check(probe.chartObservation.some(label => label.includes(series.observationNote)), 'source history scope absent');
+      }
+      for (const line of probe.lines) {
+        const indices = line.trim().split(/\s+/).map(pair => {
+          const [x, y] = pair.split(',').map(Number);
+          return probe.circles.findIndex(circle => Math.abs(circle.x - x) < 0.001 && Math.abs(circle.y - y) < 0.001);
+        });
+        for (let i = 1; i < indices.length; i++) {
+          const a = points[indices[i - 1]], b = points[indices[i]];
+          check(!!a && !!b, 'rendered line lacks matching source points');
+          if (a && b) check(!series.gaps.some(gap => a.atMs <= gap.fromMs && b.atMs >= gap.toMs), 'line crosses a missing-source interval');
+        }
+      }
+    } else check(probe.chartPoints === 0, 'empty period shows invented observations');
+  }
+  async function checkReferenceEvidence(view, history) {
+    await evaluate("document.querySelector('.au-chart-source')?.setAttribute('open','');document.querySelector('.au-chart-observations')?.setAttribute('open','')");
+    const evidence = await evaluate(probeCode);
+    const series = history.series[0];
+    view.check(evidence.sources.includes(series.source.sourceUrl ?? history.source.sourceUrl), 'public provenance link absent');
+    if (series.timeBasis === 'REPORT_DATE') {
+      const expected = series.points.map(point => ({ date: point.reportedDate, value: new Intl.NumberFormat('en', { maximumFractionDigits: 4 }).format(Number(point.value)), source: point.sourceUrl }));
+      view.check(JSON.stringify(evidence.observationRows) === JSON.stringify(expected), 'date/value/source observation table differs from source DTO');
+    }
+    results.at(-1).evidence = { sources: evidence.sources, observationRows: evidence.observationRows };
+  }
   const shortActor = actor => actor.length > 18 ? `${actor.slice(0, 7)}…${actor.slice(-5)}` : actor;
   const viewports = [{ name: 'desktop-1440', width: 1440, height: 900, mobile: false }, { name: 'mobile-390', width: 390, height: 844, mobile: true }, { name: 'mobile-320', width: 320, height: 568, mobile: true }];
   for (const viewport of viewports) {
@@ -166,7 +227,7 @@ try {
       const count = new Intl.NumberFormat('en-US', { maximumFractionDigits: 6 }).format(Number(market.activity.value));
       explore.check(row?.value === `${count} ${market.activity.unit}`, `exact platform count/unit absent for ${market.id}`);
       explore.check(row?.metric === market.activity.label, `metric label absent for ${market.id}`);
-      explore.check(!!row && !row.change.includes('%') && row.change.includes('Captured snapshot'), `inferred percentage change for ${market.id}`);
+      if (market.activity.changeFraction === null) explore.check(!!row && !row.change.includes('%'), `inferred percentage change for ${market.id}`);
     }
     const posts = references.filter(market => market.subject === 'POST');
     const clicked = await evaluate("(() => {const e=[...document.querySelectorAll('.au-subject-filter button')].find(e=>e.textContent.trim()==='Post');if(!e)return false;e.click();return true})()");
@@ -176,7 +237,9 @@ try {
       filtered.check(filtered.probe.rows.every(row => posts.some(market => row.label === `Open ${market.title} subject`)), 'Post filter includes a different subject type');
     }
     for (const [index, market] of references.entries()) {
-      const detail = await visit(`/markets/${encodeURIComponent(market.id)}?period=ALL`, viewport, `reference-${index}`, state => state.text.includes(market.title) && state.text.includes('PUBLIC SOURCE') && state.snapshots.length === 1);
+      const history = referenceHistories[index];
+      const multiPoint = history.series[0].points.length > 1;
+      const detail = await visit(`/markets/${encodeURIComponent(market.id)}?period=ALL`, viewport, `reference-${index}`, state => state.text.includes(market.title) && state.text.includes('PUBLIC SOURCE') && (multiPoint ? state.chartPoints === history.series[0].points.length : state.snapshots.length === 1));
       if (market.thumbnailUrl) {
         for (let attempt = 0; attempt < 40; attempt++) {
           const imageReady = await evaluate(`(() => {const e=document.querySelector('.au-detail-art');return !!e&&e.complete&&e.naturalWidth>0})()`);
@@ -187,18 +250,19 @@ try {
         detail.check(imageState.images.some(image => image.src === market.thumbnailUrl && image.complete && image.width > 0), 'catalog artwork did not load');
         results.at(-1).loadedImages = imageState.images;
       }
-      detail.check(detail.probe.enabledFinancial.length === 0, 'executable financial control on reference subject');
-      detail.check(detail.probe.markers === 0, 'reference has fabricated chip/trade markers');
-      detail.check(detail.probe.chart.length === 0 && detail.probe.chartPoints === 0 && detail.probe.periodControls === 0, 'single snapshot presented as historical chart');
-      const snapshot = detail.probe.snapshots[0];
-      const count = new Intl.NumberFormat('en', { maximumFractionDigits: 4 }).format(Number(market.activity.value));
-      detail.check(snapshot?.value === count && snapshot?.unit === market.activity.unit && snapshot?.label === market.activity.label, 'snapshot count/unit/metric does not match source DTO');
-      detail.check(snapshot?.observedAt === new Date(market.activity.asOfMs).toISOString(), 'snapshot observation time does not match DTO');
-      if (market.source.observationLabel) detail.check(snapshot?.observationLabel === market.source.observationLabel, 'provider observation/report date context absent');
-      detail.check(!!snapshot && !/[+-]?\d[\d,.]*\s*%/.test(snapshot.text), 'snapshot has inferred percentage change');
-      await evaluate("document.querySelector('.au-chart-source')?.setAttribute('open','')");
-      const source = await evaluate(probeCode);
-      detail.check(source.sources.includes(market.source.sourceUrl), 'public provenance link absent');
+      checkReferenceData(detail, history);
+      await checkReferenceEvidence(detail, history);
+      if (multiPoint) for (const period of ['1D', '1W', '1M']) {
+        const expected = await referenceConsumerReadApi.getHistory(market.id, period);
+        const clicked = await evaluate(`(() => {const e=[...document.querySelectorAll('.au-chart-periods button')].find(e=>e.textContent===${JSON.stringify(period)});if(!e)return false;e.click();return true})()`);
+        detail.check(clicked, `${period} period control absent`);
+        if (!clicked) continue;
+        const count = expected.series[0].points.length;
+        const filtered = await visit(`/markets/${encodeURIComponent(market.id)}?period=${period}`, viewport, `reference-${index}-${period}`, state => state.selectedPeriod === period && (count > 1 ? state.chartPoints === count : count === 1 ? state.chartPoints === 1 || state.snapshots.length === 1 : state.chartPoints === 0), false);
+        checkReferenceData(filtered, expected);
+        await checkReferenceEvidence(filtered, expected);
+        filtered.check(new URL(filtered.probe.url).searchParams.get('period') === period, 'period filter not reflected in URL');
+      }
     }
     for (const [index, market] of live.entries()) {
       const detail = await visit(`/markets/${encodeURIComponent(market.id)}`, viewport, `live-${index}`, state => state.text.includes(market.title) && state.text.includes('DEVNET OBSERVED MARKET'));

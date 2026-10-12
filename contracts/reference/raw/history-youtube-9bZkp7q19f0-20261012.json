@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "slug": "youtube-9bZkp7q19f0",
+    "title": "PSY - GANGNAM STYLE(강남스타일) M/V",
+    "subject": "VIDEO",
+    "platform": "YouTube",
+    "creatorLabel": "officialpsy",
+    "subjectUrl": "https://www.youtube.com/watch?v=9bZkp7q19f0",
+    "imageUrl": "https://i.ytimg.com/vi/9bZkp7q19f0/maxresdefault.jpg",
+    "imageSourceUrl": "https://www.youtube.com/watch?v=9bZkp7q19f0",
+    "imageAlt": "PSY - GANGNAM STYLE(강남스타일) M/V by officialpsy"
+  },
+  "aggregation": "daily",
+  "scope": "Daily YouTube video views reported by Kworb; monthly/yearly estimates excluded.",
+  "provider": "Kworb",
+  "capturedAt": "2026-10-12T22:22:41.932Z",
+  "metadataResponseSha256": "2f7b73622010cf200bfffa0b97be1df6edc6cf97b00d7add8be63cc21fa0e094",
+  "metadataVerifiedAt": "2026-10-12T22:35:04.707Z",
+  "points": [
+    {
+      "date": "2026-09-28",
+      "value": "948672",
+      "sourceUrl": "https://kworb.net/youtube/video/9bZkp7q19f0.html",
+      "sourceResponseSha256": "d3d73f5ef82beb08f349b407d4f145ee1c8aadf56857eb069dcfe6feac22dabb",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.932Z"
+    },
+    {
+      "date": "2026-09-29",
+      "value": "949429",
+      "sourceUrl": "https://kworb.net/youtube/video/9bZkp7q19f0.html",
+      "sourceResponseSha256": "d3d73f5ef82beb08f349b407d4f145ee1c8aadf56857eb069dcfe6feac22dabb",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.932Z"
+    },
+    {
+      "date": "2026-09-30",
+      "value": "950136",
+      "sourceUrl": "https://kworb.net/youtube/video/9bZkp7q19f0.html",
+      "sourceResponseSha256": "d3d73f5ef82beb08f349b407d4f145ee1c8aadf56857eb069dcfe6feac22dabb",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.932Z"
+    },
+    {
+      "date": "2026-10-01",
+      "value": "950136",
+      "sourceUrl": "https://kworb.net/youtube/video/9bZkp7q19f0.html",
+      "sourceResponseSha256": "d3d73f5ef82beb08f349b407d4f145ee1c8aadf56857eb069dcfe6feac22dabb",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.932Z"
+    },
+    {
+      "date": "2026-10-02",
+      "value": "1183628",
+      "sourceUrl": "https://kworb.net/youtube/video/9bZkp7q19f0.html",
+      "sourceResponseSha256": "d3d73f5ef82beb08f349b407d4f145ee1c8aadf56857eb069dcfe6feac22dabb",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.932Z"
+    },
+    {
+      "date": "2026-10-03",
+      "value": "1230264",
+      "sourceUrl": "https://kworb.net/youtube/video/9bZkp7q19f0.html",
+      "sourceResponseSha256": "d3d73f5ef82beb08f349b407d4f145ee1c8aadf56857eb069dcfe6feac22dabb",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.932Z"
+    },
+    {
+      "date": "2026-10-04",
+      "value": "1172494",
+      "sourceUrl": "https://kworb.net/youtube/video/9bZkp7q19f0.html",
+      "sourceResponseSha256": "d3d73f5ef82beb08f349b407d4f145ee1c8aadf56857eb069dcfe6feac22dabb",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.932Z"
+    },
+    {
+      "date": "2026-10-05",
+      "value": "883464",
+      "sourceUrl": "https://kworb.net/youtube/video/9bZkp7q19f0.html",
+      "sourceResponseSha256": "d3d73f5ef82beb08f349b407d4f145ee1c8aadf56857eb069dcfe6feac22dabb",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.932Z"
+    },
+    {
+      "date": "2026-10-06",
+      "value": "883464",
+      "sourceUrl": "https://kworb.net/youtube/video/9bZkp7q19f0.html",
+      "sourceResponseSha256": "d3d73f5ef82beb08f349b407d4f145ee1c8aadf56857eb069dcfe6feac22dabb",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.932Z"
+    },
+    {
+      "date": "2026-10-07",
+      "value": "924375",
+      "sourceUrl": "https://kworb.net/youtube/video/9bZkp7q19f0.html",
+      "sourceResponseSha256": "d3d73f5ef82beb08f349b407d4f145ee1c8aadf56857eb069dcfe6feac22dabb",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.932Z"
+    },
+    {
+      "date": "2026-10-08",
+      "value": "965208",
+      "sourceUrl": "https://kworb.net/youtube/video/9bZkp7q19f0.html",
+      "sourceResponseSha256": "d3d73f5ef82beb08f349b407d4f145ee1c8aadf56857eb069dcfe6feac22dabb",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.932Z"
+    },
+    {
+      "date": "2026-10-09",
+      "value": "965208",
+      "sourceUrl": "https://kworb.net/youtube/video/9bZkp7q19f0.html",
+      "sourceResponseSha256": "d3d73f5ef82beb08f349b407d4f145ee1c8aadf56857eb069dcfe6feac22dabb",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.932Z"
+    }
+  ]
+}

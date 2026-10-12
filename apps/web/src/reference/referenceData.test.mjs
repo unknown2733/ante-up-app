@@ -3,11 +3,12 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { platformReferences } from '../../../../contracts/reference/platform-snapshot.ts';
+import { historyReferences } from '../../../../contracts/reference/platform-history.ts';
 import { referenceConsumerReadApi as api } from './referenceData.ts';
 
 test('catalog exposes exact platform metrics without invented prices, users, or trading rights', async () => {
   const markets = await api.listMarkets();
-  assert.equal(markets.length, 9);
+  assert.equal(markets.length, 12);
   assert.deepEqual(new Set(markets.map(item => item.subject)), new Set(['VIDEO', 'TRACK', 'POST']));
   for (const market of markets) {
     assert.equal(market.source.mode, 'REFERENCE');
@@ -42,7 +43,7 @@ test('displayed totals match hashed source extracts for the exact video, post, o
     const history = await api.getHistory(`reference:market:${item.slug}`, 'ALL');
     assert.equal(history.market.activity.value, value);
     assert.equal(history.market.activity.unit, item.metric.unit);
-    assert.equal(history.series[0].points[0].value, value);
+    assert.equal(history.series[0].points.at(-1).value, value);
     if (kind === 'SPOTIFY_STREAMS') {
       assert.equal(item.metric.sourceType, 'THIRD_PARTY');
       assert.equal(fields.reportedDate, item.metric.reportedDate);
@@ -56,6 +57,7 @@ test('displayed totals match hashed source extracts for the exact video, post, o
 
 test('all periods preserve one captured point without interpolation, proxy metrics, or invented changes', async () => {
   for (const item of platformReferences) {
+    if (historyReferences.some(history => history.slug === item.slug)) continue;
     for (const period of ['1D', '1W', '1M', 'ALL']) {
       const history = await api.getHistory(`reference:market:${item.slug}`, period);
       assert.equal(history.series.length, 1);
@@ -64,6 +66,26 @@ test('all periods preserve one captured point without interpolation, proxy metri
       assert.deepEqual(series.points, [{ atMs: Date.parse(item.metric.asOf), value: item.metric.value, observationId: `public:${item.metric.rawSha256}` }]);
       assert.deepEqual(series.gaps, []);
       assert.equal(history.market.activity.changeFraction, null);
+    }
+  }
+});
+
+test('historical adapter preserves exact reported dates, daily scope, sparse gaps and period bounds', async () => {
+  for (const item of historyReferences) {
+    const all = await api.getHistory(`reference:market:${item.slug}`, 'ALL');
+    assert.deepEqual(all.series[0].points.map(p => ({ date: p.reportedDate, value: p.value })), item.points.map(p => ({ date: p.date, value: p.value })));
+    assert.equal(all.source.asOfMs, Date.parse(`${item.points.at(-1).date}T00:00:00Z`));
+    assert.equal(all.series[0].aggregation, item.aggregation);
+    assert.equal(all.series[0].timeBasis, 'REPORT_DATE');
+    assert.equal(all.series[0].gaps.length, item.aggregation === 'cumulative' ? 2 : 0);
+    assert.equal(all.market.activity.unit.endsWith('/day'), item.aggregation === 'daily');
+    for (const [period, days] of [['1D', 1], ['1W', 7], ['1M', 30]]) {
+      const history = await api.getHistory(all.market.id, period);
+      const expected = all.series[0].points.filter(p => p.atMs >= all.source.asOfMs - days * 86400000);
+      assert.deepEqual(history.series[0].points, expected);
+      assert.equal(history.market.latestPrice, null);
+      assert.equal(history.market.activity.changeFraction, null);
+      assert.deepEqual(history.actions, []);
     }
   }
 });

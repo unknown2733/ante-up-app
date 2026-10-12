@@ -1,0 +1,270 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "slug": "spotify-0VjIjW4GlUZAMYd2vXMi3b",
+    "title": "Blinding Lights",
+    "subject": "TRACK",
+    "platform": "Spotify",
+    "creatorLabel": "The Weeknd",
+    "subjectUrl": "https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b",
+    "imageUrl": "https://i.scdn.co/image/ab67616d0000b2738863bc11d2aa12b54f5aeb36",
+    "imageSourceUrl": "https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b",
+    "imageAlt": "Blinding Lights by The Weeknd"
+  },
+  "aggregation": "daily",
+  "scope": "Daily Spotify Global chart-eligible streams, reported by Kworb; absent chart dates are unknown.",
+  "provider": "Kworb",
+  "capturedAt": "2026-10-12T22:22:42.201Z",
+  "metadataResponseSha256": "14438f4ece100df5af5dbbf66a6ba2f2a43226ba7e061baa964600ecd1af47cd",
+  "metadataVerifiedAt": "2026-10-12T22:35:05.075Z",
+  "points": [
+    {
+      "date": "2026-09-11",
+      "value": "1488132",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-09-12",
+      "value": "1426311",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-09-13",
+      "value": "1235260",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-09-14",
+      "value": "1328634",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-09-15",
+      "value": "1395046",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-09-16",
+      "value": "1420473",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-09-17",
+      "value": "1437574",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-09-18",
+      "value": "1484968",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-09-19",
+      "value": "1436487",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-09-20",
+      "value": "1247791",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-09-21",
+      "value": "1372431",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-09-22",
+      "value": "1432983",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-09-23",
+      "value": "1378483",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-09-24",
+      "value": "1401812",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-09-25",
+      "value": "1488839",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-09-26",
+      "value": "1430659",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-09-27",
+      "value": "1277713",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-09-28",
+      "value": "1414070",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-09-29",
+      "value": "1384827",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-09-30",
+      "value": "1467795",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-10-01",
+      "value": "1496004",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-10-02",
+      "value": "1518474",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-10-03",
+      "value": "1491688",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-10-04",
+      "value": "1278201",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-10-05",
+      "value": "1409883",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-10-06",
+      "value": "1437487",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-10-07",
+      "value": "1461179",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-10-08",
+      "value": "1498467",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-10-09",
+      "value": "1544758",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-10-10",
+      "value": "1487189",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    },
+    {
+      "date": "2026-10-11",
+      "value": "1306341",
+      "sourceUrl": "https://kworb.net/spotify/track/0VjIjW4GlUZAMYd2vXMi3b.html",
+      "sourceResponseSha256": "7367d0b21087613d8cd6e3b36cebb70990d4e00494746e082a97489d2f060b1d",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:42.201Z"
+    }
+  ]
+}

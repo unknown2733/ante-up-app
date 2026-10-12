@@ -8,6 +8,14 @@ Reference metrics identify the activity counted: YouTube video views, X post lik
 
 A single observation appears as a snapshot. A history requires multiple recorded observations, and a change requires comparable counts from different times. Captured counts are not continuously updated feeds. Subjects without a verified count show available metadata and artwork. Reference counts do not feed chip results or settlement.
 
+## Reading historical activity
+
+- **Cumulative activity:** Rosewood and May Ninth show Spotify stream totals at three verified report dates each. These are sparse observations; the chart leaves unobserved intervals blank.
+- **Daily activity:** Free and Gangnam Style show daily YouTube views reported by Kworb. Blinding Lights shows Spotify Global chart-eligible streams per day, which differ from the all-stream counter on a song page.
+- **Dates and ranges:** 1D, 1W, and 1M end at the latest available report, not today. All shows the complete imported history. Report dates do not imply a time of day or time zone. Open **View recorded observations** for exact dates, values, and source links.
+
+Daily counts can rise or fall as activity changes. Missing days are unknown, not zero. We do not invent intermediate values, infer trading returns, or turn these reports into live prices. Imported history and the Devnet market connection are separate.
+
 ## Attention reference
 
 The implemented X Counts path aggregates configured English keyword queries into minute observations. A valid zero differs from a missing observation. The activity index uses an exponentially weighted moving average with a **three day half-life**. Its comparison point is the index from **exactly seven days earlier**. The formula version is `h3-d7-q12-v1`.

@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "slug": "youtube-HyQn-jkug-w",
+    "title": "Free",
+    "subject": "VIDEO",
+    "platform": "YouTube",
+    "creatorLabel": "Rumi - Topic",
+    "subjectUrl": "https://www.youtube.com/watch?v=HyQn-jkug-w",
+    "imageUrl": "https://i.ytimg.com/vi/HyQn-jkug-w/maxresdefault.jpg",
+    "imageSourceUrl": "https://www.youtube.com/watch?v=HyQn-jkug-w",
+    "imageAlt": "Free by Rumi - Topic"
+  },
+  "aggregation": "daily",
+  "scope": "Daily YouTube video views reported by Kworb; monthly/yearly estimates excluded.",
+  "provider": "Kworb",
+  "capturedAt": "2026-10-12T22:22:41.921Z",
+  "metadataResponseSha256": "4b73658b20500c6619c5e01557e9c387735b3cfe67024cc6072aa69d2aee64be",
+  "metadataVerifiedAt": "2026-10-12T22:35:03.116Z",
+  "points": [
+    {
+      "date": "2026-09-30",
+      "value": "37083",
+      "sourceUrl": "https://kworb.net/youtube/video/HyQn-jkug-w.html",
+      "sourceResponseSha256": "09ac1ea65154f999f6d7dd952d546c7ae48a08ab03eaf66ee8ea2e4bf2ff7430",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.921Z"
+    },
+    {
+      "date": "2026-10-01",
+      "value": "39629",
+      "sourceUrl": "https://kworb.net/youtube/video/HyQn-jkug-w.html",
+      "sourceResponseSha256": "09ac1ea65154f999f6d7dd952d546c7ae48a08ab03eaf66ee8ea2e4bf2ff7430",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.921Z"
+    },
+    {
+      "date": "2026-10-02",
+      "value": "40400",
+      "sourceUrl": "https://kworb.net/youtube/video/HyQn-jkug-w.html",
+      "sourceResponseSha256": "09ac1ea65154f999f6d7dd952d546c7ae48a08ab03eaf66ee8ea2e4bf2ff7430",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.921Z"
+    },
+    {
+      "date": "2026-10-03",
+      "value": "40483",
+      "sourceUrl": "https://kworb.net/youtube/video/HyQn-jkug-w.html",
+      "sourceResponseSha256": "09ac1ea65154f999f6d7dd952d546c7ae48a08ab03eaf66ee8ea2e4bf2ff7430",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.921Z"
+    },
+    {
+      "date": "2026-10-04",
+      "value": "39786",
+      "sourceUrl": "https://kworb.net/youtube/video/HyQn-jkug-w.html",
+      "sourceResponseSha256": "09ac1ea65154f999f6d7dd952d546c7ae48a08ab03eaf66ee8ea2e4bf2ff7430",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.921Z"
+    },
+    {
+      "date": "2026-10-05",
+      "value": "34294",
+      "sourceUrl": "https://kworb.net/youtube/video/HyQn-jkug-w.html",
+      "sourceResponseSha256": "09ac1ea65154f999f6d7dd952d546c7ae48a08ab03eaf66ee8ea2e4bf2ff7430",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.921Z"
+    },
+    {
+      "date": "2026-10-06",
+      "value": "36367",
+      "sourceUrl": "https://kworb.net/youtube/video/HyQn-jkug-w.html",
+      "sourceResponseSha256": "09ac1ea65154f999f6d7dd952d546c7ae48a08ab03eaf66ee8ea2e4bf2ff7430",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.921Z"
+    },
+    {
+      "date": "2026-10-07",
+      "value": "36321",
+      "sourceUrl": "https://kworb.net/youtube/video/HyQn-jkug-w.html",
+      "sourceResponseSha256": "09ac1ea65154f999f6d7dd952d546c7ae48a08ab03eaf66ee8ea2e4bf2ff7430",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.921Z"
+    },
+    {
+      "date": "2026-10-08",
+      "value": "36033",
+      "sourceUrl": "https://kworb.net/youtube/video/HyQn-jkug-w.html",
+      "sourceResponseSha256": "09ac1ea65154f999f6d7dd952d546c7ae48a08ab03eaf66ee8ea2e4bf2ff7430",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.921Z"
+    },
+    {
+      "date": "2026-10-09",
+      "value": "39920",
+      "sourceUrl": "https://kworb.net/youtube/video/HyQn-jkug-w.html",
+      "sourceResponseSha256": "09ac1ea65154f999f6d7dd952d546c7ae48a08ab03eaf66ee8ea2e4bf2ff7430",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.921Z"
+    },
+    {
+      "date": "2026-10-10",
+      "value": "38886",
+      "sourceUrl": "https://kworb.net/youtube/video/HyQn-jkug-w.html",
+      "sourceResponseSha256": "09ac1ea65154f999f6d7dd952d546c7ae48a08ab03eaf66ee8ea2e4bf2ff7430",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.921Z"
+    },
+    {
+      "date": "2026-10-11",
+      "value": "38962",
+      "sourceUrl": "https://kworb.net/youtube/video/HyQn-jkug-w.html",
+      "sourceResponseSha256": "09ac1ea65154f999f6d7dd952d546c7ae48a08ab03eaf66ee8ea2e4bf2ff7430",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:22:41.921Z"
+    }
+  ]
+}

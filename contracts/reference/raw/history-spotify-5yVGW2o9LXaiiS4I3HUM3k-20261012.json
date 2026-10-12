@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "slug": "spotify-5yVGW2o9LXaiiS4I3HUM3k",
+    "title": "May Ninth",
+    "subject": "TRACK",
+    "platform": "Spotify",
+    "creatorLabel": "Khruangbin",
+    "subjectUrl": "https://open.spotify.com/track/5yVGW2o9LXaiiS4I3HUM3k",
+    "imageUrl": "https://i.scdn.co/image/ab67616d0000b2730aaf76a18898d0b63a9ff455",
+    "imageSourceUrl": "https://open.spotify.com/track/5yVGW2o9LXaiiS4I3HUM3k",
+    "imageAlt": "May Ninth by Khruangbin"
+  },
+  "aggregation": "cumulative",
+  "scope": "Cumulative Spotify track streams reported by Kworb; sparse provider dates only.",
+  "provider": "Kworb",
+  "capturedAt": "2026-10-12T22:24:01.821Z",
+  "points": [
+    {
+      "date": "2026-02-27",
+      "value": "56146919",
+      "sourceUrl": "https://web.archive.org/web/20260303043811id_/https://kworb.net/spotify/artist/2mVVjNmdjXZZDvhgQWiakk_songs.html",
+      "sourceResponseSha256": "624e200bc618d4f818269b5c4ec4a71eae069a027cfc71f90364a555d30888f9",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:24:01.821Z",
+      "archivedAt": "20260303043811"
+    },
+    {
+      "date": "2026-04-10",
+      "value": "57709051",
+      "sourceUrl": "https://web.archive.org/web/20260411230556id_/https://kworb.net/spotify/artist/2mVVjNmdjXZZDvhgQWiakk_songs.html",
+      "sourceResponseSha256": "1d7076cf5dd244f65c26ddb5c2ab55317972d57317b71d59ced69d18cc2b44d9",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:24:01.599Z",
+      "archivedAt": "20260411230556"
+    },
+    {
+      "date": "2026-10-09",
+      "value": "64000726",
+      "sourceUrl": "https://kworb.net/spotify/artist/2mVVjNmdjXZZDvhgQWiakk_songs.html",
+      "sourceResponseSha256": "06c718469b5b47f8c3aac63842a857647f05a6c61001e5ff757977d16c4cf33d",
+      "sourceResponseFormat": "gzip-html",
+      "capturedAt": "2026-10-12T22:13:07.122Z"
+    }
+  ]
+}

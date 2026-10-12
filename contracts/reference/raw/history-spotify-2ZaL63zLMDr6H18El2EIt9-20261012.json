@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "slug": "spotify-2ZaL63zLMDr6H18El2EIt9",
+    "title": "Rosewood",
+    "subject": "TRACK",
+    "platform": "Spotify",
+    "creatorLabel": "Bonobo",
+    "subjectUrl": "https://open.spotify.com/track/2ZaL63zLMDr6H18El2EIt9",
+    "imageUrl": "https://i.scdn.co/image/ab67616d0000b273226e702d1878d4a44b273980",
+    "imageSourceUrl": "https://open.spotify.com/track/2ZaL63zLMDr6H18El2EIt9",
+    "imageAlt": "Rosewood by Bonobo"
+  },
+  "aggregation": "cumulative",
+  "scope": "Cumulative Spotify track streams reported by Kworb; sparse provider dates only.",
+  "provider": "Kworb",
+  "capturedAt": "2026-10-12T22:24:01.946Z",
+  "points": [
+    {
+      "date": "2026-06-28",
+      "value": "47202777",
+      "sourceUrl": "https://web.archive.org/web/20260630000831id_/https://kworb.net/spotify/artist/0cmWgDlu9CwTgxPhf403hb_songs.html",
+      "sourceResponseSha256": "3839927bf8de34fae16ddc0e465a59225145ecd9a0389d45c3f7218632fba1a5",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:24:01.946Z",
+      "archivedAt": "20260630000831"
+    },
+    {
+      "date": "2026-09-08",
+      "value": "48306333",
+      "sourceUrl": "https://web.archive.org/web/20260913064450id_/https://kworb.net/spotify/artist/0cmWgDlu9CwTgxPhf403hb_songs.html",
+      "sourceResponseSha256": "0092fa336e903ea1107c09f3187707b362d071bf05e5f2a298f1f9ff467c0af8",
+      "sourceResponseFormat": "html",
+      "capturedAt": "2026-10-12T22:24:01.610Z",
+      "archivedAt": "20260913064450"
+    },
+    {
+      "date": "2026-10-02",
+      "value": "48661771",
+      "sourceUrl": "https://kworb.net/spotify/artist/0cmWgDlu9CwTgxPhf403hb_songs.html",
+      "sourceResponseSha256": "cdc977e01255a63d145c98f4cdb81492a2f2c8e4dc25e467e7a1f2b0d3dc7123",
+      "sourceResponseFormat": "gzip-html",
+      "capturedAt": "2026-10-12T22:13:06.612Z"
+    }
+  ]
+}
