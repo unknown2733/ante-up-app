@@ -3,57 +3,134 @@ import type { ReactNode } from 'react';
 import type { ConsumerAction, ConsumerLeaderboard, ConsumerNote, ConsumerProfile } from '../../../../contracts/consumer';
 import './social.css';
 
+export interface SocialMarketMedia {
+  title: string;
+  subtitle?: string;
+  thumbnailUrl?: string;
+  imageAlt?: string;
+}
+
 const date = (atMs: number) => new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }).format(atMs) + ' UTC';
+const day = (atMs: number) => new Intl.DateTimeFormat('en', { dateStyle: 'long', timeZone: 'UTC' }).format(atMs);
+const time = (atMs: number) => new Intl.DateTimeFormat('en', { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }).format(atMs) + ' UTC';
 const percent = (value: number | null) => value === null || !Number.isFinite(value) ? 'N/A' : `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`;
 const shortActor = (actor: string) => actor.length > 18 ? `${actor.slice(0, 7)}…${actor.slice(-5)}` : actor;
-const freeActions = (actions: ConsumerAction[]) => actions.filter(action => action.source.mode === 'DEMO' || action.kind === 'CALL_OPEN' || action.kind === 'CALL_CLOSE');
+const publicActions = (actions: ConsumerAction[]) => actions.filter(action => action.source.mode === 'DEMO' || action.kind === 'CALL_OPEN' || action.kind === 'CALL_CLOSE');
+const safeImage = (url?: string) => url && (/^https?:\/\//i.test(url) || (url.startsWith('/') && !url.startsWith('//'))) ? url : undefined;
+const initials = (label: string) => label.trim().split(/\s+/).slice(0, 2).map(part => part[0] ?? '').join('').toUpperCase() || '•';
 
-export function SocialLeaderboard({ board, onOpenProfile }: {
+function ImageOrFallback({ url, alt, label, kind }: { url?: string; alt: string; label: string; kind: 'avatar' | 'subject' }) {
+  const [failed, setFailed] = useState(false);
+  const src = safeImage(url);
+  return <span className={`au-social-image au-social-image--${kind}`} aria-hidden={src && !failed ? undefined : true}>
+    {src && !failed ? <img src={src} alt={alt} loading="lazy" onError={() => setFailed(true)} /> : <span aria-hidden="true">{initials(label)}</span>}
+  </span>;
+}
+
+function actionVerb(action: ConsumerAction) {
+  if (action.kind === 'CALL_OPEN') return 'Placed a chip';
+  if (action.kind === 'CALL_CLOSE') return 'Took back a chip';
+  return action.kind === 'BUY' ? 'Bought' : 'Sold';
+}
+
+function ActionResult({ action }: { action: ConsumerAction }) {
+  if (action.kind === 'CALL_OPEN') return <span className="au-social-result au-social-result--active">Active chip</span>;
+  if (action.kind === 'BUY' || action.kind === 'SELL') return <span className="au-social-result">Sample activity</span>;
+  return <span className={`au-social-result ${action.returnFraction === null ? '' : action.returnFraction < 0 ? 'au-social-negative' : 'au-social-positive'}`} aria-label={`Return ${percent(action.returnFraction)}`}>{percent(action.returnFraction)}</span>;
+}
+
+export function SocialLeaderboard({ board, onOpenProfile, avatarByActorId }: {
   board: ConsumerLeaderboard; onOpenProfile: (actorId: string) => void;
+  avatarByActorId?: Record<string, string | undefined>;
 }) {
-  return <section className="au-social" aria-label="Free call leaderboard">
-    <header className="au-social-heading"><div><span className="au-social-kicker">THE BOARD</span><h2>Free call leaderboard</h2></div><span className="au-social-source">{board.source.label}</span></header>
-    <p className="au-social-explain">Average return across valid closed free calls. Open calls and N/A results are not ranked. This is not a money P&amp;L ranking.</p>
-    <p className="au-social-period">{board.period === '7D' ? 'Last 7 days · by close time' : 'All time'} · {board.source.mode === 'DEMO' ? 'Demo' : 'Live Devnet'}</p>
-    {board.rows.length === 0 ? <p className="au-social-empty">No valid closed calls in this period yet.</p> :
+  return <section className="au-social" aria-label="Leaderboard">
+    <header className="au-social-heading"><div><span className="au-social-kicker">COMMUNITY</span><h2>Leaderboard</h2></div><span className="au-social-source">{board.source.mode === 'DEMO' ? 'Example' : 'Devnet'} · {board.source.label}</span></header>
+    <p className="au-social-explain">Average return on valid closed chips. Active chips and N/A results are excluded. Returns are percentages, not money P&amp;L.</p>
+    <p className="au-social-period">{board.period === '7D' ? 'Last 7 days · by close time' : 'All time'} · {board.source.mode === 'DEMO' ? 'Synthetic examples' : 'Public Devnet calls'} · Updated {date(board.source.asOfMs)}</p>
+    {board.rows.length === 0 ? <p className="au-social-empty">No valid closed chips in this period yet.</p> :
       <ol className="au-social-ranks">{board.rows.map(row => <li key={row.actorId}>
-        <span className="au-social-rank">{String(row.rank).padStart(2, '0')}</span>
+        <span className="au-social-rank" aria-label={`Rank ${row.rank}`}>{String(row.rank).padStart(2, '0')}</span>
         <button type="button" className="au-social-actor" onClick={() => onOpenProfile(row.actorId)} aria-label={`Open ${row.actorLabel || shortActor(row.actorId)} profile`}>
-          <strong>{row.actorLabel || shortActor(row.actorId)}</strong><small>{row.closedCallCount} valid closed {row.closedCallCount === 1 ? 'call' : 'calls'}</small>
+          <ImageOrFallback url={avatarByActorId?.[row.actorId]} alt="" label={row.actorLabel || row.actorId} kind="avatar" />
+          <span><strong>{row.actorLabel || shortActor(row.actorId)}</strong><small>{row.closedCallCount} valid closed {row.closedCallCount === 1 ? 'chip' : 'chips'}</small></span>
         </button>
-        <strong className={row.meanReturnFraction < 0 ? 'au-social-negative' : 'au-social-positive'}>{percent(row.meanReturnFraction)}</strong>
+        <strong className={`au-social-rank-result ${row.meanReturnFraction < 0 ? 'au-social-negative' : 'au-social-positive'}`}>{percent(row.meanReturnFraction)}</strong>
       </li>)}</ol>}
+    {board.source.mode === 'DEMO' && <p className="au-social-footnote">Example wallets and results are fictional.</p>}
   </section>;
 }
 
-export function SocialProfile({ profile, onOpenMarket, onOpenAction, onOpenProfile, noteEditor, marketLabel }: {
+export function SocialProfile({ profile, onOpenMarket, onOpenAction, onOpenProfile, noteEditor, marketLabel, marketMedia }: {
   profile: ConsumerProfile;
   onOpenMarket: (marketId: string) => void;
   onOpenAction: (action: ConsumerAction) => void;
   onOpenProfile?: (actorId: string) => void;
   noteEditor?: (action: ConsumerAction) => ReactNode;
   marketLabel?: (marketId: string) => string;
+  marketMedia?: Record<string, SocialMarketMedia | undefined>;
 }) {
-  const actions = freeActions(profile.actions).sort((a, b) => b.atMs - a.atMs || a.id.localeCompare(b.id));
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const actions = publicActions(profile.actions)
+    .filter(action => action.source.mode === profile.source.mode)
+    .sort((a, b) => b.atMs - a.atMs || a.id.localeCompare(b.id));
+  const groups = new Map<string, ConsumerAction[]>();
+  for (const action of actions) {
+    const key = day(action.atMs);
+    groups.set(key, [...(groups.get(key) ?? []), action]);
+  }
   const naCount = actions.filter(action => action.kind === 'CALL_CLOSE' && action.returnFraction === null).length;
-  return <section className="au-social" aria-label={`${profile.actorLabel || shortActor(profile.actorId)} public profile`}>
-    <header className="au-social-heading"><div><span className="au-social-kicker">PUBLIC PROFILE</span><h2>{profile.actorLabel || shortActor(profile.actorId)}</h2><small>{shortActor(profile.actorId)}</small></div><span className="au-social-source">{profile.source.label}</span></header>
-    <p className="au-social-explain">{profile.source.mode === 'DEMO' ? 'Synthetic demo activity. No real wallet, trade or proof is implied.' : 'Public free calls only. Open calls are shown for context; paid positions, Pro and Liquidity are outside this profile.'}</p>
-    <dl className="au-social-stats"><div><dt>Valid closed average</dt><dd>{percent(profile.meanReturnFraction)}</dd></div><div><dt>Valid closed calls</dt><dd>{profile.closedCallCount}</dd></div><div><dt>N/A closes</dt><dd>{naCount}</dd></div><div><dt>Open calls</dt><dd>{profile.openCallCount}</dd></div></dl>
-    <h3>{profile.source.mode === 'DEMO' ? 'Activity history' : 'Call history'}</h3>
-    {actions.length === 0 ? <p className="au-social-empty">No public free calls yet.</p> :
-      <ol className="au-social-actions">{actions.map(action => <li key={action.id}>
-        <div className="au-social-action-head"><span>{action.kind === 'CALL_OPEN' ? 'Call opened' : action.kind === 'CALL_CLOSE' ? 'Call closed' : action.kind}</span><time dateTime={new Date(action.atMs).toISOString()}>{date(action.atMs)}</time></div>
-        <div className="au-social-action-main"><button type="button" onClick={() => onOpenMarket(action.marketId)}>{marketLabel?.(action.marketId) ?? action.marketId} ↗</button><strong className={action.returnFraction === null ? '' : action.returnFraction < 0 ? 'au-social-negative' : 'au-social-positive'}>{action.kind === 'CALL_OPEN' ? 'Open' : percent(action.returnFraction)}</strong></div>
-        {action.note && <SocialNote note={action.note} />}
-        {noteEditor?.(action)}
-        <div className="au-social-links"><button type="button" onClick={() => onOpenAction(action)}>See call on chart ↗</button>{onOpenProfile && <button type="button" onClick={() => onOpenProfile(action.actorId)}>Wallet ↗</button>}</div>
-      </li>)}</ol>}
+  const actorName = profile.actorLabel || shortActor(profile.actorId);
+  return <section className="au-social" aria-label={`${actorName} public profile`}>
+    <header className="au-social-heading au-social-profile-heading">
+      <div className="au-social-profile-identity"><ImageOrFallback url={profile.avatarUrl} alt={profile.avatarAlt || `${actorName} avatar`} label={actorName} kind="avatar" /><div><span className="au-social-kicker">PUBLIC PROFILE</span><h2>{actorName}</h2><small>{shortActor(profile.actorId)}</small></div></div>
+      <span className="au-social-source">{profile.source.mode === 'DEMO' ? 'Example' : 'Devnet'} · {profile.source.label}</span>
+    </header>
+    <p className="au-social-explain">{profile.source.mode === 'DEMO' ? 'Fictional sample activity. No real wallet, transaction, or proof is implied.' : 'Public Devnet chips only. A chip is a free call, not a paid position. Notes can be added later or edited and are not covered by SAS proof.'}</p>
+    <dl className="au-social-stats"><div><dt>Valid closed average</dt><dd>{percent(profile.meanReturnFraction)}</dd></div><div><dt>Valid closed chips</dt><dd>{profile.closedCallCount}</dd></div><div><dt>N/A closes</dt><dd>{naCount}</dd></div><div><dt>Active chips</dt><dd>{profile.openCallCount}</dd></div></dl>
+    <div className="au-social-section-title"><h3>Activity</h3><span>{actions.length} {actions.length === 1 ? 'event' : 'events'} · newest first</span></div>
+    {actions.length === 0 ? <p className="au-social-empty">No public chip activity yet.</p> :
+      <div className="au-social-days">{[...groups].map(([groupDay, dayActions]) => <section key={groupDay} className="au-social-day" aria-label={groupDay}>
+        <h4>{groupDay}</h4>
+        <ol className="au-social-actions">{dayActions.map(action => {
+          const metadata = marketMedia?.[action.marketId];
+          const title = metadata?.title || marketLabel?.(action.marketId) || action.marketId;
+          const expanded = expandedId === action.id;
+          return <li key={action.id}>
+            <article className="au-social-activity">
+              <div className="au-social-activity-top">
+                <ImageOrFallback url={action.actorAvatarUrl || profile.avatarUrl} alt="" label={actorName} kind="avatar" />
+                <div className="au-social-activity-copy"><strong>{action.actorLabel || actorName}</strong><span>{actionVerb(action)}</span><time dateTime={new Date(action.atMs).toISOString()}>{time(action.atMs)}</time></div>
+                <ActionResult action={action} />
+              </div>
+              <button type="button" className="au-social-subject" onClick={() => onOpenMarket(action.marketId)} aria-label={`Open ${title} chart`}>
+                <ImageOrFallback url={metadata?.thumbnailUrl} alt={metadata?.imageAlt || `${title} artwork`} label={title} kind="subject" />
+                <span><strong>{title}</strong><small>{metadata?.subtitle || 'View subject and chart'}</small></span><span className="au-social-chevron" aria-hidden="true">↗</span>
+              </button>
+              {action.note && <p className="au-social-note-preview">{action.note.body}</p>}
+              <div className="au-social-activity-footer">
+                <button type="button" className="au-social-expand" aria-expanded={expanded} aria-controls={`au-social-detail-${action.id}`} onClick={() => setExpandedId(expanded ? null : action.id)}>{expanded ? 'Hide details ↑' : 'View details ↓'}</button>
+                <button type="button" onClick={() => onOpenAction(action)}>See on chart ↗</button>
+              </div>
+              {expanded && <div id={`au-social-detail-${action.id}`} className="au-social-detail">
+                <p>{action.kind === 'CALL_OPEN' ? 'This chip is active. Its return is not ranked until a valid close.' : action.returnFraction === null ? 'A return is unavailable for this close.' : 'Return shown for this closed chip.'}</p>
+                <p>Action time: <time dateTime={new Date(action.atMs).toISOString()}>{date(action.atMs)}</time></p>
+                {action.note && <SocialNote note={action.note} />}
+                {noteEditor?.(action)}
+                <div className="au-social-links">
+                  <button type="button" onClick={() => onOpenAction(action)}>See chip on chart ↗</button>
+                  {action.recordId && action.source.mode === 'LIVE' && <a href={`/records/${encodeURIComponent(action.recordId)}`}>Record and proof ↗</a>}
+                  {onOpenProfile && <button type="button" onClick={() => onOpenProfile(action.actorId)}>Wallet profile ↗</button>}
+                </div>
+              </div>}
+            </article>
+          </li>;
+        })}</ol>
+      </section>)}</div>}
   </section>;
 }
 
 export function SocialNote({ note, showHistory }: { note: ConsumerNote; showHistory?: () => void }) {
-  return <aside className="au-social-note" aria-label="Call note"><p>{note.body}</p><div>
+  return <aside className="au-social-note" aria-label="Chip note"><p>{note.body}</p><div>
     <span>{note.timing === 'ADDED_LATER' ? 'Added later' : 'Written at action'}</span>
     <time dateTime={new Date(note.createdAtMs).toISOString()}>{date(note.createdAtMs)}</time>
     {note.version > 1 && <span>Edited · v{note.version}</span>}
@@ -90,8 +167,8 @@ export function SocialNoteEditor({ action, wallet, writer, onSaved }: {
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not save note.'); }
     finally { setSaving(false); }
   }}>
-    <label htmlFor={`au-note-${action.id}`}>{current ? 'Edit your call note' : 'Add a call note'}</label>
-    <textarea id={`au-note-${action.id}`} value={draft} onChange={event => setDraft(event.target.value)} maxLength={560} rows={3} placeholder="What informed your call?" />
+    <label htmlFor={`au-note-${action.id}`}>{current ? 'Edit your chip note' : 'Add a chip note'}</label>
+    <textarea id={`au-note-${action.id}`} value={draft} onChange={event => setDraft(event.target.value)} maxLength={560} rows={3} placeholder="What informed your chip?" />
     <div className="au-social-editor-footer"><small>{count}/280 characters · Server time · Not covered by SAS proof</small><button type="submit" disabled={saving || count < 1 || count > 280 || !draft.trim()}>{saving ? 'Saving…' : 'Save note'}</button></div>
     {error && <p role="alert">{error}</p>}
   </form>;
