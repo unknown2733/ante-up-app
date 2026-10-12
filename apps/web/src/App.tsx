@@ -13,11 +13,12 @@ import { ConsumerShell, MarketDiscovery, ActionTabs, mergeConsumerMarkets } from
 import type { ActionTab, ConsumerRoute } from './consumer-ui';
 import { ConsumerChart } from './charts/ConsumerChart';
 import { SocialLeaderboard, SocialNote, SocialNoteEditor, SocialNoteHistory, SocialProfile } from './social/Social';
-import { demoConsumerReadApi, liveConsumerHttp } from './api';
-import { demoActors } from '../../../contracts/fixtures/consumer/catalog';
+import { liveConsumerHttp } from './api';
+import { referenceConsumerReadApi, isReferenceConsumerId } from './reference/referenceData';
 import { DocsPage } from './docs';
 import { SubjectImage, WalletAvatar } from './media/SubjectImage';
 import { artworkSource } from './consumer-ui/artwork';
+import { withVerifiedSubjectMedia } from './consumer-ui/catalog';
 
 const renderAvatar = (props: { address: string; src?: string; className: string }) => <WalletAvatar {...props} />;
 const renderSubjectImage = (props: { src?: string; alt: string; className: string }) => <SubjectImage {...props} />;
@@ -231,9 +232,11 @@ const marketHref = (id: string) => `/markets/${encodeURIComponent(id)}`;
 const actorHref = (id: string, actionId?: string) => `/u/${encodeURIComponent(id)}${actionId ? `?action=${encodeURIComponent(actionId)}` : ''}`;
 const chartHref = (action: ConsumerAction) => `${marketHref(action.marketId)}?period=ALL&action=${encodeURIComponent(action.id)}`;
 function consumerRead(mode: ConsumerMode) {
-  if (mode === 'DEMO') return demoConsumerReadApi;
+  if (mode === 'REFERENCE') return referenceConsumerReadApi;
+  if (mode !== 'LIVE') throw new Error('This example is no longer published. Open Explore for current subjects.');
   if (!liveConsumerHttp) throw new Error('Devnet markets are unavailable. Configure the API connection to view them.');
-  return liveConsumerHttp.read;
+  const read = liveConsumerHttp.read;
+  return { ...read, listMarkets: async () => (await read.listMarkets()).map(withVerifiedSubjectMedia) };
 }
 function consumerData<T>(load: () => Promise<T>) { return Promise.resolve().then(load).then(data => ({ data })); }
 function decodeRouteId(value: string | undefined) { try { return value ? decodeURIComponent(value) : null; } catch { return null; } }
@@ -244,12 +247,12 @@ function useUnifiedCatalog(refresh: number): CatalogState {
   useEffect(() => {
     let active = true;
     setState(previous => ({ ...previous, loading: true }));
-    Promise.allSettled([demoConsumerReadApi.listMarkets(), liveConsumerHttp ? liveConsumerHttp.read.listMarkets() : Promise.reject(new Error('Devnet API is not configured.'))]).then(results => {
+    Promise.allSettled([referenceConsumerReadApi.listMarkets(), liveConsumerHttp ? liveConsumerHttp.read.listMarkets() : Promise.reject(new Error('Devnet API is not configured.'))]).then(results => {
       if (!active) return;
-      const samples = results[0].status === 'fulfilled' ? results[0].value : [];
-      const live = results[1].status === 'fulfilled' ? results[1].value : [];
+      const references = results[0].status === 'fulfilled' ? results[0].value : [];
+      const live = results[1].status === 'fulfilled' ? results[1].value.map(withVerifiedSubjectMedia) : [];
       const liveError = results[1].status === 'rejected' ? displayConsumerError(results[1].reason instanceof Error ? results[1].reason.message : null, 'Devnet markets are unavailable.') : '';
-      setState({ markets: mergeConsumerMarkets(samples, live), liveError, loading: false });
+      setState({ markets: mergeConsumerMarkets(references, live), liveError, loading: false });
     });
     return () => { active = false; };
   }, [refresh]);
@@ -277,12 +280,12 @@ function useConsumerHistory(mode: ConsumerMode, id: string, period: ConsumerPeri
       const nextController = new AbortController();
       controller = nextController;
       setState(previous => ({ ...previous, loading: previous.value === null, refreshing: previous.value !== null }));
-      Promise.resolve().then(() => mode === 'DEMO'
-        ? demoConsumerReadApi.getHistory(id, period)
+      Promise.resolve().then(() => mode === 'REFERENCE'
+        ? referenceConsumerReadApi.getHistory(id, period)
         : liveConsumerHttp ? liveConsumerHttp.getHistory(id, period, nextController.signal) : Promise.reject(new Error('Live Devnet markets are unavailable.')))
         .then(value => {
           if (value && (value.market.id !== id || value.period !== period || value.source.mode !== mode || value.market.source.mode !== mode || (mode === 'LIVE' && value.market.liveMarketId && value.market.liveMarketId !== id))) throw new Error('Market history identity or mode does not match this route.');
-          if (active && !nextController.signal.aborted) setState({ value, loading: false, refreshing: false, stale: false, error: '', refreshedAtMs: Date.now() });
+          if (active && !nextController.signal.aborted) setState({ value: value ? { ...value, market: withVerifiedSubjectMedia(value.market) } : null, loading: false, refreshing: false, stale: false, error: '', refreshedAtMs: Date.now() });
         })
         .catch(reason => {
           if (!active || nextController.signal.aborted) return;
@@ -292,7 +295,7 @@ function useConsumerHistory(mode: ConsumerMode, id: string, period: ConsumerPeri
         .finally(() => {
           busy = false;
           if (controller === nextController) controller = null;
-          if (queued && active && (mode === 'DEMO' || visible())) { queued = false; load(); }
+          if (queued && active && (mode !== 'LIVE' || visible())) { queued = false; load(); }
         });
     }
     manualRefresh.current = () => load(true);
@@ -335,10 +338,10 @@ function ConsumerMarketPage({ id, mode, refresh, changed, transport, section, in
       {history.stale && <Notice tone="orange">Live chart update failed. {history.value.period !== period ? `Showing the previous ${history.value.period} period while ${period} is unavailable. ` : ''}Last successful refresh: {history.refreshedAtMs ? new Date(history.refreshedAtMs).toLocaleString('en-US', { timeZone: 'UTC' }) + ' UTC' : 'unknown'}. {history.error}</Notice>}
       {history.value.period !== period && !history.refreshing && !history.stale && <Notice tone="orange">Showing the previous {history.value.period} period. The selected {period} period will load when this tab is visible.</Notice>}
       {history.refreshing && <p className="tiny muted" role="status">{history.value.period !== period ? `Loading ${period}; showing ${history.value.period} until it arrives…` : 'Updating live chart…'}</p>}
-      <div className="au-detail-heading">{artSrc && <img className="au-detail-art" src={artSrc} alt={history.value.market.imageAlt ?? `${history.value.market.title} artwork`} onError={() => setFailedArtUrl(artSrc)} />}<span className="eyebrow blue-text">{mode === 'DEMO' ? 'REAL SUBJECT · SAMPLE HISTORY' : 'DEVNET OBSERVED MARKET'}</span><h1>{history.value.market.title}<span className="title-dot">.</span></h1><p>{history.value.market.creatorLabel && `${history.value.market.creatorLabel} · `}{history.value.market.subtitle}</p>{history.value.market.subjectUrl && <a className="text-link" href={history.value.market.subjectUrl} target="_blank" rel="noopener noreferrer">Open official subject ↗</a>}</div>
+      <div className="au-detail-heading">{artSrc && <img className="au-detail-art" src={artSrc} alt={history.value.market.imageAlt ?? `${history.value.market.title} artwork`} onError={() => setFailedArtUrl(artSrc)} />}<span className="eyebrow blue-text">{mode === 'REFERENCE' ? 'PUBLIC SOURCE' : 'DEVNET OBSERVED MARKET'}</span><h1>{history.value.market.title}<span className="title-dot">.</span></h1><p>{history.value.market.creatorLabel && `${history.value.market.creatorLabel} · `}{history.value.market.subtitle}</p>{history.value.market.subjectUrl && <a className="text-link" href={history.value.market.subjectUrl} target="_blank" rel="noopener noreferrer">View original ↗</a>}</div>
       {selected && <div className="au-selected-action"><strong>{selected.kind === 'CALL_OPEN' ? 'Placed a chip' : selected.kind === 'CALL_CLOSE' ? 'Took back a chip' : selected.kind}</strong><span> · {selected.actorLabel}</span>{selected.note && <SocialNote note={selected.note} />}<button type="button" onClick={() => go(actorHref(selected.actorId, selected.id))}>View profile ↗</button></div>}
-      <ConsumerChart history={history.value} onPeriodChange={changePeriod} onSelectAction={action => go(actorHref(action.actorId, action.id))} actorHref={id => actorHref(id)} recordHref={recordId => mode === 'DEMO' ? actorHref(history.value!.actions.find(action => action.recordId === recordId)?.actorId ?? '', history.value!.actions.find(action => action.recordId === recordId)?.id) : `/records/${encodeURIComponent(recordId)}`} noteHref={action => actorHref(action.actorId, action.id)} />
-      {mode === 'DEMO' ? <Notice tone="orange">Sample history and example activity are illustrative. This subject has no connected Devnet market, wallet action, trade, or proof.</Notice> : liveId !== id ? <ErrorBox message="Market execution identity does not match this chart." /> : <><ActionTabs value={section} onChange={tab => go(`${marketHref(id)}${tab === 'call' ? '' : `/${tab === 'liquidity' ? 'lp' : tab}`}`)} /><MarketPage id={liveId} refresh={refresh} changed={changed} mode={transport} section={section} /></>}
+      <ConsumerChart history={history.value} onPeriodChange={changePeriod} onSelectAction={action => go(actorHref(action.actorId, action.id))} actorHref={id => actorHref(id)} recordHref={recordId => `/records/${encodeURIComponent(recordId)}`} noteHref={action => actorHref(action.actorId, action.id)} />
+      {mode === 'REFERENCE' ? <Notice tone="blue">Explore this subject using its published source data. Chip placement and trading open when a Devnet market is connected.</Notice> : liveId !== id ? <ErrorBox message="Market execution identity does not match this chart." /> : <><ActionTabs value={section} onChange={tab => go(`${marketHref(id)}${tab === 'call' ? '' : `/${tab === 'liquidity' ? 'lp' : tab}`}`)} /><MarketPage id={liveId} refresh={refresh} changed={changed} mode={transport} section={section} /></>}
     </>}
   </div>;
 }
@@ -346,8 +349,7 @@ function ConsumerMarketPage({ id, mode, refresh, changed, transport, section, in
 function ConsumerLeaderboardPage({ refresh }: { refresh: number }) {
   const [period, setPeriod] = useState<'7D' | 'ALL'>('7D');
   const live = useData(() => consumerData(() => consumerRead('LIVE').getLeaderboard(period)), [period, refresh]);
-  const sample = useData(() => consumerData(() => demoConsumerReadApi.getLeaderboard(period)), [period]);
-  return <div className="au-consumer-social-page"><div className="segmented"><button className={period === '7D' ? 'active' : ''} onClick={() => setPeriod('7D')}>7 days</button><button className={period === 'ALL' ? 'active' : ''} onClick={() => setPeriod('ALL')}>All time</button></div><section aria-label="Devnet leaderboard">{live.loading ? <p className="muted">Loading Devnet leaderboard…</p> : live.error ? <ErrorBox message={`Devnet leaderboard unavailable. ${live.error}`} /> : live.value && <SocialLeaderboard renderAvatar={renderAvatar} board={live.value} onOpenProfile={id => go(actorHref(id))} />}</section><section className="au-sample-board" aria-label="Example leaderboard"><h2>Example leaderboard</h2><p>Illustrative rankings from sample histories. No real wallets or Devnet results are included.</p>{sample.loading ? <p className="muted">Loading examples…</p> : sample.error ? <ErrorBox message={sample.error} /> : sample.value && <SocialLeaderboard renderAvatar={renderAvatar} board={sample.value} onOpenProfile={id => go(actorHref(id))} />}</section></div>;
+  return <div className="au-consumer-social-page"><div className="segmented"><button className={period === '7D' ? 'active' : ''} onClick={() => setPeriod('7D')}>7 days</button><button className={period === 'ALL' ? 'active' : ''} onClick={() => setPeriod('ALL')}>All time</button></div><section aria-label="Devnet leaderboard">{live.loading ? <p className="muted">Loading Devnet leaderboard…</p> : live.error ? <ErrorBox message={`Devnet leaderboard unavailable. ${live.error}`} /> : live.value && <SocialLeaderboard renderAvatar={renderAvatar} board={live.value} onOpenProfile={id => go(actorHref(id))} />}</section></div>;
 }
 
 function ConsumerNoteHistory({ actionId }: { actionId: string }) {
@@ -393,7 +395,7 @@ export default function App() {
   const params = new URLSearchParams(query);
   const segment = path.split('/').filter(Boolean);
   const id = decodeRouteId(segment[1]);
-  const consumerMode: ConsumerMode = id?.startsWith('demo:') || (path === '/me' && params.get('mode') === 'demo') ? 'DEMO' : 'LIVE';
+  const consumerMode: ConsumerMode = id && isReferenceConsumerId(id) ? 'REFERENCE' : 'LIVE';
   const [transport, setTransport] = useState(transportMode());
   useEffect(() => { const update = () => setTransport(transportMode()); window.addEventListener('ante-up-mode', update); return () => window.removeEventListener('ante-up-mode', update); }, []);
   const [refresh, setRefresh] = useState(0);
@@ -401,12 +403,12 @@ export default function App() {
   const route: ConsumerRoute = segment[0] === 'docs' ? 'docs' : path === '/leaderboard' ? 'leaderboard' : path === '/faucet' || path === '/register' ? 'funds' : path === '/me' || segment[0] === 'u' || segment[0] === 'records' || segment[0] === 'proofs' ? 'activity' : 'discover';
   let content: ReactNode;
   if (!segment.length || path === '/markets') content = <ConsumerDiscoveryPage refresh={refresh} />;
-  else if (segment[0] === 'markets' && id) content = <ConsumerMarketPage key={`${consumerMode}:${id}`} id={id} mode={consumerMode} refresh={refresh} changed={changed} transport={transport} section={segment[2] === 'trade' ? 'trade' : segment[2] === 'pro' ? 'pro' : segment[2] === 'lp' ? 'liquidity' : 'call'} initialPeriod={params.get('period') === '1D' || params.get('period') === '1W' || params.get('period') === '1M' ? params.get('period') as ConsumerPeriod : 'ALL'} actionId={params.get('action')} />;
+  else if (segment[0] === 'markets' && id && !id.startsWith('demo:')) content = <ConsumerMarketPage key={`${consumerMode}:${id}`} id={id} mode={consumerMode} refresh={refresh} changed={changed} transport={transport} section={segment[2] === 'trade' ? 'trade' : segment[2] === 'pro' ? 'pro' : segment[2] === 'lp' ? 'liquidity' : 'call'} initialPeriod={params.get('period') === '1D' || params.get('period') === '1W' || params.get('period') === '1M' ? params.get('period') as ConsumerPeriod : 'ALL'} actionId={params.get('action')} />;
   else if (path === '/faucet') content = <FinancialFaucet onFinalized={changed} />;
   else if (path === '/register') content = <FinancialRegistration onFinalized={changed} />;
   else if (path === '/me/records') content = <WalletProfile>{wallet => wallet ? <ProfilePage wallet={wallet} refresh={refresh} own /> : <div className="page"><Empty title="Wallet not connected" /></div>}</WalletProfile>;
-  else if (path === '/me') content = consumerMode === 'DEMO' ? <ConsumerProfilePage key="demo-own" actorId={demoActors[0].id} mode="DEMO" refresh={refresh} changed={changed} own selectedActionId={params.get('action')} /> : <WalletProfile>{wallet => wallet ? <ConsumerProfilePage key={wallet} actorId={wallet} mode="LIVE" refresh={refresh} changed={changed} own selectedActionId={params.get('action')} /> : <div className="page"><Empty title="Wallet not connected">Connect a Devnet wallet to view your activity.</Empty></div>}</WalletProfile>;
-  else if (segment[0] === 'u' && id) content = <ConsumerProfilePage key={`${consumerMode}:${id}`} actorId={id} mode={consumerMode} refresh={refresh} changed={changed} selectedActionId={params.get('action')} />;
+  else if (path === '/me') content = <WalletProfile>{wallet => wallet ? <ConsumerProfilePage key={wallet} actorId={wallet} mode="LIVE" refresh={refresh} changed={changed} own selectedActionId={params.get('action')} /> : <div className="page"><Empty title="Wallet not connected">Connect a Devnet wallet to view your activity.</Empty></div>}</WalletProfile>;
+  else if (segment[0] === 'u' && id && !id.startsWith('demo:') && !isReferenceConsumerId(id)) content = <ConsumerProfilePage key={`${consumerMode}:${id}`} actorId={id} mode={consumerMode} refresh={refresh} changed={changed} selectedActionId={params.get('action')} />;
   else if (segment[0] === 'records' && id && !id.startsWith('demo:')) content = <RecordPage id={id} />;
   else if (segment[0] === 'proofs' && id && !id.startsWith('demo:')) content = <ProofPage id={id} />;
   else if (path === '/leaderboard') content = <ConsumerLeaderboardPage refresh={refresh} />;

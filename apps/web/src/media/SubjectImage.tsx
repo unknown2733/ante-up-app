@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { exampleAvatarUrl, safeMediaSrc, walletAvatarSrc } from './exampleAvatar.ts';
+import { walletIdenticonUrl, safeMediaSrc, walletAvatarSrc } from './exampleAvatar.ts';
 
 export interface SubjectImageProps { src?: string | null; alt: string; className?: string; }
 export interface WalletAvatarProps { address: string; src?: string | null; className?: string; }
@@ -20,6 +20,7 @@ export function SubjectImage({ src, alt, className }: SubjectImageProps) {
 export function WalletAvatar({ address, src, className }: WalletAvatarProps) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const preferredSrc = walletAvatarSrc(address, src);
-  const activeSrc = preferredSrc !== failedSrc ? preferredSrc : exampleAvatarUrl(address);
-  return <img className={className} src={activeSrc} alt={`Avatar for ${address}`} loading="lazy" decoding="async" onError={() => setFailedSrc(activeSrc)} />;
+  const generatedSrc = walletIdenticonUrl(address);
+  const activeSrc = preferredSrc !== failedSrc ? preferredSrc : generatedSrc;
+  return <img className={className} src={activeSrc} alt={`${activeSrc === generatedSrc ? 'Wallet identicon' : 'Avatar'} for ${address}`} loading="lazy" decoding="async" onError={() => setFailedSrc(activeSrc)} />;
 }

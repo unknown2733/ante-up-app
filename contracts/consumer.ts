@@ -1,7 +1,7 @@
 /** Additive consumer read contract. Never use chart values to authorize settlement. */
-export type ConsumerMode = 'LIVE' | 'DEMO';
+export type ConsumerMode = 'LIVE' | 'REFERENCE' | 'DEMO';
 export type ConsumerSubject = 'KEYWORD' | 'VIDEO' | 'TRACK' | 'ALBUM' | 'ACCOUNT';
-export type ConsumerSeriesKind = 'CURVE_PRICE' | 'REFERENCE_PRICE' | 'TRADE_PRICE' | 'ATTENTION_INDEX';
+export type ConsumerSeriesKind = 'CURVE_PRICE' | 'REFERENCE_PRICE' | 'TRADE_PRICE' | 'ATTENTION_INDEX' | 'ACTIVITY_COUNT';
 export type ConsumerPeriod = '1D' | '1W' | '1M' | 'ALL';
 export interface ConsumerSource { mode: ConsumerMode; label: string; asOfMs: number; sourceUrl?: string; }
 export interface ConsumerMarket {
@@ -10,6 +10,8 @@ export interface ConsumerMarket {
   latestPrice: string | null; priceUnit: string; changeFraction: number | null;
   thumbnailUrl?: string; liveMarketId?: string;
   subjectUrl?: string; creatorLabel?: string; imageAlt?: string; imageSourceUrl?: string;
+  /** Actual public-source activity; never a token quote or a settlement input. */
+  activity?: { value: string; unit: string; label: string; changeFraction: number | null; asOfMs: number };
 }
 export interface ConsumerPoint { atMs: number; value: string; observationId?: string; }
 export interface ConsumerSeries {

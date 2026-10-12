@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ConsumerAction, ConsumerLeaderboard, ConsumerNote, ConsumerProfile } from '../../../../contracts/consumer';
+import { safeMediaSrc, walletIdenticonUrl } from '../media/exampleAvatar';
 import './social.css';
 
 export interface SocialMarketMedia {
@@ -19,40 +20,28 @@ const day = (atMs: number) => new Intl.DateTimeFormat('en', { dateStyle: 'long',
 const time = (atMs: number) => new Intl.DateTimeFormat('en', { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }).format(atMs) + ' UTC';
 const percent = (value: number | null) => value === null || !Number.isFinite(value) ? 'N/A' : `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`;
 const shortActor = (actor: string) => actor.length > 18 ? `${actor.slice(0, 7)}…${actor.slice(-5)}` : actor;
-const publicActions = (actions: ConsumerAction[]) => actions.filter(action => action.source.mode === 'DEMO' || action.kind === 'CALL_OPEN' || action.kind === 'CALL_CLOSE');
-const safeImage = (url?: string) => url && (/^https:\/\/[^\s]+$/i.test(url) || /^\/(?!\/)[^\s]*$/.test(url)) ? url : undefined;
+const publicActions = (actions: ConsumerAction[]) => actions.filter(action => action.source.mode === 'DEMO' || (action.source.mode === 'LIVE' && (action.kind === 'CALL_OPEN' || action.kind === 'CALL_CLOSE')));
+const actorLabel = (actorId: string, label: string, mode: string) => mode === 'DEMO' ? label || shortActor(actorId) : shortActor(actorId);
+const sourceLabel = (mode: string) => mode === 'LIVE' ? 'Devnet records' : mode === 'DEMO' ? 'Sample history' : 'Reference only';
 const initials = (label: string) => label.trim().split(/\s+/).slice(0, 2).map(part => part[0] ?? '').join('').toUpperCase() || '•';
-
-/** A local, fixed SVG template gives every wallet a stable avatar without trusting a data URL from an API. */
-function generatedAvatarUrl(address: string) {
-  let hash = 2166136261;
-  for (const character of address) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  const palette = [['#0d5c76', '#68e0cf'], ['#6648a8', '#d3a8ff'], ['#9e4b42', '#ffc39a'], ['#315e9a', '#9bd2ff']] as const;
-  const [background, foreground] = palette[(hash >>> 0) % palette.length];
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="32" fill="${background}"/><circle cx="32" cy="32" r="18" fill="${foreground}"/><circle cx="47" cy="18" r="5" fill="#fff" opacity=".72"/></svg>`;
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
-}
 
 function ImageOrFallback({ url, alt, label, kind, actorId, renderAvatar, renderSubjectImage }: {
   url?: string; alt: string; label: string; kind: 'avatar' | 'subject'; actorId?: string;
   renderAvatar?: SocialAvatarRenderer; renderSubjectImage?: SocialSubjectRenderer;
 }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const externalSrc = safeImage(url);
-  const fallbackSrc = kind === 'avatar' ? generatedAvatarUrl(actorId || label) : undefined;
+  const externalSrc = safeMediaSrc(url) ?? undefined;
+  const fallbackSrc = kind === 'avatar' ? walletIdenticonUrl(actorId || label) : undefined;
   const src = externalSrc && externalSrc !== failedSrc ? externalSrc : fallbackSrc !== failedSrc ? fallbackSrc : undefined;
   const className = `au-social-image au-social-image--${kind}`;
   if (kind === 'avatar' && renderAvatar) {
-    return <span className={className}>{renderAvatar({ address: actorId || label, src: url, className: 'au-social-image-media' })}</span>;
+    return <span className={className}>{renderAvatar({ address: actorId || label, src: externalSrc, className: 'au-social-image-media' })}</span>;
   }
   if (kind === 'subject' && renderSubjectImage) {
-    return <span className={className}>{renderSubjectImage({ src: url, alt, className: 'au-social-image-media' })}</span>;
+    return <span className={className}>{renderSubjectImage({ src: externalSrc, alt, className: 'au-social-image-media' })}</span>;
   }
   return <span className={className} aria-hidden={src ? undefined : true}>
-    {src ? <img src={src} alt={alt} loading="lazy" decoding="async" onError={() => setFailedSrc(src)} /> : <span aria-hidden="true">{initials(label)}</span>}
+    {src ? <img src={src} alt={kind === 'avatar' && src === fallbackSrc && alt ? `Wallet identicon for ${actorId || label}` : alt} loading="lazy" decoding="async" onError={() => setFailedSrc(src)} /> : <span aria-hidden="true">{initials(label)}</span>}
   </span>;
 }
 
@@ -80,16 +69,17 @@ export function SocialLeaderboard({ board, onOpenProfile, avatarByActorId, rende
   avatarByActorId?: Record<string, string | undefined>;
   renderAvatar?: SocialAvatarRenderer;
 }) {
+  if (board.source.mode !== 'LIVE' && board.source.mode !== 'DEMO') return <section className="au-social" aria-label="Leaderboard"><h2>Leaderboard</h2><p className="au-social-empty">Reference subjects have no wallet rankings.</p></section>;
   return <section className="au-social" aria-label="Leaderboard">
-    <header className="au-social-heading"><div><span className="au-social-kicker">COMMUNITY</span><h2>Leaderboard</h2></div><span className="au-social-source" title={board.source.label}>{board.source.mode === 'DEMO' ? 'Sample history' : 'Devnet records'}</span></header>
+    <header className="au-social-heading"><div><span className="au-social-kicker">COMMUNITY</span><h2>Leaderboard</h2></div><span className="au-social-source" title={board.source.label}>{sourceLabel(board.source.mode)}</span></header>
     <p className="au-social-explain">Average return on valid closed chips. N/A closes are excluded. Returns are percentages, not money P&amp;L.</p>
     <p className="au-social-period">{board.period === '7D' ? 'Last 7 days · by close time' : 'All time'} · {board.source.mode === 'DEMO' ? 'Synthetic examples' : 'Public Devnet chips'} · Updated {date(board.source.asOfMs)}</p>
     {board.rows.length === 0 ? <p className="au-social-empty">No valid closed chips in this period yet.</p> :
       <ol className="au-social-ranks">{board.rows.map(row => <li key={row.actorId}>
         <span className="au-social-rank" aria-label={`Rank ${row.rank}`}>{String(row.rank).padStart(2, '0')}</span>
-        <button type="button" className="au-social-actor" onClick={() => onOpenProfile(row.actorId)} aria-label={`Open ${row.actorLabel || shortActor(row.actorId)} profile`}>
+        <button type="button" className="au-social-actor" onClick={() => onOpenProfile(row.actorId)} aria-label={`Open ${actorLabel(row.actorId, row.actorLabel, board.source.mode)} profile`} title={row.actorId}>
           <ImageOrFallback url={avatarByActorId?.[row.actorId]} alt="" label={row.actorLabel || row.actorId} actorId={row.actorId} kind="avatar" renderAvatar={renderAvatar} />
-          <span><strong>{row.actorLabel || shortActor(row.actorId)}</strong><small>{row.closedCallCount} valid closed {row.closedCallCount === 1 ? 'chip' : 'chips'}</small></span>
+          <span><strong>{actorLabel(row.actorId, row.actorLabel, board.source.mode)}</strong><small>{row.closedCallCount} valid closed {row.closedCallCount === 1 ? 'chip' : 'chips'}</small></span>
         </button>
         <strong className={`au-social-rank-result ${row.meanReturnFraction < 0 ? 'au-social-negative' : 'au-social-positive'}`}>{percent(row.meanReturnFraction)}</strong>
       </li>)}</ol>}
@@ -109,8 +99,10 @@ export function SocialProfile({ profile, onOpenMarket, onOpenAction, onOpenProfi
   renderSubjectImage?: SocialSubjectRenderer;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  if (profile.source.mode !== 'LIVE' && profile.source.mode !== 'DEMO') return <section className="au-social" aria-label="Public profile"><h2>Public profile</h2><p className="au-social-empty">Reference subjects have no wallet activity.</p></section>;
   const actions = publicActions(profile.actions)
     .filter(action => action.source.mode === profile.source.mode)
+    .filter(action => profile.source.mode !== 'LIVE' || action.actorId === profile.actorId)
     .sort((a, b) => b.atMs - a.atMs || a.id.localeCompare(b.id));
   const groups = new Map<string, ConsumerAction[]>();
   for (const action of actions) {
@@ -118,11 +110,11 @@ export function SocialProfile({ profile, onOpenMarket, onOpenAction, onOpenProfi
     groups.set(key, [...(groups.get(key) ?? []), action]);
   }
   const naCount = actions.filter(action => action.kind === 'CALL_CLOSE' && action.returnFraction === null).length;
-  const actorName = profile.actorLabel || shortActor(profile.actorId);
+  const actorName = actorLabel(profile.actorId, profile.actorLabel, profile.source.mode);
   return <section className="au-social" aria-label={`${actorName} public profile`}>
     <header className="au-social-heading au-social-profile-heading">
       <div className="au-social-profile-identity"><ImageOrFallback url={profile.avatarUrl} alt={profile.avatarAlt || `${actorName} avatar`} label={actorName} actorId={profile.actorId} kind="avatar" renderAvatar={renderAvatar} /><div><span className="au-social-kicker">PUBLIC PROFILE</span><h2>{actorName}</h2><small>{shortActor(profile.actorId)}</small></div></div>
-      <span className="au-social-source" title={profile.source.label}>{profile.source.mode === 'DEMO' ? 'Sample history' : 'Devnet records'}</span>
+      <span className="au-social-source" title={profile.source.label}>{sourceLabel(profile.source.mode)}</span>
     </header>
     <p className="au-social-explain">{profile.source.mode === 'DEMO' ? 'Fictional sample activity. No real wallet, transaction, or proof is implied.' : 'Public Devnet chips only. Notes can be added later or edited and are not covered by SAS proof.'}</p>
     <dl className="au-social-stats"><div><dt>Valid closed average</dt><dd>{percent(profile.meanReturnFraction)}</dd></div><div><dt>Valid closed chips</dt><dd>{profile.closedCallCount}</dd></div><div><dt>N/A closes</dt><dd>{naCount}</dd></div><div><dt>Active chips</dt><dd>{profile.openCallCount}</dd></div></dl>
@@ -138,7 +130,7 @@ export function SocialProfile({ profile, onOpenMarket, onOpenAction, onOpenProfi
             <article className="au-social-activity">
               <div className="au-social-activity-top">
                 <ImageOrFallback url={action.actorAvatarUrl || profile.avatarUrl} alt="" label={actorName} actorId={action.actorId} kind="avatar" renderAvatar={renderAvatar} />
-                <div className="au-social-activity-copy"><strong>{action.actorLabel || actorName}</strong><span>{actionVerb(action)}</span><time dateTime={new Date(action.atMs).toISOString()}>{time(action.atMs)}</time></div>
+                <div className="au-social-activity-copy"><strong>{actorLabel(action.actorId, action.actorLabel || actorName, action.source.mode)}</strong><span>{actionVerb(action)}</span><time dateTime={new Date(action.atMs).toISOString()}>{time(action.atMs)}</time></div>
                 <ActionResult action={action} />
               </div>
               <button type="button" className="au-social-subject" onClick={() => onOpenMarket(action.marketId)} aria-label={`Open ${title} chart`}>
@@ -196,7 +188,7 @@ export function SocialNoteEditor({ action, wallet, writer, onSaved }: {
   const [current, setCurrent] = useState(action.note);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  if (!wallet || wallet !== action.actorId || (action.source.mode === 'LIVE' && action.kind !== 'CALL_OPEN' && action.kind !== 'CALL_CLOSE')) return null;
+  if (!wallet || wallet !== action.actorId || (action.source.mode !== 'LIVE' && action.source.mode !== 'DEMO') || (action.source.mode === 'LIVE' && action.kind !== 'CALL_OPEN' && action.kind !== 'CALL_CLOSE')) return null;
   const count = [...draft].length;
   return <form className="au-social-editor" onSubmit={async event => {
     event.preventDefault();

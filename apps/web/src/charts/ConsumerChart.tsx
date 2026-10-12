@@ -15,10 +15,10 @@ export interface ConsumerChartProps {
 
 const periods: ConsumerPeriod[] = ['1D', '1W', '1M', 'ALL'];
 const colors: Record<ConsumerSeries['kind'], string> = {
-  CURVE_PRICE: '#dd681f', REFERENCE_PRICE: '#275eaf', TRADE_PRICE: '#171717', ATTENTION_INDEX: '#5874a2',
+  CURVE_PRICE: '#dd681f', REFERENCE_PRICE: '#275eaf', TRADE_PRICE: '#171717', ATTENTION_INDEX: '#5874a2', ACTIVITY_COUNT: '#275eaf',
 };
 const seriesName: Record<ConsumerSeries['kind'], string> = {
-  CURVE_PRICE: 'Curve price', REFERENCE_PRICE: 'Index reference', TRADE_PRICE: 'Trade price', ATTENTION_INDEX: 'Attention index',
+  CURVE_PRICE: 'Curve price', REFERENCE_PRICE: 'Index reference', TRADE_PRICE: 'Trade price', ATTENTION_INDEX: 'Attention index', ACTIVITY_COUNT: 'Public activity',
 };
 const when = (ms: number) => new Intl.DateTimeFormat('en', {
   month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC', timeZoneName: 'short',
@@ -50,7 +50,7 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
     observer.observe(track);
     return () => observer.disconnect();
   }, [history.market.id, history.period, history.source.asOfMs, history.actions.length]);
-  const sourceLabel = history.source.mode === 'DEMO' ? 'Sample history' : 'Live Devnet';
+  const sourceLabel = history.source.mode === 'REFERENCE' ? 'Public source data' : history.source.mode === 'DEMO' ? 'Sample history' : 'Live Devnet';
   const scopedHistory = scopedChartHistory(history);
   const series = scopedHistory.series.find(item => item.id === seriesId)
     ?? scopedHistory.series.find(item => item.kind === 'CURVE_PRICE' || item.kind === 'REFERENCE_PRICE')
@@ -80,7 +80,7 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
     <div className="au-chart-series" role="group" aria-label="Chart data">
       {scopedHistory.series.map(item => <button key={item.id} type="button" aria-pressed={item.id === series?.id}
         onClick={() => { setSeriesId(item.id); setMarkerId(null); }}>
-        <span className="au-chart-swatch" style={{ background: colors[item.kind] }} />{seriesName[item.kind]}
+        <span className="au-chart-swatch" style={{ background: colors[item.kind] }} />{item.kind === 'ACTIVITY_COUNT' ? item.label : seriesName[item.kind]}
       </button>)}
     </div>
     <div className="au-chart-plot">{series && points.length && low !== null && high !== null ? <>
@@ -140,8 +140,8 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
     <details className="au-chart-source"><summary>About this chart</summary>
       <p>{history.source.label}. Updated {when(history.source.asOfMs)}. {history.source.mode === 'DEMO'
         ? 'Sample values and example activity are illustrative; they are not real wallet results or executable markets.'
-        : 'Observed history comes from Devnet records. Chip activity tracks attention, not cash profit.'}</p>
-      {series && <p>{seriesName[series.kind]} · {series.unit}. Missing intervals are left blank. Chart values are informational; current quotes and receipts govern transactions.</p>}
+        : history.source.mode === 'REFERENCE' ? 'Historical observations from the linked public source. The date range and metric apply to this source.' : 'Observed history comes from Devnet records. Chip activity tracks attention, not cash profit.'}</p>
+      {series && <p>{series.kind === 'ACTIVITY_COUNT' ? series.label : seriesName[series.kind]} · {series.unit}. Missing intervals are left blank. {history.source.mode === 'REFERENCE' ? 'This activity is not a token price or a trade return.' : 'Chart values are informational; current quotes and receipts govern transactions.'}</p>}
       {history.source.sourceUrl && <a href={history.source.sourceUrl}>View data source</a>}
     </details>
   </section>;

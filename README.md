@@ -10,13 +10,13 @@ All financial flows use test assets. This is an experimental implementation, not
 
 ## Try it
 
-1. Open **Explore** to browse charts and subjects without a wallet. The R2 catalog combines the existing Devnet market with 15 recognizable subjects whose histories remain explicitly synthetic. A real title or image does not imply a live feed or executable pool.
-2. Check each item's source and action state. At the last deployment check, collected data covered one approved keyword: `solana`. Sample history and example activity stay separate from Devnet records and rankings.
+1. Open **Explore** to browse charts and subjects without a wallet. The catalog combines observed Devnet markets with read-only **Preview** subjects backed by fetched public reference data or official metadata and artwork.
+2. Check each item's source, metric, observation date, and action state. Previously verified collection covered one approved keyword: `solana`. Wikimedia reference charts count visits to a named Wikipedia article, not video or music plays. Profiles, activity, and rankings use actual Devnet records.
 3. Connect a Devnet wallet. Desktop Phantom, Android Phantom's in-app browser, and Seeker Chrome with Seed Vault Wallet have completed real-device flows on an earlier UI release.
 4. Use the in-app **Faucet** for tUSD. Devnet SOL for transaction fees is separate. Faucet and new-entry availability depend on operator limits and data readiness.
 5. **Place chip** on an eligible Devnet market, watch its attention reference, then **Take back chip** to finalize the result. A wallet can hold up to three active chips, with one per market. Attention change is not a cash return.
 
-The unified R2 catalog and Docs were deployed to [ante-up.fun](https://ante-up.fun) on October 13, 2026 (KST), from release `6b7c9d1`. Public delivery and the existing Devnet API passed verification. The latest consumer UI still needs another real-wallet regression pass. A closed chip record and its completed evidence/SAS attestation are separate states; archival and attestation may finish later. Read the [in-app Docs](https://ante-up.fun/docs) or the [source articles](docs/product/README.md).
+This source revision replaces synthetic catalog histories and fictional profiles with public reference data and actual Devnet records. Reference subjects have no token quotes, chips, trades, PnL, or attestations. Deployment of this correction is tracked separately from the earlier R2 release. The latest consumer UI still needs another real-wallet regression pass. A closed chip record and its completed evidence/SAS attestation are separate states; archival and attestation may finish later. Read the [in-app Docs](https://ante-up.fun/docs) or the [source articles](docs/product/README.md).
 
 ## What is implemented
 
@@ -27,6 +27,7 @@ The unified R2 catalog and Docs were deployed to [ante-up.fun](https://ante-up.f
 | Test-asset trading | Faucet, registration, bonding-curve buy/sell, graduation, spot exchange, Pro long/short and LP participation |
 | Data | X Counts collector, validation, EWMA calculation and Solana snapshot publishing on a five-minute cycle |
 | Charts | Finalized-chain price samples every five minutes; visible observed Devnet charts refresh from the API every 60 seconds |
+| Reference catalog | Read-only subjects with fetched Wikimedia article pageviews where available, or official metadata and artwork; source, metric and observation dates accompany reference data |
 | Evidence | Raw inputs and calculation evidence archived through Arweave/Turbo; Solana records and SAS attestations link results to evidence |
 | Operations | API, indexer and bounded workers; provider budgets, stale-data handling and restart recovery |
 
@@ -52,7 +53,7 @@ flowchart TD
   SAS --> API
 ```
 
-The MVP has one operator-controlled data publisher. Recording a statement on-chain does not independently verify the truth of the source data. Profile notes are not SAS attestations. Sample and observed Devnet data remain distinguishable.
+The MVP has one operator-controlled data publisher. Recording a statement on-chain does not independently verify the truth of the source data. Profile notes are not SAS attestations. Public reference data do not feed chip results or settlement. Synthetic fixtures are reserved for development and tests.
 
 ## Repository layout
 
@@ -112,7 +113,7 @@ Use module `.env.example` files as templates. Keep actual credentials, wallet ke
 
 ## Verification status
 
-Completed checks on October 13, 2026; these are not continuous service guarantees:
+Earlier baseline checks completed on October 13, 2026. These do not verify this source revision or provide continuous service guarantees:
 
 | Check | Result and boundary |
 | --- | --- |
@@ -124,11 +125,11 @@ Completed checks on October 13, 2026; these are not continuous service guarantee
 | Financial program | Synthetic Devnet market exercised curve, graduation, spot, LP and 5× long/short flows |
 | Evidence | Real Arweave storage and SAS issuance verified for test records; pending records may still be incomplete |
 
-Deployed consumer source: `8023388`. Integrated development baseline: `e66e708`. These identify the original development history and may not resolve in a separately published snapshot repository.
+Earlier consumer source: `8023388`. Integrated development baseline: `e66e708`. The subsequent R2 release was `6b7c9d1`. These are historical verification references; they do not establish deployment of the current source revision. Original development hashes may not resolve in this snapshot repository.
 
 ### Remaining work
 
-- Integrate the R2 catalog, activity, Docs routes, and navigation; then repeat wallet approval, cancellation and response-loss recovery on the latest UI and verify an owning wallet's note write.
+- Verify and release the public reference catalog correction; repeat wallet approval, cancellation and response-loss recovery on the latest UI and verify an owning wallet's note write.
 - Integrate remaining proof-worker, keeper and operational follow-up changes from separate development branches.
 - Validate broader live source coverage, economic assumptions and production security before considering real assets.
 

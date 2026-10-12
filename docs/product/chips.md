@@ -4,7 +4,7 @@ Place a chip when you want to record a view on a market's attention. The chip ac
 
 ## Place chip
 
-On a supported Devnet market, connect the owning wallet and review **Place chip**. The app checks market identity and transaction instructions before signing. A submitted signature still needs finalization and projection into your profile. A sample item is for exploration only and cannot sign a real chip transaction.
+On a supported Devnet market, connect the owning wallet and review **Place chip**. The app checks market identity and transaction instructions before signing. A submitted signature still needs finalization and projection into your profile. Preview subjects cannot accept chips.
 
 The program permits at most **three active chips per wallet**, with **one active chip per market**. It also applies a rolling participation limit. Market readiness and other program rules can pause entry. A pending action may take time to appear in your profile.
 

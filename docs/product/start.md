@@ -4,7 +4,7 @@ Ante Up lets you follow a subject's attention, place a chip on a view, and keep 
 
 ## Explore without a wallet
 
-Open [Explore](/markets) and choose a subject. Check its chart, source label, and available actions. A recognizable song, video, account, or keyword can have **Sample history**: the plotted numbers and example activity are illustrative even though the subject is real. Sample items cannot authorize a wallet transaction.
+Open [Explore](/markets) and choose a subject. Observed Devnet markets show collected attention data and available actions. **Preview** subjects offer public reference data or official information and artwork. Read each source, metric, and observation date; previews are read-only.
 
 ## Place your first chip
 
@@ -16,7 +16,7 @@ The [wallet and faucet guide](/docs/wallet-faucet) explains Devnet SOL and test 
 
 ## Check the record
 
-Your [chip history](/me) and [record guide](/docs/records-proofs) distinguish an on-chain result from evidence storage and later proof issuance. A pending proof does not mean a finalized close failed. Example profiles and rankings remain separate from real Devnet records.
+Your [chip history](/me) and [record guide](/docs/records-proofs) distinguish an on-chain result from evidence storage and later proof issuance. A pending proof does not mean a finalized close failed. Profiles, activity, and rankings use actual Devnet records.
 
 ## Read next
 

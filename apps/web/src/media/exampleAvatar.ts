@@ -1,5 +1,5 @@
-/** Geometric sample avatar. No person's image or account identity is used. */
-export function exampleAvatarUrl(address: string): string {
+/** Address-derived identicon, not a person's image or verified profile identity. */
+export function walletIdenticonUrl(address: string): string {
   let hash = 2166136261;
   for (const character of address) {
     hash ^= character.charCodeAt(0);
@@ -22,6 +22,9 @@ export function exampleAvatarUrl(address: string): string {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
+/** Compatibility export for isolated example fixtures. */
+export const exampleAvatarUrl = walletIdenticonUrl;
+
 /** Accept HTTPS and same-origin media references; reject executable URL schemes. */
 export function safeMediaSrc(src?: string | null): string | null {
   if (!src) return null;
@@ -32,6 +35,6 @@ export function safeMediaSrc(src?: string | null): string | null {
 
 /** The only accepted data URI is the SVG we deterministically generated for this address. */
 export function walletAvatarSrc(address: string, src?: string | null): string {
-  const generated = exampleAvatarUrl(address);
+  const generated = walletIdenticonUrl(address);
   return src === generated ? generated : safeMediaSrc(src) ?? generated;
 }

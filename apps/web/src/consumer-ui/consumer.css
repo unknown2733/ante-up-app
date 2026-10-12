@@ -23,3 +23,4 @@
 .au-search input{min-height:44px}
 .au-market-art{width:44px;height:44px;object-fit:cover;display:block;flex:none;border-radius:9px;background:#ece8df}.au-source-cell{display:flex;flex-direction:column;gap:4px;font-size:11px}.au-source-cell strong{color:var(--au-ink)}.au-source-cell small{color:var(--au-muted)}.au-live-warning{display:flex;gap:5px;flex-wrap:wrap;padding:12px 14px;margin:0 0 18px;background:#fff0e8;border-left:3px solid var(--au-orange);font-size:12px;line-height:1.5}.au-live-warning span{color:#745646}
 @media(max-width:700px){.au-bottom-nav{grid-template-columns:repeat(5,1fr)}.au-bottom-nav button{min-width:0}.au-source-cell{display:none}}
+.au-change-basis { display: block; margin-top: 4px; color: var(--au-muted, #666); font-size: 10px; font-weight: 400; }

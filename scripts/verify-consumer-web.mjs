@@ -11,7 +11,7 @@ const digest = data => createHash('sha256').update(data).digest('hex');
 assert.match(html, /lang="en"/);
 const routes = ['/', '/markets', '/leaderboard', '/faucet', '/me',
   '/docs', '/docs/chips', '/docs/records-proofs', '/docs/unknown-article',
-  '/markets/demo%3Amarket%3Asolstice-builders',
+  '/markets/reference%3Amarket%3Aaurora',
   '/markets/7kmhXsn6GsFf1rZX5jYZ5xtPeProB6Vqtbx4ghUaFJGT'];
 for (const route of routes) {
   const response = await fetch(new URL(route, origin), { signal: AbortSignal.timeout(30_000), cache: 'no-store' });

@@ -1,6 +1,10 @@
 # Data and pricing
 
-Ante Up keeps observed data and illustrative history separate. The source label and timestamp matter as much as the chart. A recognizable subject with **Sample history** has synthetic values. Its chart does not prove source activity or an executable price.
+Check the source, metric, and observation date on each chart. Observed Devnet markets use collected attention data. Preview subjects show available public reference data or official information; they have no token price or executable quote.
+
+## Public reference data
+
+Where available, preview charts use fetched Wikimedia article pageviews. These count visits to the named Wikipedia article, not video views, song plays, or album streams. Read the displayed article, date range, and source link to understand the measurement. Other previews provide official metadata or artwork without inventing a history. A reference chart does not feed chip results or settlement.
 
 ## Attention reference
 

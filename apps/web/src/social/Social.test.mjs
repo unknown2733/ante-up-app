@@ -15,6 +15,60 @@ const action = (id, kind, atMs, returnFraction = null, note = null) => ({
   kind, atMs, seriesId: null, value: null, returnFraction, note, source
 });
 
+test('live social views show wallet identities and records without fictional activity', async () => {
+  const server = await createServer({ root: appDir, server: { middlewareMode: true }, appType: 'custom' });
+  try {
+    const { SocialProfile, SocialLeaderboard } = await server.ssrLoadModule('/src/social/Social.tsx');
+    const { WalletAvatar } = await server.ssrLoadModule('/src/media/SubjectImage.tsx');
+    const actorId = '7YWHMfk9JZe0LM1gZeS7gH1Z7yx3Kts5GdkYZzHup7Cq';
+    const liveSource = { ...source, mode: 'LIVE', label: 'Devnet indexer' };
+    const profile = {
+      actorId, actorLabel: 'Fictional celebrity', source: liveSource,
+      closedCallCount: 1, openCallCount: 0, meanReturnFraction: 0.2,
+      actions: [
+        { ...action('real-close', 'CALL_CLOSE', Date.UTC(2026, 9, 12), 0.2), actorId, actorLabel: 'Invented trader', source: liveSource },
+        action('sample-open', 'CALL_OPEN', Date.UTC(2026, 9, 12)),
+        { ...action('other-wallet', 'CALL_OPEN', Date.UTC(2026, 9, 12)), source: liveSource },
+        { ...action('unsupported-trade', 'BUY', Date.UTC(2026, 9, 12)), actorId, source: liveSource },
+      ],
+    };
+    const html = renderToStaticMarkup(React.createElement(SocialProfile, { profile, onOpenMarket: () => {}, onOpenAction: () => {} }));
+    const board = renderToStaticMarkup(React.createElement(SocialLeaderboard, { board: {
+      source: liveSource, period: 'ALL', rows: [{ actorId, actorLabel: 'Fictional celebrity', rank: 1, closedCallCount: 1, meanReturnFraction: 0.2 }],
+    }, onOpenProfile: () => {} }));
+    assert.match(html, /1 event · newest first/);
+    assert.match(html + board, /7YWHMfk…up7Cq/);
+    assert.match(html + board, /Devnet records/);
+    assert.doesNotMatch(html + board, /Sample history|fictional|Fictional|Invented trader|Placed a chip|Bought/);
+    assert.match(html, /Wallet identicon for/);
+    const supplied = renderToStaticMarkup(React.createElement(WalletAvatar, { address: actorId, src: 'https://example.com/actual-avatar.png' }));
+    assert.match(supplied, /src="https:\/\/example.com\/actual-avatar.png"/);
+    const fallback = renderToStaticMarkup(React.createElement(WalletAvatar, { address: actorId, src: 'javascript:alert(1)' }));
+    assert.match(fallback, /Wallet identicon for/);
+    assert.doesNotMatch(fallback, /javascript:/);
+  } finally { await server.close(); }
+});
+
+test('reference sources cannot become Devnet rankings, activity, or writable notes', async () => {
+  const server = await createServer({ root: appDir, server: { middlewareMode: true }, appType: 'custom' });
+  try {
+    const { SocialProfile, SocialLeaderboard, SocialNoteEditor } = await server.ssrLoadModule('/src/social/Social.tsx');
+    const referenceSource = { ...source, mode: 'REFERENCE' };
+    const referenceAction = { ...action('reference-open', 'CALL_OPEN', Date.UTC(2026, 9, 12)), source: referenceSource };
+    const html = renderToStaticMarkup(React.createElement(SocialProfile, {
+      profile: { actorId: 'sample-actor', actorLabel: 'Sample Actor', source: referenceSource, closedCallCount: 2, openCallCount: 1, meanReturnFraction: 0.5, actions: [referenceAction] },
+      onOpenMarket: () => {}, onOpenAction: () => {},
+    }));
+    const board = renderToStaticMarkup(React.createElement(SocialLeaderboard, {
+      board: { source: referenceSource, period: 'ALL', rows: [{ actorId: 'sample-actor', actorLabel: 'Sample Actor', rank: 1, closedCallCount: 2, meanReturnFraction: 0.5 }] }, onOpenProfile: () => {},
+    }));
+    const editor = renderToStaticMarkup(React.createElement(SocialNoteEditor, { action: referenceAction, wallet: 'sample-actor', writer: { save: async () => { throw new Error('Must not write'); } } }));
+    assert.match(html + board, /Reference subjects have no wallet/);
+    assert.doesNotMatch(html + board, /Devnet records|Sample Actor|Placed a chip|50\.0%/);
+    assert.equal(editor, '');
+  } finally { await server.close(); }
+});
+
 test('profile keeps synthetic activity separate and preserves unavailable returns and note timing', async () => {
   const server = await createServer({ root: appDir, server: { middlewareMode: true }, appType: 'custom' });
   try {

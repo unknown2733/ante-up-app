@@ -1,6 +1,6 @@
 # Records and proofs
 
-Your [Activity](/me) lists active and past chips. Open a record to inspect the market, owner, entry and exit times, result state, and proof link. Example profiles and activity are labeled separately; they are not real users' trades or statements.
+Your [Activity](/me) lists active and past chips from actual Devnet records. Open a record to inspect the market, owner, entry and exit times, result state, and proof link. Public profiles and rankings use those records. Reference subjects have no participant activity or attestations.
 
 ## Record lifecycle
 

@@ -9,11 +9,9 @@ import { createKitChainTransport } from '@ante-up/chain-client';
 import { canSignAuthMessage, currentWalletContext, signAuthMessage, walletClient } from './walletSdk';
 import { createApiClock } from './apiClock';
 import { createLiveConsumerHttp } from './consumerHttp';
-import { demoConsumerReadApi } from './demo/consumerDemo';
 
 const baseUrl = import.meta.env.VITE_API_BASE_URL;
 export const liveConsumerHttp = baseUrl ? createLiveConsumerHttp(baseUrl) : null;
-export { demoConsumerReadApi };
 let observedMode: Mode | null = baseUrl ? null : 'fixture';
 export function transportMode() { return observedMode; }
 export const isFixture = !baseUrl;

@@ -2,7 +2,7 @@
 
 ## Do I need a wallet to read Docs or Explore?
 
-No. Connect a compatible Devnet wallet only for supported on-chain actions. Sample charts and example profiles are readable without signing.
+No. Explore, reference charts, and public Devnet profiles are readable without signing. Connect a compatible Devnet wallet for supported on-chain actions.
 
 ## Is a chip a token purchase?
 
@@ -10,11 +10,15 @@ No. Placing and taking back a chip record an attention view with no cash payout.
 
 ## Are all subjects live markets?
 
-No. A real title or official image can accompany Sample history. Only a registered, eligible market with the correct chain identity can offer an executable action. See [Markets and trading](/docs/markets-trading).
+No. **Preview** subjects provide public reference data or official information and artwork. They are read-only. Only a registered, eligible market with the correct chain identity can offer an executable action. See [Markets and trading](/docs/markets-trading).
+
+## Does a music or video chart show plays?
+
+Read its metric label. A Wikimedia pageviews chart counts visits to a Wikipedia article, not plays of the song or video. Its source link and observation dates identify the data shown. See [Data and pricing](/docs/data-pricing).
 
 ## Why is an action unavailable?
 
-The market may be illustrative, on the wrong network, preparing data, low activity, recovering from an outage, in another phase, or limited by capital and operator rules. Read the action area's current reason. A real API outage must not be hidden by sample data.
+A Preview subject is read-only. A Devnet market may be on the wrong network, preparing data, low activity, recovering from an outage, in another phase, or limited by capital and operator rules. Read the action area's current reason.
 
 ## Why is my result N/A?
 
@@ -30,4 +34,4 @@ SOL pays network fees. tUSD is the app's test payment token for supported financ
 
 ## Is the leaderboard a trading return ranking?
 
-No. It ranks eligible completed chip attention results; N/A and open records are handled separately. Example actors do not enter real Devnet rankings. Attention change is not monetary profit and loss.
+No. It ranks eligible completed chip attention results from actual Devnet records; N/A and open records are handled separately. Attention change is not monetary profit and loss.
