@@ -43,7 +43,7 @@ test('reference adapter exposes public observations without financial or wallet 
       assert.equal(series.kind, 'ACTIVITY_COUNT');
       assert.equal(series.source.mode, 'REFERENCE');
       assert.ok(series.points.length > 0);
-      assert.match(series.label, /pageviews/i);
+      assert.match(series.label, /views|likes|streams/i);
       assert.ok(series.points.every(point => Number.isFinite(point.atMs) && Number.isFinite(Number(point.value))));
     }
     assert.equal(await api.getProfile(item.id), null);
@@ -90,6 +90,23 @@ test('production App has no synthetic consumer adapter or example leaderboard', 
   const app = readFileSync(resolve(appDir, 'src/App.tsx'), 'utf8');
   assert.doesNotMatch(app, /from\s+['"][^'"]*\/demo\//);
   assert.doesNotMatch(app, /\bdemoConsumerReadApi\b|\bdemoActors\b|Example leaderboard|mode=demo/);
+});
+
+test('single captured platform count renders its date and source without inventing a history', async () => {
+  const { ConsumerChart } = await server.ssrLoadModule('/src/charts/ConsumerChart.tsx');
+  const { referenceConsumerReadApi: api } = await server.ssrLoadModule('/src/reference/referenceData.ts');
+  const markets = await api.listMarkets();
+  for (const subject of markets) {
+    const history = await api.getHistory(subject.id, 'ALL');
+    const html = render(ConsumerChart, { history, onSelectAction: noAction, onPeriodChange: noAction });
+    assert.match(html, /au-chart-snapshot/);
+    assert.ok(html.includes(new Intl.NumberFormat('en').format(Number(subject.activity.value))));
+    assert.ok(html.includes(subject.activity.unit));
+    assert.ok(html.includes(new Date(subject.source.asOfMs).toISOString()));
+    assert.ok(html.includes(`href="${subject.source.sourceUrl}"`));
+    assert.doesNotMatch(html, /<svg|Chart period|au-chart-marker /);
+    if (subject.subject === 'TRACK') assert.match(html, /Kworb report dated.*time zone not supplied/);
+  }
 });
 
 test('legacy synthetic routes cannot render a market, profile, record or proof', async () => {

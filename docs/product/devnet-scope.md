@@ -4,7 +4,7 @@ Ante Up is an experimental **Solana Devnet MVP** using test assets. Mainnet depl
 
 ## What this preview includes
 
-The public code includes a wallet connected chip flow, test-asset financial paths, X Counts processing, API and indexer, evidence modules, and a reference catalog. Previously checked live collection covered the `solana` keyword. Other subjects are read-only previews with fetched public data where available, or official metadata and artwork.
+The public code includes a wallet connected chip flow, test-asset financial paths, X Counts processing, API and indexer, evidence modules, and a reference catalog. Previously checked live collection covered the `solana` keyword. Other subjects are read-only previews with captured platform counts where available, or official metadata and artwork. Automatic reference feeds are not established by these snapshots.
 
 ## What may be unavailable
 
@@ -16,7 +16,7 @@ Earlier UI versions had real wallet checks on desktop and mobile. The unified R2
 
 - **Observed Devnet data**: verify current source and chain status.
 - **Preview**: a read-only reference subject, with its source, metric, and observation dates where data are available.
-- **Wikimedia pageviews**: visits to the named Wikipedia article, not video or music plays.
+- **Captured snapshot**: a platform count with its metric, source, UTC capture time, and any provider report date.
 - **Finalized record**: a specific chain action, separate from proof issuance.
 - **Financial quote**: an expiring test-asset proposal, not guaranteed execution or return.
 

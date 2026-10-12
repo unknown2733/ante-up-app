@@ -1,0 +1,14 @@
+{
+  "sourceUrl": "https://kworb.net/spotify/artist/2mVVjNmdjXZZDvhgQWiakk_songs.html",
+  "capturedAt": "2026-10-12T22:13:07.122Z",
+  "fullResponseSha256": "e729882583df560945c4d8233030eff747e94880f3a09bff42d9b4b1f0806f07",
+  "extraction": "Artist songs table, exact May Ninth row linking https://open.spotify.com/track/5yVGW2o9LXaiiS4I3HUM3k, Streams column",
+  "fields": {
+    "trackId": "5yVGW2o9LXaiiS4I3HUM3k",
+    "trackUrl": "https://open.spotify.com/track/5yVGW2o9LXaiiS4I3HUM3k",
+    "title": "May Ninth",
+    "streams": "64000726",
+    "reportedDate": "2026-10-09",
+    "htmlRow": "<tr><td class=\"text\"><div><a href=\"https://open.spotify.com/track/5yVGW2o9LXaiiS4I3HUM3k\" target=\"_blank\">May Ninth</a></div></td><td>64,000,726</td><td>29,736</td></tr>"
+  }
+}

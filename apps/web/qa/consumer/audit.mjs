@@ -3,7 +3,7 @@ const decimal = /^(?:0|[1-9]\d*)(?:\.\d+)?$/;
 const decimalString = value => typeof value === 'string' && decimal.test(value);
 const modes = new Set(['LIVE', 'DEMO']);
 const kinds = new Set(['CURVE_PRICE', 'REFERENCE_PRICE', 'TRADE_PRICE', 'ATTENTION_INDEX']);
-const subjects = new Set(['KEYWORD', 'VIDEO', 'TRACK', 'ALBUM', 'ACCOUNT']);
+const subjects = new Set(['KEYWORD', 'VIDEO', 'TRACK', 'ALBUM', 'ACCOUNT', 'POST']);
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const epoch = value => Number.isInteger(value) && value > 1_500_000_000_000 && value < 10_000_000_000_000;
 const str = value => typeof value === 'string' && value.length > 0;

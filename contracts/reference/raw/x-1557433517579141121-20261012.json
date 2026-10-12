@@ -1,0 +1,13 @@
+{
+  "sourceUrl": "https://cdn.syndication.twimg.com/tweet-result?id=1557433517579141121&lang=en&token=3rwtkx3wf4h",
+  "capturedAt": "2026-10-12T22:12:06.591Z",
+  "fullResponseSha256": "a4e0c0bbe7fbfe4f4443497db66695ebda96b6bb6996062d64823d9cdb620ce0",
+  "extraction": "favorite_count",
+  "fields": {
+    "id_str": "1557433517579141121",
+    "favorite_count": 3857,
+    "screen_name": "CatWorkers",
+    "text": "(Road safety cat (@kokonananya) has appeared. \n\nRoad safety cat’s job is to remind everyone about road safety. So please keep road safety in mind, thank you!) https://t.co/FOOmUOFYVr",
+    "imageUrl": "https://pbs.twimg.com/media/FZ0dhxaWIAA7q6C.jpg"
+  }
+}

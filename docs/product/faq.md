@@ -12,9 +12,13 @@ No. Placing and taking back a chip record an attention view with no cash payout.
 
 No. **Preview** subjects provide public reference data or official information and artwork. They are read-only. Only a registered, eligible market with the correct chain identity can offer an executable action. See [Markets and trading](/docs/markets-trading).
 
-## Does a music or video chart show plays?
+## What does a preview count measure?
 
-Read its metric label. A Wikimedia pageviews chart counts visits to a Wikipedia article, not plays of the song or video. Its source link and observation dates identify the data shown. See [Data and pricing](/docs/data-pricing).
+Read its metric label: YouTube video views, X post likes, or Spotify track streams. The source link, UTC capture time, and any provider report date identify the value. Third-party Spotify reports keep their attribution and report date; popularity scores are not stream counts. See [Data and pricing](/docs/data-pricing).
+
+## Why does a subject show a snapshot instead of a chart?
+
+One captured count establishes a snapshot. A history needs multiple observations, and a change needs comparable counts at different times. Capture time records when the source was retrieved. A report may describe an earlier date, and platform counters may be cached. The snapshot does not indicate a continuous feed.
 
 ## Why is an action unavailable?
 

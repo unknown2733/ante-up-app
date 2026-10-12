@@ -1,0 +1,12 @@
+{
+  "sourceUrl": "https://www.youtube.com/watch?v=sTcHbELHYCk",
+  "capturedAt": "2026-10-12T22:13:04.476Z",
+  "fullResponseSha256": "85bd3f8f22b7b51841bdb4952729f7d35653f55fb35ebfb2486e391f1327e751",
+  "extraction": "ytInitialPlayerResponse.videoDetails.viewCount",
+  "fields": {
+    "videoId": "sTcHbELHYCk",
+    "title": "Khruangbin - May Ninth (Official Video)",
+    "author": "KhruangbinVEVO",
+    "viewCount": "2787678"
+  }
+}

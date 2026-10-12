@@ -1,10 +1,12 @@
 # Data and pricing
 
-Check the source, metric, and observation date on each chart. Observed Devnet markets use collected attention data. Preview subjects show available public reference data or official information; they have no token price or executable quote.
+Check the source, metric, and date on each subject. Observed Devnet markets use collected attention data. Preview subjects show captured platform counts or official information; they have no token price or executable quote.
 
 ## Public reference data
 
-Where available, preview charts use fetched Wikimedia article pageviews. These count visits to the named Wikipedia article, not video views, song plays, or album streams. Read the displayed article, date range, and source link to understand the measurement. Other previews provide official metadata or artwork without inventing a history. A reference chart does not feed chip results or settlement.
+Reference metrics identify the activity counted: YouTube video views, X post likes, or Spotify track streams. Each snapshot shows its count, unit, source link, and capture time in UTC. A provider's report date is shown separately when supplied; an unspecified time zone remains unspecified. Platform counters may be cached. Spotify stream counts from third-party reports retain the provider's name and report date; a popularity score is not a stream count.
+
+A single observation appears as a snapshot. A history requires multiple recorded observations, and a change requires comparable counts from different times. Captured counts are not continuously updated feeds. Subjects without a verified count show available metadata and artwork. Reference counts do not feed chip results or settlement.
 
 ## Attention reference
 

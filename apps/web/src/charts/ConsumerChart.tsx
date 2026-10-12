@@ -24,6 +24,10 @@ const when = (ms: number) => new Intl.DateTimeFormat('en', {
   month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC', timeZoneName: 'short',
 }).format(ms);
 const number = (value: number) => new Intl.NumberFormat('en', { maximumFractionDigits: 4 }).format(value);
+const observedWhen = (ms: number) => new Intl.DateTimeFormat('en-US', {
+  year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  hour12: false, timeZone: 'UTC', timeZoneName: 'short',
+}).format(ms);
 const shortName = (value: string) => value.length > 20 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value;
 
 function Portrait({ src, label, type }: { src?: string; label: string; type: 'person' | 'subject' }) {
@@ -57,6 +61,10 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
     ?? scopedHistory.series[0] ?? null;
   const bounds = chartBounds(scopedHistory);
   const points = chartPoints(series, bounds);
+  const snapshot = history.source.mode === 'REFERENCE' && series?.kind === 'ACTIVITY_COUNT' && series.points.length === 1
+    ? series.points[0] : null;
+  const snapshotOnly = !!snapshot && history.period === 'ALL' && scopedHistory.series.every(item => item.kind === 'ACTIVITY_COUNT' && item.points.length <= 1);
+  const sourceUrl = series?.source.sourceUrl ?? history.source.sourceUrl;
   const segments = series ? chartSegments(series, points) : [];
   const clusters = chartClusters(scopedHistory.actions, bounds, Math.max(28, 44 * 640 / markerWidth));
   const selected = clusters.find(cluster => cluster.id === markerId) ?? null;
@@ -69,21 +77,28 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
   const noteLink = noteHref ?? ((action: ConsumerAction) =>
     `${recordLink(action.recordId ?? action.id)}#note-${encodeURIComponent(action.note?.id ?? '')}`);
 
-  return <section className="au-chart" aria-label={`${history.market.title} chart and chip activity`}>
+  return <section className="au-chart" aria-label={`${history.market.title} ${snapshot ? 'activity snapshot' : 'chart and chip activity'}`}>
     <div className="au-chart-head">
-      <div><span className="au-chart-eyebrow">{sourceLabel}</span><h2>{history.market.title} history</h2></div>
-      <div className="au-chart-periods" role="group" aria-label="Chart period">
+      <div><span className="au-chart-eyebrow">{sourceLabel}</span><h2>{history.market.title} {snapshot ? 'snapshot' : 'history'}</h2></div>
+      {!snapshotOnly && <div className="au-chart-periods" role="group" aria-label="Chart period">
         {periods.map(period => <button key={period} type="button" aria-pressed={period === history.period}
           disabled={!onPeriodChange} onClick={() => onPeriodChange?.(period)}>{period}</button>)}
-      </div>
+      </div>}
     </div>
-    <div className="au-chart-series" role="group" aria-label="Chart data">
+    {(!snapshot || scopedHistory.series.length > 1) && <div className="au-chart-series" role="group" aria-label="Chart data">
       {scopedHistory.series.map(item => <button key={item.id} type="button" aria-pressed={item.id === series?.id}
         onClick={() => { setSeriesId(item.id); setMarkerId(null); }}>
         <span className="au-chart-swatch" style={{ background: colors[item.kind] }} />{item.kind === 'ACTIVITY_COUNT' ? item.label : seriesName[item.kind]}
       </button>)}
-    </div>
-    <div className="au-chart-plot">{series && points.length && low !== null && high !== null ? <>
+    </div>}
+    {snapshot && series ? <div className="au-chart-snapshot">
+      <p className="au-snapshot-label">{series.label}</p>
+      <div className="au-snapshot-value"><strong>{number(Number(snapshot.value))}</strong><span>{series.unit}</span></div>
+      <p className="au-snapshot-date">Captured <time dateTime={new Date(snapshot.atMs).toISOString()}>{observedWhen(snapshot.atMs)}</time></p>
+      {(series.source.observationLabel ?? history.source.observationLabel) && <p className="au-snapshot-observation">{series.source.observationLabel ?? history.source.observationLabel}</p>}
+      <p className="au-snapshot-status">Captured snapshot</p>
+      {sourceUrl && <a href={sourceUrl}>View source <span aria-hidden="true">↗</span></a>}
+    </div> : <div className="au-chart-plot">{series && points.length && low !== null && high !== null ? <>
       <div className="au-chart-canvas">
         <svg viewBox="0 0 640 220" role="img" preserveAspectRatio="none"
           aria-label={`${seriesName[series.kind]}, ${points.length} ${history.source.mode === 'DEMO' ? 'sample' : 'observed'} points, ${number(low)} to ${number(high)} ${series.unit}. Missing intervals are not connected.`}>
@@ -99,9 +114,9 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
         <span className="au-chart-ylabel au-chart-ylabel-bottom" aria-hidden="true">{number(low)}</span>
       </div>
       <div className="au-chart-caption"><span>{when(bounds.start)}</span><span>{series.unit} · {points.length} points · {visibleGapCount} gaps</span><span>{when(bounds.end)}</span></div>
-    </> : <div className="au-chart-empty">No {history.source.mode === 'DEMO' ? 'sample' : 'observed'} {series ? seriesName[series.kind].toLowerCase() : 'chart'} data in this period.</div>}</div>
+    </> : <div className="au-chart-empty">No {history.source.mode === 'DEMO' ? 'sample' : 'observed'} {series ? seriesName[series.kind].toLowerCase() : 'chart'} data in this period.</div>}</div>}
 
-    {!!clusters.length && <div ref={markerTrack} className="au-chart-markers" aria-label="Chip activity on this chart">
+    {!snapshot && !!clusters.length && <div ref={markerTrack} className="au-chart-markers" aria-label="Chip activity on this chart">
       {clusters.map(cluster => {
         const first = cluster.actions[0];
         const single = cluster.actions.length === 1;
@@ -137,11 +152,11 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
         </div>
       </article>)}
     </div>}
-    <details className="au-chart-source"><summary>About this chart</summary>
+    <details className="au-chart-source"><summary>About this {snapshot ? 'snapshot' : 'chart'}</summary>
       <p>{history.source.label}. Updated {when(history.source.asOfMs)}. {history.source.mode === 'DEMO'
         ? 'Sample values and example activity are illustrative; they are not real wallet results or executable markets.'
-        : history.source.mode === 'REFERENCE' ? 'Historical observations from the linked public source. The date range and metric apply to this source.' : 'Observed history comes from Devnet records. Chip activity tracks attention, not cash profit.'}</p>
-      {series && <p>{series.kind === 'ACTIVITY_COUNT' ? series.label : seriesName[series.kind]} · {series.unit}. Missing intervals are left blank. {history.source.mode === 'REFERENCE' ? 'This activity is not a token price or a trade return.' : 'Chart values are informational; current quotes and receipts govern transactions.'}</p>}
+        : history.source.mode === 'REFERENCE' ? snapshot ? 'A captured count from the linked source. A provider report date describes the measurement; the capture time records when the source was retrieved.' : 'Historical observations from the linked public source. The date range and metric apply to this source.' : 'Observed history comes from Devnet records. Chip activity tracks attention, not cash profit.'}</p>
+      {series && <p>{series.kind === 'ACTIVITY_COUNT' ? series.label : seriesName[series.kind]} · {series.unit}. {snapshot ? 'This snapshot does not establish a trend or a continuously updated feed.' : 'Missing intervals are left blank.'} {history.source.mode === 'REFERENCE' ? 'This activity is not a token price or a trade return.' : 'Chart values are informational; current quotes and receipts govern transactions.'}</p>}
       {history.source.sourceUrl && <a href={history.source.sourceUrl}>View data source</a>}
     </details>
   </section>;

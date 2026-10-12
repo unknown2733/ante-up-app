@@ -1,0 +1,14 @@
+{
+  "sourceUrl": "https://kworb.net/spotify/artist/5oOhM2DFWab8XhSdQiITry_songs.html",
+  "capturedAt": "2026-10-12T22:13:06.074Z",
+  "fullResponseSha256": "b7539b83e3aecc011beaf63c0a2d76f17686bd9dfbccf13bb1aeffaf2fcb68bc",
+  "extraction": "Artist songs table, exact Awake row linking https://open.spotify.com/track/5MhMXTuVODDF234VDvSxQx, Streams column",
+  "fields": {
+    "trackId": "5MhMXTuVODDF234VDvSxQx",
+    "trackUrl": "https://open.spotify.com/track/5MhMXTuVODDF234VDvSxQx",
+    "title": "Awake",
+    "streams": "112965561",
+    "reportedDate": "2026-09-25",
+    "htmlRow": "<tr><td class=\"text\"><div><a href=\"https://open.spotify.com/track/5MhMXTuVODDF234VDvSxQx\" target=\"_blank\">Awake</a></div></td><td>112,965,561</td><td>31,780</td></tr>"
+  }
+}

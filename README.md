@@ -11,7 +11,7 @@ All financial flows use test assets. This is an experimental implementation, not
 ## Try it
 
 1. Open **Explore** to browse charts and subjects without a wallet. The catalog combines observed Devnet markets with read-only **Preview** subjects backed by fetched public reference data or official metadata and artwork.
-2. Check each item's source, metric, observation date, and action state. Previously verified collection covered one approved keyword: `solana`. Wikimedia reference charts count visits to a named Wikipedia article, not video or music plays. Profiles, activity, and rankings use actual Devnet records.
+2. Check each item's source, metric, capture date, and action state. Previously verified collection covered one approved keyword: `solana`. Public snapshots show actual YouTube video views, X post likes, and Spotify track streams reported by Kworb with its report date. These snapshots are not live feeds or settlement prices. Profiles, activity, and rankings use actual Devnet records.
 3. Connect a Devnet wallet. Desktop Phantom, Android Phantom's in-app browser, and Seeker Chrome with Seed Vault Wallet have completed real-device flows on an earlier UI release.
 4. Use the in-app **Faucet** for tUSD. Devnet SOL for transaction fees is separate. Faucet and new-entry availability depend on operator limits and data readiness.
 5. **Place chip** on an eligible Devnet market, watch its attention reference, then **Take back chip** to finalize the result. A wallet can hold up to three active chips, with one per market. Attention change is not a cash return.
@@ -27,7 +27,7 @@ This source revision replaces synthetic catalog histories and fictional profiles
 | Test-asset trading | Faucet, registration, bonding-curve buy/sell, graduation, spot exchange, Pro long/short and LP participation |
 | Data | X Counts collector, validation, EWMA calculation and Solana snapshot publishing on a five-minute cycle |
 | Charts | Finalized-chain price samples every five minutes; visible observed Devnet charts refresh from the API every 60 seconds |
-| Reference catalog | Read-only subjects with fetched Wikimedia article pageviews where available, or official metadata and artwork; source, metric and observation dates accompany reference data |
+| Reference catalog | Nine actual subjects: three YouTube view totals, three X post like totals, three Spotify stream totals reported by Kworb; original images, exact sources and capture/report dates; no fabricated history |
 | Evidence | Raw inputs and calculation evidence archived through Arweave/Turbo; Solana records and SAS attestations link results to evidence |
 | Operations | API, indexer and bounded workers; provider budgets, stale-data handling and restart recovery |
 

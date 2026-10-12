@@ -1,9 +1,9 @@
 /** Additive consumer read contract. Never use chart values to authorize settlement. */
 export type ConsumerMode = 'LIVE' | 'REFERENCE' | 'DEMO';
-export type ConsumerSubject = 'KEYWORD' | 'VIDEO' | 'TRACK' | 'ALBUM' | 'ACCOUNT';
+export type ConsumerSubject = 'KEYWORD' | 'VIDEO' | 'TRACK' | 'ALBUM' | 'ACCOUNT' | 'POST';
 export type ConsumerSeriesKind = 'CURVE_PRICE' | 'REFERENCE_PRICE' | 'TRADE_PRICE' | 'ATTENTION_INDEX' | 'ACTIVITY_COUNT';
 export type ConsumerPeriod = '1D' | '1W' | '1M' | 'ALL';
-export interface ConsumerSource { mode: ConsumerMode; label: string; asOfMs: number; sourceUrl?: string; }
+export interface ConsumerSource { mode: ConsumerMode; label: string; asOfMs: number; sourceUrl?: string; observationLabel?: string; }
 export interface ConsumerMarket {
   id: string; title: string; subtitle: string; subject: ConsumerSubject;
   phase: 'CURVE' | 'POOL' | 'PREVIEW'; source: ConsumerSource;

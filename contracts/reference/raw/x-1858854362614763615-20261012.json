@@ -1,0 +1,13 @@
+{
+  "sourceUrl": "https://cdn.syndication.twimg.com/tweet-result?id=1858854362614763615&lang=en&token=4i7rh4b72j2",
+  "capturedAt": "2026-10-12T22:12:07.281Z",
+  "fullResponseSha256": "78019027d3917989af16159b71b8926f3a2b0f7503bda0d5496e3e06b9ad757b",
+  "extraction": "favorite_count",
+  "fields": {
+    "id_str": "1858854362614763615",
+    "favorite_count": 3180,
+    "screen_name": "Catsillyness",
+    "text": "What song? https://t.co/Bnkojuny23",
+    "imageUrl": "https://pbs.twimg.com/media/Gcv6MScWgAA8pXe.jpg"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "sourceUrl": "https://kworb.net/spotify/artist/0cmWgDlu9CwTgxPhf403hb_songs.html",
+  "capturedAt": "2026-10-12T22:13:06.612Z",
+  "fullResponseSha256": "4650ad991428f66e071c73e246b7711481f84e1de864600629a6bfc65847ba69",
+  "extraction": "Artist songs table, exact Rosewood row linking https://open.spotify.com/track/2ZaL63zLMDr6H18El2EIt9, Streams column",
+  "fields": {
+    "trackId": "2ZaL63zLMDr6H18El2EIt9",
+    "trackUrl": "https://open.spotify.com/track/2ZaL63zLMDr6H18El2EIt9",
+    "title": "Rosewood",
+    "streams": "48661771",
+    "reportedDate": "2026-10-02",
+    "htmlRow": "<tr><td class=\"text\"><div><a href=\"https://open.spotify.com/track/2ZaL63zLMDr6H18El2EIt9\" target=\"_blank\">Rosewood</a></div></td><td>48,661,771</td><td>12,400</td></tr>"
+  }
+}

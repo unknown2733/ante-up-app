@@ -1,0 +1,12 @@
+{
+  "sourceUrl": "https://www.youtube.com/watch?v=jrDv0OdMt5s",
+  "capturedAt": "2026-10-12T22:13:05.242Z",
+  "fullResponseSha256": "0aa64356ffec9f8d12448ad8ff9a4e9712db57c2d764be0b8f20e75c4d3df501",
+  "extraction": "ytInitialPlayerResponse.videoDetails.viewCount",
+  "fields": {
+    "videoId": "jrDv0OdMt5s",
+    "title": "NASA’s Artemis I Moon Mission: Launch to Splashdown Highlights",
+    "author": "NASA",
+    "viewCount": "419821"
+  }
+}

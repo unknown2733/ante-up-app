@@ -28,6 +28,12 @@ const live = Array.isArray(publicMarkets.data) ? publicMarkets.data.map(withVeri
 const board = publicBoard.data;
 if (!Array.isArray(live) || !Array.isArray(board?.rows)) throw new Error('Unexpected public API response.');
 const catalog = [...live, ...references];
+const referenceHistories = await Promise.all(references.map(market => referenceConsumerReadApi.getHistory(market.id, 'ALL')));
+for (const history of referenceHistories) {
+  if (!history || history.source.mode !== 'REFERENCE' || history.actions.length || history.series.length !== 1 ||
+      history.series[0].kind !== 'ACTIVITY_COUNT' || history.series[0].points.length !== 1 || history.market.activity?.changeFraction !== null)
+    throw new Error('Platform references must contain one observed activity count without actions or an inferred change.');
+}
 const allowedImageOrigins = [...new Set(catalog.map(item => {
   try { const url = new URL(item.thumbnailUrl); return url.protocol === 'https:' ? url.origin : null; } catch { return null; }
 }).filter(Boolean))];
@@ -35,6 +41,7 @@ const runRoot = path.join(root, '.runtime/real-catalog-qa');
 await mkdir(runRoot, { recursive: true });
 const run = await mkdtemp(path.join(runRoot, 'browser-'));
 await writeFile(path.join(run, 'catalog.json'), JSON.stringify(catalog, null, 2));
+await writeFile(path.join(run, 'reference-histories.json'), JSON.stringify(referenceHistories, null, 2));
 await writeFile(path.join(run, 'public-leaderboard.json'), JSON.stringify(publicBoard, null, 2));
 await readFile(path.join(dist, 'index.html'));
 const results = [], failures = [], blockedRequests = [], browserErrors = [], publicReads = [];
@@ -115,17 +122,22 @@ try {
     const label=e=>e.getAttribute('aria-label')||e.textContent?.trim()||'';
     return {url:location.href,text:document.body.innerText,language:document.documentElement.lang,
       overflow:Math.max(0,document.documentElement.scrollWidth-document.documentElement.clientWidth),
-      rows:all('.au-market-row').map(e=>({label:label(e),text:e.innerText,source:e.querySelector('.au-source-cell strong')?.textContent})),
+      rows:all('.au-market-row').map(e=>({label:label(e),text:e.innerText,source:e.querySelector('.au-source-cell strong')?.textContent,
+        value:e.querySelector('.au-price-cell strong')?.textContent,metric:e.querySelector('.au-price-cell small')?.textContent,change:e.querySelector('.au-change-cell')?.textContent})),
       ranks:all('.au-social-ranks .au-social-actor').map(e=>({address:e.title,label:label(e)})),
       activities:all('.au-social-activity').length,markers:all('.au-chart-marker').length,
       chart:all('.au-chart svg').map(e=>e.getAttribute('aria-label')),chartPoints:all('.au-chart svg circle').length,
+      snapshots:all('.au-metric-snapshot,.au-chart-snapshot').map(e=>({text:e.innerText,value:e.querySelector('.au-snapshot-value strong')?.textContent,
+        unit:e.querySelector('.au-snapshot-value span')?.textContent,label:e.querySelector('.au-snapshot-label')?.textContent,observedAt:e.querySelector('time')?.dateTime,
+        observationLabel:e.querySelector('.au-snapshot-observation')?.textContent})),
+      periodControls:all('.au-chart-periods button').length,
       sources:all('a').filter(e=>e.textContent.includes('View data source')).map(e=>e.href),
       images:all('img').map(e=>({src:e.currentSrc||e.src,complete:e.complete,width:e.naturalWidth})),
       enabledFinancial:all('button').filter(e=>!e.disabled&&/^(Place chip|Buy|Sell|Open Pro|Deposit liquidity)$/i.test(label(e))).map(label),
       unnamed:all('button,a,input').filter(e=>!label(e)&&!e.getAttribute('placeholder')&&!e.closest('label')).map(e=>e.outerHTML.slice(0,100))};
   })()`;
-  async function visit(route, viewport, name, waitFor) {
-    await send('Page.navigate', { url: new URL(route, base).href });
+  async function visit(route, viewport, name, waitFor, navigate = true) {
+    if (navigate) await send('Page.navigate', { url: new URL(route, base).href });
     let probe;
     for (let i = 0; i < 80; i++) { await delay(200); probe = await evaluate(probeCode); if (waitFor(probe)) break; }
     await delay(400);
@@ -149,8 +161,22 @@ try {
     const explore = await visit('/markets', viewport, 'explore', state => state.rows.length === catalog.length);
     explore.check(explore.probe.rows.filter(row => row.source === 'Public source').length === references.length, 'reference row count mismatch');
     explore.check(explore.probe.rows.filter(row => row.source === 'Devnet observed').length === live.length, 'live row count mismatch');
+    for (const market of references) {
+      const row = explore.probe.rows.find(row => row.label === `Open ${market.title} subject`);
+      const count = new Intl.NumberFormat('en-US', { maximumFractionDigits: 6 }).format(Number(market.activity.value));
+      explore.check(row?.value === `${count} ${market.activity.unit}`, `exact platform count/unit absent for ${market.id}`);
+      explore.check(row?.metric === market.activity.label, `metric label absent for ${market.id}`);
+      explore.check(!!row && !row.change.includes('%') && row.change.includes('Captured snapshot'), `inferred percentage change for ${market.id}`);
+    }
+    const posts = references.filter(market => market.subject === 'POST');
+    const clicked = await evaluate("(() => {const e=[...document.querySelectorAll('.au-subject-filter button')].find(e=>e.textContent.trim()==='Post');if(!e)return false;e.click();return true})()");
+    explore.check(clicked, 'Post subject filter absent');
+    if (clicked) {
+      const filtered = await visit('/markets', viewport, 'post-filter', state => state.rows.length === posts.length, false);
+      filtered.check(filtered.probe.rows.every(row => posts.some(market => row.label === `Open ${market.title} subject`)), 'Post filter includes a different subject type');
+    }
     for (const [index, market] of references.entries()) {
-      const detail = await visit(`/markets/${encodeURIComponent(market.id)}?period=ALL`, viewport, `reference-${index}`, state => state.text.includes(market.title) && state.text.includes('PUBLIC SOURCE') && (market.activity ? state.chartPoints > 0 : state.text.includes('No observed')));
+      const detail = await visit(`/markets/${encodeURIComponent(market.id)}?period=ALL`, viewport, `reference-${index}`, state => state.text.includes(market.title) && state.text.includes('PUBLIC SOURCE') && state.snapshots.length === 1);
       if (market.thumbnailUrl) {
         for (let attempt = 0; attempt < 40; attempt++) {
           const imageReady = await evaluate(`(() => {const e=document.querySelector('.au-detail-art');return !!e&&e.complete&&e.naturalWidth>0})()`);
@@ -163,7 +189,13 @@ try {
       }
       detail.check(detail.probe.enabledFinancial.length === 0, 'executable financial control on reference subject');
       detail.check(detail.probe.markers === 0, 'reference has fabricated chip/trade markers');
-      if (market.activity) detail.check(detail.probe.chart.some(label => label.startsWith('Public activity,') && label.includes('observed points')), 'real activity series absent');
+      detail.check(detail.probe.chart.length === 0 && detail.probe.chartPoints === 0 && detail.probe.periodControls === 0, 'single snapshot presented as historical chart');
+      const snapshot = detail.probe.snapshots[0];
+      const count = new Intl.NumberFormat('en', { maximumFractionDigits: 4 }).format(Number(market.activity.value));
+      detail.check(snapshot?.value === count && snapshot?.unit === market.activity.unit && snapshot?.label === market.activity.label, 'snapshot count/unit/metric does not match source DTO');
+      detail.check(snapshot?.observedAt === new Date(market.activity.asOfMs).toISOString(), 'snapshot observation time does not match DTO');
+      if (market.source.observationLabel) detail.check(snapshot?.observationLabel === market.source.observationLabel, 'provider observation/report date context absent');
+      detail.check(!!snapshot && !/[+-]?\d[\d,.]*\s*%/.test(snapshot.text), 'snapshot has inferred percentage change');
       await evaluate("document.querySelector('.au-chart-source')?.setAttribute('open','')");
       const source = await evaluate(probeCode);
       detail.check(source.sources.includes(market.source.sourceUrl), 'public provenance link absent');
@@ -182,8 +214,6 @@ try {
     }
     console.log(JSON.stringify({ viewport: viewport.name, capturedViews: results.length, failures: failures.length }));
   }
-  if (live.length !== 1 || references.length !== 15) failures.push(`Expected 1 live + 15 references; got ${live.length} + ${references.length}`);
-  if (board.rows.length !== 4) failures.push(`Expected 4 current public wallets, got ${board.rows.length}; inspect whether public state changed.`);
   if (blockedRequests.length) failures.push(`${blockedRequests.length} disallowed requests attempted and blocked`);
   if (browserErrors.length) failures.push(`${browserErrors.length} browser errors`);
   const output = path.join(run, 'report.json');

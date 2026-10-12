@@ -12,7 +12,7 @@ export interface MarketDiscoveryProps {
   onRegister?: () => void;
 }
 
-const subjects: Array<ConsumerSubject | 'ALL'> = ['ALL', 'KEYWORD', 'VIDEO', 'TRACK', 'ALBUM', 'ACCOUNT'];
+const subjects: Array<ConsumerSubject | 'ALL'> = ['ALL', 'KEYWORD', 'POST', 'VIDEO', 'TRACK', 'ALBUM', 'ACCOUNT'];
 
 function MarketArtwork({ market }: { market: ConsumerMarket }) {
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
@@ -39,7 +39,7 @@ export function MarketDiscovery({ markets, loading = false, liveError, onSelectM
         <span className="au-market-identity" role="cell"><MarketArtwork market={market} /><span><strong>{market.title}</strong><small>{market.creatorLabel ? `${market.creatorLabel} · ` : ''}{market.subtitle}</small></span></span>
         <span role="cell" className="au-source-cell"><strong>{market.source.mode === 'REFERENCE' ? 'Public source' : 'Devnet observed'}</strong><small>{market.source.mode === 'REFERENCE' ? new Date(market.source.asOfMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : <MarketStatus phase={market.phase} />}</small></span>
         <span role="cell" className="au-price-cell"><strong>{market.source.mode === 'REFERENCE' ? market.activity ? formatDisplayPrice(market.activity.value, market.activity.unit) : '—' : formatDisplayPrice(market.latestPrice, market.priceUnit)}</strong><small>{market.source.mode === 'REFERENCE' ? market.activity?.label ?? 'Source linked · view only' : market.latestPrice === null ? consumerCopy.states.missingPrice : market.phase === 'CURVE' ? 'Curve quote' : 'Reference price'}</small></span>
-        <span role="cell" className={`au-change-cell ${(market.source.mode === 'REFERENCE' ? market.activity?.changeFraction : market.changeFraction) != null && (market.source.mode === 'REFERENCE' ? market.activity!.changeFraction! : market.changeFraction!) < 0 ? 'negative' : ''}`}>{formatChange(market.source.mode === 'REFERENCE' ? market.activity?.changeFraction ?? null : market.changeFraction)}{market.source.mode === 'REFERENCE' && market.activity && <small className="au-change-basis">vs 7 days earlier</small>}</span>
+        <span role="cell" className={`au-change-cell ${(market.source.mode === 'REFERENCE' ? market.activity?.changeFraction : market.changeFraction) != null && (market.source.mode === 'REFERENCE' ? market.activity!.changeFraction! : market.changeFraction!) < 0 ? 'negative' : ''}`}>{formatChange(market.source.mode === 'REFERENCE' ? market.activity?.changeFraction ?? null : market.changeFraction)}{market.source.mode === 'REFERENCE' && market.activity && <small className="au-change-basis">{market.activity.changeFraction == null ? 'Captured snapshot' : 'vs 7 days earlier'}</small>}</span>
         <span role="cell" className="au-row-arrow" aria-hidden="true">↗</span>
       </button>)}
     </div>

@@ -3,7 +3,7 @@ import type { ConsumerMarket, ConsumerPeriod, ConsumerSubject } from '../../../.
 import { consumerCopy } from './copy';
 
 export function SubjectGlyph({ subject }: { subject: ConsumerSubject }) {
-  const glyphs: Record<ConsumerSubject, string> = { KEYWORD: '#', VIDEO: '▷', TRACK: '♪', ALBUM: '▣', ACCOUNT: '@' };
+  const glyphs: Record<ConsumerSubject, string> = { KEYWORD: '#', POST: '✦', VIDEO: '▷', TRACK: '♪', ALBUM: '▣', ACCOUNT: '@' };
   return <span className={`au-subject-glyph au-subject-${subject.toLowerCase()}`} aria-hidden="true">{glyphs[subject]}</span>;
 }
 

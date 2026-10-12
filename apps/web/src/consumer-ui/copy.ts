@@ -2,7 +2,7 @@ import type { ConsumerMarket, ConsumerSubject } from '../../../../contracts/cons
 
 export const consumerCopy = {
   nav: { discover: 'Explore', leaderboard: 'Leaderboard', activity: 'My activity', funds: 'Test funds', docs: 'Docs' },
-  subjects: { KEYWORD: 'Keyword', VIDEO: 'Video', TRACK: 'Track', ALBUM: 'Album', ACCOUNT: 'Account' } satisfies Record<ConsumerSubject, string>,
+  subjects: { KEYWORD: 'Keyword', POST: 'Post', VIDEO: 'Video', TRACK: 'Track', ALBUM: 'Album', ACCOUNT: 'Account' } satisfies Record<ConsumerSubject, string>,
   phases: { CURVE: 'Bonding curve', POOL: 'Pool', PREVIEW: 'Preview' } satisfies Record<ConsumerMarket['phase'], string>,
   actions: { openCall: 'Place chip', closeCall: 'Take back chip', buy: 'Buy', sell: 'Sell' },
   states: {

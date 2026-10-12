@@ -1,0 +1,12 @@
+{
+  "sourceUrl": "https://www.youtube.com/watch?v=S0Q4gqBUs7c",
+  "capturedAt": "2026-10-12T22:13:03.797Z",
+  "fullResponseSha256": "8ff73dc8cdb20f225aa233f9c1385e42170f9544f21d18c4365b780f7222e8e4",
+  "extraction": "ytInitialPlayerResponse.videoDetails.viewCount",
+  "fields": {
+    "videoId": "S0Q4gqBUs7c",
+    "title": "Bonobo - Kerala (Official Audio)",
+    "author": "Bonobo",
+    "viewCount": "14169301"
+  }
+}

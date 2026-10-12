@@ -2,70 +2,73 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { referenceSubjects } from '../../../../contracts/reference/catalog.ts';
-import { referenceSnapshot } from '../../../../contracts/reference/snapshot.ts';
-import { referenceConsumerReadApi as api, isReferenceConsumerId } from './referenceData.ts';
+import { platformReferences } from '../../../../contracts/reference/platform-snapshot.ts';
+import { referenceConsumerReadApi as api } from './referenceData.ts';
 
-test('all real subjects retain provenance without fabricated financial or social state', async () => {
+test('catalog exposes exact platform metrics without invented prices, users, or trading rights', async () => {
   const markets = await api.listMarkets();
-  assert.equal(markets.length, 15);
-  assert.deepEqual(new Set(markets.map(market => market.subject)), new Set(['KEYWORD', 'VIDEO', 'TRACK', 'ALBUM', 'ACCOUNT']));
+  assert.equal(markets.length, 9);
+  assert.deepEqual(new Set(markets.map(item => item.subject)), new Set(['VIDEO', 'TRACK', 'POST']));
   for (const market of markets) {
-    assert.ok(isReferenceConsumerId(market.id));
     assert.equal(market.source.mode, 'REFERENCE');
     assert.equal(market.phase, 'PREVIEW');
     assert.equal(market.latestPrice, null);
     assert.equal(market.changeFraction, null);
-    assert.equal(market.priceUnit, 'tUSD');
+    assert.equal(market.activity.changeFraction, null);
     assert.equal(market.liveMarketId, undefined);
     for (const url of [market.subjectUrl, market.thumbnailUrl, market.imageSourceUrl, market.source.sourceUrl]) assert.equal(new URL(url).protocol, 'https:');
     assert.deepEqual((await api.getHistory(market.id, 'ALL')).actions, []);
+    assert.doesNotMatch(JSON.stringify(market), /wikipedia|pageviews/i);
   }
-  assert.equal(await api.getProfile('reference:wallet:anyone'), null);
-  assert.equal(await api.getProfile('demo:wallet:ava'), null);
+  assert.equal(await api.getProfile('reference:anyone'), null);
   assert.deepEqual((await api.getLeaderboard('ALL')).rows, []);
   assert.equal(await api.getHistory('demo:market:northbound', 'ALL'), null);
+  assert.equal(await api.getHistory('reference:market:aurora', 'ALL'), null);
 });
 
-test('every displayed observation equals its preserved public API response', async () => {
-  for (const subject of referenceSnapshot.subjects.filter(item => item.activity)) {
-    const activity = subject.activity;
-    const raw = await readFile(new URL(`../../../../contracts/reference/${activity.rawFile}`, import.meta.url));
-    assert.equal(createHash('sha256').update(raw).digest('hex'), activity.rawSha256);
-    const items = JSON.parse(raw).items;
-    assert.deepEqual(activity.points, items.map(item => ({ date: `${item.timestamp.slice(0,4)}-${item.timestamp.slice(4,6)}-${item.timestamp.slice(6,8)}`, views: item.views })));
-    assert.ok(items.every(item => item.article === activity.article && item.project === 'en.wikipedia' && item.access === 'all-access' && item.agent === 'user' && item.granularity === 'daily'));
-    const history = await api.getHistory(`reference:market:${subject.slug}`, 'ALL');
-    assert.equal(history.series.length, 1);
-    assert.equal(history.series[0].kind, 'ACTIVITY_COUNT');
-    assert.equal(history.series[0].unit, 'views/day');
-    assert.deepEqual(history.series[0].points.map(point => point.value), items.map(item => String(item.views)));
-    assert.ok(history.series[0].points.every(point => point.observationId.startsWith('wikimedia:') && point.atMs <= history.source.asOfMs));
-    assert.ok(history.source.asOfMs < Date.parse(activity.capturedAt));
-    assert.equal(history.market.activity.value, String(activity.points.at(-1).views));
-    const last = activity.points.at(-1), previous = activity.points.at(-8);
-    assert.equal(history.market.activity.changeFraction, previous.views ? last.views / previous.views - 1 : null);
-  }
-});
-
-test('daily periods never invent intraday points, fills, prices, or proxy histories', async () => {
-  for (const subject of referenceSubjects) {
-    const id = `reference:market:${subject.slug}`;
-    for (const [period, days] of [['1D', 1], ['1W', 7], ['1M', 30], ['ALL', 45]]) {
-      const history = await api.getHistory(id, period);
-      if (!subject.wikipediaArticle) {
-        assert.deepEqual(history.series, []);
-        assert.equal(history.market.activity, undefined);
-        continue;
-      }
-      assert.equal(history.series[0].points.length, days);
-      for (const point of history.series[0].points) assert.equal(point.atMs % 86_400_000, 0);
-      assert.match(history.source.label, /English Wikipedia/);
+test('displayed totals match hashed source extracts for the exact video, post, or track', async () => {
+  for (const item of platformReferences) {
+    const raw = await readFile(new URL(`../../../../contracts/reference/${item.metric.rawFile}`, import.meta.url));
+    assert.equal(createHash('sha256').update(raw).digest('hex'), item.metric.rawSha256);
+    const evidence = JSON.parse(raw);
+    const fields = evidence.fields;
+    const kind = item.metric.kind;
+    const value = kind === 'YOUTUBE_VIEWS' ? fields.viewCount : kind === 'X_LIKES' ? String(fields.favorite_count) : fields.streams;
+    assert.equal(value, item.metric.value);
+    const id = kind === 'YOUTUBE_VIEWS' ? new URL(item.subjectUrl).searchParams.get('v') : item.subjectUrl.split('/').at(-1);
+    assert.equal(kind === 'YOUTUBE_VIEWS' ? fields.videoId : kind === 'X_LIKES' ? fields.id_str : fields.trackId, id);
+    assert.equal(evidence.capturedAt, item.metric.capturedAt);
+    assert.match(evidence.fullResponseSha256, /^[a-f0-9]{64}$/);
+    const history = await api.getHistory(`reference:market:${item.slug}`, 'ALL');
+    assert.equal(history.market.activity.value, value);
+    assert.equal(history.market.activity.unit, item.metric.unit);
+    assert.equal(history.series[0].points[0].value, value);
+    if (kind === 'SPOTIFY_STREAMS') {
+      assert.equal(item.metric.sourceType, 'THIRD_PARTY');
+      assert.equal(fields.reportedDate, item.metric.reportedDate);
+      assert.match(history.source.label, /Kworb.*third-party report/);
+      assert.ok(history.source.observationLabel.includes(fields.reportedDate));
+      assert.equal(item.metric.asOf, item.metric.capturedAt, 'do not invent an exact timestamp for a date-only report');
+      assert.equal(new URL(item.subjectUrl).hostname, 'open.spotify.com');
     }
   }
 });
 
-test('returned public objects cannot mutate the saved snapshot or next read', async () => {
+test('all periods preserve one captured point without interpolation, proxy metrics, or invented changes', async () => {
+  for (const item of platformReferences) {
+    for (const period of ['1D', '1W', '1M', 'ALL']) {
+      const history = await api.getHistory(`reference:market:${item.slug}`, period);
+      assert.equal(history.series.length, 1);
+      const series = history.series[0];
+      assert.equal(series.kind, 'ACTIVITY_COUNT');
+      assert.deepEqual(series.points, [{ atMs: Date.parse(item.metric.asOf), value: item.metric.value, observationId: `public:${item.metric.rawSha256}` }]);
+      assert.deepEqual(series.gaps, []);
+      assert.equal(history.market.activity.changeFraction, null);
+    }
+  }
+});
+
+test('returned data cannot mutate subsequent reads', async () => {
   const first = await api.listMarkets();
   const title = first[0].title;
   first[0].title = 'Mutated';

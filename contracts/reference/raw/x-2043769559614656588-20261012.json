@@ -1,0 +1,13 @@
+{
+  "sourceUrl": "https://cdn.syndication.twimg.com/tweet-result?id=2043769559614656588&lang=en&token=4ycow3jsxw6",
+  "capturedAt": "2026-10-12T22:12:07.629Z",
+  "fullResponseSha256": "760430ffe951bee6b38db4532aa94be1c22d944874d6756d4827206f486478a2",
+  "extraction": "favorite_count",
+  "fields": {
+    "id_str": "2043769559614656588",
+    "favorite_count": 22335,
+    "screen_name": "thedispenser_",
+    "text": "Her cat doesnt want her to make videos https://t.co/5niJPG48GB",
+    "imageUrl": "https://pbs.twimg.com/amplify_video_thumb/2043769425598246912/img/2jaP522MrHKez_cy.jpg"
+  }
+}

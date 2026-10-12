@@ -4,7 +4,7 @@ Ante Up lets you follow a subject's attention, place a chip on a view, and keep 
 
 ## Explore without a wallet
 
-Open [Explore](/markets) and choose a subject. Observed Devnet markets show collected attention data and available actions. **Preview** subjects offer public reference data or official information and artwork. Read each source, metric, and observation date; previews are read-only.
+Open [Explore](/markets) and choose a subject. Observed Devnet markets show collected attention data and available actions. **Preview** subjects offer captured platform counts or official information and artwork. Read each metric, source, capture time, and any provider report date. A single count appears as a snapshot; previews are read-only.
 
 ## Place your first chip
 

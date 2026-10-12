@@ -6,7 +6,7 @@ Explore brings observed Devnet markets and read-only reference subjects into one
 
 The collected Devnet `solana` keyword is the previously verified market in this snapshot. Its chip records and market data come from the Devnet services. **Preview** subjects show public reference data or official metadata and artwork. All previews are read-only, with no chips, trades, token quotes, or participation history.
 
-When a preview includes Wikimedia pageviews, the chart measures visits to its named Wikipedia article. The source link and dates identify the observations; they do not represent the subject's video views or music plays.
+Preview snapshots name the platform metric, such as YouTube views, X post likes, or Spotify track streams. The linked source, UTC capture time, and any provider report date identify the count. Spotify counts reported by a third party retain that attribution and report date. A single count appears as a snapshot; histories and changes need additional observations.
 
 Data can be preparing, current, low activity, or unavailable. New paid entry may be blocked during a gap or recovery while an existing exit remains allowed. The action area explains unavailability. An API failure appears as unavailable data.
 
