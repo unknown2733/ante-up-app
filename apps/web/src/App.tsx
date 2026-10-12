@@ -17,6 +17,8 @@ import { liveConsumerHttp } from './api';
 import { referenceConsumerReadApi, isReferenceConsumerId } from './reference/referenceData';
 import { ReferenceMarketActions } from './reference/ReferenceMarketActions';
 import { DocsPage } from './docs';
+import { ResultCardShare } from './sharing/ResultCardShare';
+import { createResultCard } from './sharing/resultCard';
 import { SubjectImage, WalletAvatar } from './media/SubjectImage';
 import { artworkSource } from './consumer-ui/artwork';
 import { withVerifiedSubjectMedia } from './consumer-ui/catalog';
@@ -211,6 +213,7 @@ function RecordPage({ id }: { id: string }) {
   const r = record.value;
   if (!r) return <div className="page"><Empty title="Record not found" /></div>;
   const p = proof.value;
+  const shareCard = createResultCard(r, market.value?.keyword ?? marketName(r.marketId), transportMode(), p, !!proof.error || proof.loading);
   const result = r.result?.kind === 'return' ? percent(r.result) : r.status === 'CLOSED_NA' ? 'N/A' : 'Active';
   return <div className="page"><Link to={r.wallet === DEMO_WALLET || r.wallet === connected?.account.address ? '/me' : `/u/${encodeURIComponent(r.wallet)}`} className="back">← Profile</Link><div className="profile-header"><span className="eyebrow blue-text">CHIP RECORD / {r.id}</span><h1>{market.value?.keyword ?? marketName(r.marketId)}<span className="title-dot">.</span></h1><p>Chip participation · separate from paid trades</p></div>
     {r.status === 'OPEN' && <Link to={`/markets/${encodeURIComponent(r.marketId)}`} className="button button-chip full">{r.wallet === connected?.account.address || isFixture ? 'Go to take back chip' : 'View market'} ↗</Link>}
@@ -219,6 +222,7 @@ function RecordPage({ id }: { id: string }) {
     <details className="au-evidence-details"><summary>Record evidence</summary><div className="au-evidence-grid"><div><span>Placement slot</span><code>{r.entry.slot}</code></div><div><span>Placement index (h)</span><code>{r.entry.h ? `${r.entry.h.numerator}/${r.entry.h.denominator}` : r.entry.unavailableReason ? displayConsumerError(r.entry.unavailableReason) : 'Unavailable'}</code></div>{r.exit && <><div><span>Return slot</span><code>{r.exit.slot}</code></div><div><span>Return index (h)</span><code>{r.exit.h ? `${r.exit.h.numerator}/${r.exit.h.denominator}` : r.exit.unavailableReason ? displayConsumerError(r.exit.unavailableReason) : 'Unavailable'}</code></div></>}</div></details>
     <section className="detail-panel proof-panel"><span className="eyebrow orange-text">VERIFY THE CHIP</span><h2>Record and proof status</h2>{r.status === 'OPEN' ? <Notice tone="blue">An active chip has an entry record. Result proof is issued separately after it is taken back.</Notice> : proof.loading ? <p className="muted">Loading proof status…</p> : proof.error ? <ErrorBox message={proof.error} /> : p ? <><div className="proof-state"><Tag tone={p.state === 'ISSUED' ? 'green' : p.state === 'INVALID' || p.state === 'REPLACED' ? 'red' : 'orange'}>{proofText[p.state]}</Tag><span>{p.confirmations === null ? 'Confirmations unavailable' : `Storage transaction ${p.confirmations}/20 confirmations`}</span></div>{p.error && <Notice tone={p.state === 'INVALID' || p.state === 'REPLACED' ? 'red' : 'orange'}>{displayConsumerError(p.error)}</Notice>}{p.replacementId && <Link to={`/proofs/${encodeURIComponent(p.replacementId)}`} className="text-link">Replacement proof {p.replacementId} ↗</Link>}<details className="au-evidence-details"><summary>Proof evidence</summary><div className="proof-facts"><div><span>Content hash</span><code>{p.payloadHash ? `${p.payloadHash.slice(0, 12)}…` : 'Pending'}</code></div><div><span>Manifest</span><strong>{p.manifestRef?.arweaveItemId || 'Pending storage'}</strong></div><div><span>SAS ID</span><strong>{p.sasId || 'Not issued'}</strong></div><div><span>Source evidence</span><strong>{p.evidence[0]?.arweaveItemId || 'Pending storage'}</strong></div></div></details></> : <Notice tone="orange">Taking back the chip is recorded while proof is pending. The result and slot release are separate from proof issuance.</Notice>}
       <p className="tiny muted">{isFixture ? 'Sample hashes, transactions, and SAS IDs are examples, not verifiable external links. ' : ''}Result proof is issued only after evidence storage, inclusion, and 20-confirmation checks.</p></section>
+    {shareCard && <ResultCardShare key={r.id} data={shareCard} />}
     <div className="record-footer"><Link to={`/u/${encodeURIComponent(r.wallet)}`} className="text-link">View public profile ↗</Link><span className="tiny muted">Shared cards are snapshots of the record</span></div>
   </div>;
 }

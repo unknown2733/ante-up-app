@@ -23,7 +23,7 @@ This source revision replaces synthetic catalog histories and fictional profiles
 | Area | Current implementation |
 | --- | --- |
 | Consumer app | English mobile web, unified Explore, price and attention charts, participation markers, public profiles, leaderboard, authenticated notes and in-app Docs |
-| Chips | Wallet-authorized no-money entry and close, on-chain records, attention result and evidence status |
+| Chips | Wallet-authorized no-money entry and close, on-chain records, attention result and evidence status; finalized result cards with PNG download, mobile file sharing and public record links |
 | Test-asset trading | Faucet, registration, bonding-curve buy/sell, graduation, spot exchange, Pro long/short and LP participation |
 | Data | X Counts collector, validation, EWMA calculation and Solana snapshot publishing on a five-minute cycle |
 | Charts | Explore sparklines and market-detail charts show actual price or activity observations, with metric, period and first-to-last change; missing history stays explicit. Finalized-chain price samples every five minutes; visible observed Devnet detail charts refresh every 60 seconds |
