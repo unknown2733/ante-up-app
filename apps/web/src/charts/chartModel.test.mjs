@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { actionName, actionResult, chartBounds, chartClusters, chartPoints, chartSegments, scopedChartHistory } from './chartModel.ts';
+import { actionName, actionResult, chartBounds, chartClusters, chartPoints, chartSegments, portraitImageSource, scopedChartHistory } from './chartModel.ts';
 
 const asOfMs = Date.UTC(2026, 9, 13);
 const source = { mode: 'DEMO', label: 'Sample history', asOfMs };
@@ -51,7 +51,7 @@ test('nearby chip markers cluster while retaining each action and order', () => 
 test('chip activity copy distinguishes attention performance and illustrative trades', () => {
   assert.equal(actionName.CALL_OPEN, 'Placed a chip');
   assert.equal(actionName.CALL_CLOSE, 'Took back a chip');
-  assert.equal(actionResult(action('open', 'CALL_OPEN', asOfMs)), 'Active chip · result pending');
+  assert.equal(actionResult(action('open', 'CALL_OPEN', asOfMs)), 'Chip placed');
   assert.equal(actionResult(action('loss', 'CALL_CLOSE', asOfMs, -0.12)), 'Attention change -12%');
   assert.equal(actionResult(action('na', 'CALL_CLOSE', asOfMs)), 'Attention change unavailable');
   assert.equal(actionResult(action('buy', 'BUY', asOfMs)), 'Example trade');
@@ -65,4 +65,10 @@ test('chart evidence stays in its market and sample or live lane', () => {
     series: [series, { ...series, id: 'live-series', source: { ...source, mode: 'LIVE' } }] });
   assert.deepEqual(result.actions.map(item => item.id), ['valid']);
   assert.deepEqual(result.series.map(item => item.id), ['attention']);
+});
+
+test('a failed portrait falls back, then a changed source can load again', () => {
+  assert.equal(portraitImageSource('https://example.test/old.png', 'https://example.test/old.png'), null);
+  assert.equal(portraitImageSource('https://example.test/new.png', 'https://example.test/old.png'), 'https://example.test/new.png');
+  assert.equal(portraitImageSource(undefined, 'https://example.test/old.png'), null);
 });

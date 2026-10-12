@@ -82,8 +82,13 @@ export const actionName: Record<ConsumerAction['kind'], string> = {
   CALL_OPEN: 'Placed a chip', CALL_CLOSE: 'Took back a chip', BUY: 'Bought', SELL: 'Sold',
 };
 
+/** A failed image URL must not suppress a later, different URL. */
+export function portraitImageSource(src: string | undefined, failedSrc: string | null): string | null {
+  return src && src !== failedSrc ? src : null;
+}
+
 export function actionResult(action: ConsumerAction): string {
-  if (action.kind === 'CALL_OPEN') return 'Active chip · result pending';
+  if (action.kind === 'CALL_OPEN') return 'Chip placed';
   if (action.kind === 'CALL_CLOSE') {
     if (action.returnFraction === null || !Number.isFinite(action.returnFraction)) return 'Attention change unavailable';
     const amount = new Intl.NumberFormat('en', { maximumFractionDigits: 2 }).format(action.returnFraction * 100);

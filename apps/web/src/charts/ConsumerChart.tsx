@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ConsumerAction, ConsumerPeriod, ConsumerSeries, MarketHistory } from '../../../../contracts/consumer';
-import { actionName, actionResult, chartBounds, chartClusters, chartPoints, chartSegments, scopedChartHistory,
+import { actionName, actionResult, chartBounds, chartClusters, chartPoints, chartSegments, portraitImageSource, scopedChartHistory,
   CHART_BOTTOM, CHART_LEFT, CHART_RIGHT, CHART_TOP } from './chartModel';
 import './ConsumerChart.css';
 
@@ -27,9 +27,11 @@ const number = (value: number) => new Intl.NumberFormat('en', { maximumFractionD
 const shortName = (value: string) => value.length > 20 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value;
 
 function Portrait({ src, label, type }: { src?: string; label: string; type: 'person' | 'subject' }) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const imageSrc = portraitImageSource(src, failedSrc);
   return <span className={`au-chart-portrait au-chart-portrait-${type}`} aria-hidden="true">
     <span>{label.trim().slice(0, 1).toUpperCase() || '•'}</span>
-    {src && <img src={src} alt="" loading="lazy" onError={event => { event.currentTarget.hidden = true; }} />}
+    {imageSrc && <img key={imageSrc} src={imageSrc} alt="" loading="lazy" onError={() => setFailedSrc(imageSrc)} onLoad={() => setFailedSrc(null)} />}
   </span>;
 }
 
