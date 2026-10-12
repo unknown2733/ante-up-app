@@ -26,3 +26,12 @@
 
 - The clone had many pre-existing unrelated modified files. Only explicit UI files and this handoff should be staged. Generated chain files, README, and other changes should remain unstaged.
 - The sample dataset still has fictional titles in this branch. The presets/media worker owns its replacement.
+
+## Follow-up: consumer copy and evidence disclosure
+
+- Failed cover URLs are tracked by URL, so a changed cover can render after the previous one failed. The new regression test failed on the prior boolean behavior and passes after the fix.
+- Formula/query data, record slot/index values, and proof identifiers are available in native, keyboard-accessible `details` sections. The default view presents the subject, chip action, and attention result first.
+- Remaining legacy call phrases were removed from owned consumer UI copy. The brand slogan and internal `CALL_OPEN`/`CALL_CLOSE` IDs remain unchanged. A copy guard now checks the owned UI sources.
+- Final follow-up checks: `VITE_API_BASE_URL=/api npm --prefix apps/web run build` passed; `npm --prefix apps/web test` passed with 43 pass, 1 existing skip, 0 fail.
+- A local Playwright browser rerun could not start Chromium in this session (`exitCode=3221225506`), so the integration owner should recheck rendered disclosure behavior, selected note display, and media recovery on the final merged build. The earlier browser smoke test for the initial UI commit passed.
+- Docs placeholder wiring and `SocialProfile` media/avatar wiring remain with the integration owner as assigned.

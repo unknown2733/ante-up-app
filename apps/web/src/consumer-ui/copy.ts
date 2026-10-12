@@ -1,8 +1,7 @@
-import type { ConsumerMarket, ConsumerMode, ConsumerSubject } from '../../../../contracts/consumer';
+import type { ConsumerMarket, ConsumerSubject } from '../../../../contracts/consumer';
 
 export const consumerCopy = {
   nav: { discover: 'Explore', leaderboard: 'Leaderboard', activity: 'My activity', funds: 'Test funds', docs: 'Docs' },
-  modes: { LIVE: 'Live Devnet', DEMO: 'Demo' } satisfies Record<ConsumerMode, string>,
   subjects: { KEYWORD: 'Keyword', VIDEO: 'Video', TRACK: 'Track', ALBUM: 'Album', ACCOUNT: 'Account' } satisfies Record<ConsumerSubject, string>,
   phases: { CURVE: 'Bonding curve', POOL: 'Pool', PREVIEW: 'Preview' } satisfies Record<ConsumerMarket['phase'], string>,
   actions: { openCall: 'Place chip', closeCall: 'Take back chip', buy: 'Buy', sell: 'Sell' },

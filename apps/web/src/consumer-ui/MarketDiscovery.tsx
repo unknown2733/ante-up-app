@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import type { ConsumerMarket, ConsumerSubject } from '../../../../contracts/consumer';
 import { consumerCopy, formatChange, formatDisplayPrice } from './copy';
 import { EmptyState, MarketStatus, SubjectGlyph } from './controls';
+import { artworkSource } from './artwork';
 
 export interface MarketDiscoveryProps {
   markets: ConsumerMarket[];
@@ -14,9 +15,10 @@ export interface MarketDiscoveryProps {
 const subjects: Array<ConsumerSubject | 'ALL'> = ['ALL', 'KEYWORD', 'VIDEO', 'TRACK', 'ALBUM', 'ACCOUNT'];
 
 function MarketArtwork({ market }: { market: ConsumerMarket }) {
-  const [failed, setFailed] = useState(false);
-  return market.thumbnailUrl && !failed
-    ? <img className="au-market-art" src={market.thumbnailUrl} alt={market.imageAlt ?? `${market.title} artwork`} loading="lazy" onError={() => setFailed(true)} />
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const src = artworkSource(market.thumbnailUrl, failedUrl);
+  return src
+    ? <img className="au-market-art" src={src} alt={market.imageAlt ?? `${market.title} artwork`} loading="lazy" onError={() => setFailedUrl(src)} />
     : <SubjectGlyph subject={market.subject} />;
 }
 
