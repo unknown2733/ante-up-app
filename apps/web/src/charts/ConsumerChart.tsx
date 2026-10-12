@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ConsumerAction, ConsumerPeriod, ConsumerSeries, MarketHistory } from '../../../../contracts/consumer';
+import { actionName, actionResult, chartBounds, chartClusters, chartPoints, chartSegments, scopedChartHistory,
+  CHART_BOTTOM, CHART_LEFT, CHART_RIGHT, CHART_TOP } from './chartModel';
 import './ConsumerChart.css';
 
 export interface ConsumerChartProps {
@@ -10,63 +12,135 @@ export interface ConsumerChartProps {
   recordHref?: (recordId: string) => string;
   noteHref?: (action: ConsumerAction) => string;
 }
+
 const periods: ConsumerPeriod[] = ['1D', '1W', '1M', 'ALL'];
-const colors: Record<ConsumerSeries['kind'], string> = { CURVE_PRICE: '#dd681f', REFERENCE_PRICE: '#275eaf', TRADE_PRICE: '#171717', ATTENTION_INDEX: '#5874a2' };
-const names: Record<ConsumerAction['kind'], string> = { CALL_OPEN: 'Made a call', CALL_CLOSE: 'Closed a call', BUY: 'Bought', SELL: 'Sold' };
-const when = (ms: number) => new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC', timeZoneName: 'short' }).format(ms);
+const colors: Record<ConsumerSeries['kind'], string> = {
+  CURVE_PRICE: '#dd681f', REFERENCE_PRICE: '#275eaf', TRADE_PRICE: '#171717', ATTENTION_INDEX: '#5874a2',
+};
+const seriesName: Record<ConsumerSeries['kind'], string> = {
+  CURVE_PRICE: 'Curve price', REFERENCE_PRICE: 'Index reference', TRADE_PRICE: 'Trade price', ATTENTION_INDEX: 'Attention index',
+};
+const when = (ms: number) => new Intl.DateTimeFormat('en', {
+  month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC', timeZoneName: 'short',
+}).format(ms);
 const number = (value: number) => new Intl.NumberFormat('en', { maximumFractionDigits: 4 }).format(value);
+const shortName = (value: string) => value.length > 20 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value;
+
+function Portrait({ src, label, type }: { src?: string; label: string; type: 'person' | 'subject' }) {
+  return <span className={`au-chart-portrait au-chart-portrait-${type}`} aria-hidden="true">
+    <span>{label.trim().slice(0, 1).toUpperCase() || '•'}</span>
+    {src && <img src={src} alt="" loading="lazy" onError={event => { event.currentTarget.hidden = true; }} />}
+  </span>;
+}
 
 export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHref, recordHref, noteHref }: ConsumerChartProps) {
   const [seriesId, setSeriesId] = useState<string | null>(null);
   const [markerId, setMarkerId] = useState<string | null>(null);
-  const series = history.series.find(item => item.id === seriesId)
-    ?? history.series.find(item => item.kind === 'CURVE_PRICE' || item.kind === 'REFERENCE_PRICE') ?? history.series[0] ?? null;
-  const end = history.source.asOfMs;
-  const duration = history.period === '1D' ? 86_400_000 : history.period === '1W' ? 604_800_000 : history.period === '1M' ? 2_592_000_000 : null;
-  const times = [...history.series.flatMap(item => item.points.map(point => point.atMs)), ...history.actions.map(action => action.atMs)];
-  const start = duration === null ? Math.min(end - 60_000, ...times) : end - duration;
-  const span = Math.max(1, end - start);
-  const x = (atMs: number) => 48 + (atMs - start) / span * 572;
-  const numeric = (series?.points ?? []).map(point => ({ ...point, numeric: Number(point.value) })).filter(point => Number.isFinite(point.numeric));
-  const values = numeric.map(point => point.numeric);
-  let low = Math.min(...values), high = Math.max(...values);
-  if (low === high) { const pad = Math.max(Math.abs(low) * 0.05, 0.01); low -= pad; high += pad; }
-  const y = (value: number) => 190 - (value - low) / (high - low) * 166;
-  const segments: typeof numeric[] = [];
-  if (series?.kind !== 'TRADE_PRICE') {
-    let segment: typeof numeric = [];
-    for (const point of numeric) {
-      const prior = segment.at(-1);
-      if (prior && series?.gaps.some(gap => prior.atMs <= gap.fromMs && point.atMs >= gap.toMs)) { segments.push(segment); segment = []; }
-      segment.push(point);
-    }
-    if (segment.length) segments.push(segment);
-  }
-  const clusters: Array<{ id: string; x: number; actions: ConsumerAction[] }> = [];
-  for (const action of [...history.actions].filter(item => item.atMs >= start && item.atMs <= end).sort((a, b) => a.atMs - b.atMs || a.id.localeCompare(b.id))) {
-    const px = x(action.atMs), prior = clusters.at(-1);
-    if (prior && px - prior.x < 28) prior.actions.push(action);
-    else clusters.push({ id: action.id, x: px, actions: [action] });
-  }
+  const markerTrack = useRef<HTMLDivElement>(null);
+  const [markerWidth, setMarkerWidth] = useState(640);
+  useEffect(() => {
+    const track = markerTrack.current;
+    if (!track || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(entries => {
+      const width = entries[0]?.contentRect.width;
+      if (width && Number.isFinite(width)) setMarkerWidth(width);
+    });
+    observer.observe(track);
+    return () => observer.disconnect();
+  }, [history.market.id, history.period, history.source.asOfMs, history.actions.length]);
+  const sourceLabel = history.source.mode === 'DEMO' ? 'Sample history' : 'Live Devnet';
+  const scopedHistory = scopedChartHistory(history);
+  const series = scopedHistory.series.find(item => item.id === seriesId)
+    ?? scopedHistory.series.find(item => item.kind === 'CURVE_PRICE' || item.kind === 'REFERENCE_PRICE')
+    ?? scopedHistory.series[0] ?? null;
+  const bounds = chartBounds(scopedHistory);
+  const points = chartPoints(series, bounds);
+  const segments = series ? chartSegments(series, points) : [];
+  const clusters = chartClusters(scopedHistory.actions, bounds, Math.max(28, 44 * 640 / markerWidth));
   const selected = clusters.find(cluster => cluster.id === markerId) ?? null;
+  const values = points.map(point => point.value);
+  const visibleGapCount = series?.gaps.filter(gap => gap.toMs >= bounds.start && gap.fromMs <= bounds.end).length ?? 0;
+  const low = values.length ? Math.min(...values) : null;
+  const high = values.length ? Math.max(...values) : null;
   const actorLink = actorHref ?? ((id: string) => `/profiles/${encodeURIComponent(id)}`);
   const recordLink = recordHref ?? ((id: string) => `/records/${encodeURIComponent(id)}`);
-  const noteLink = noteHref ?? ((action: ConsumerAction) => `${recordLink(action.recordId ?? action.id)}#note-${encodeURIComponent(action.note?.id ?? '')}`);
-  return <section className="au-chart" aria-label={`${history.market.title} history`}>
-    <div className="au-chart-head"><div><span className="au-chart-eyebrow">{history.source.label}</span><h2>{history.market.title} history</h2></div>
-      <div className="au-chart-periods" role="group" aria-label="Chart period">{periods.map(period => <button key={period} type="button" aria-pressed={period === history.period} disabled={!onPeriodChange} onClick={() => onPeriodChange?.(period)}>{period}</button>)}</div></div>
-    <div className="au-chart-series" role="group" aria-label="Chart series">{history.series.map(item => <button key={item.id} type="button" aria-pressed={item.id === series?.id} onClick={() => { setSeriesId(item.id); setMarkerId(null); }}><span className="au-chart-swatch" style={{ background: colors[item.kind] }} />{item.label}</button>)}</div>
-    <div className="au-chart-plot">{series && numeric.length ? <>
-      <div className="au-chart-canvas"><svg viewBox="0 0 640 220" role="img" aria-label={`${series.label}, ${numeric.length} ${history.source.mode === 'DEMO' ? 'demo' : 'finalized'} points, range ${number(low)} to ${number(high)} ${series.unit}; gaps are not connected`} preserveAspectRatio="none">
-        <line x1="48" y1="190" x2="620" y2="190" className="au-chart-axis" /><line x1="48" y1="24" x2="48" y2="190" className="au-chart-axis" />
-        {segments.map((segment, index) => segment.length > 1 && <polyline key={index} fill="none" stroke={colors[series.kind]} strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" points={segment.map(point => `${x(point.atMs)},${y(point.numeric)}`).join(' ')} />)}
-        {numeric.map((point, index) => <circle key={`${point.atMs}-${index}`} cx={x(point.atMs)} cy={y(point.numeric)} r={series.kind === 'TRADE_PRICE' ? 4 : 2.5} fill={colors[series.kind]} />)}
-      </svg><span className="au-chart-ylabel au-chart-ylabel-top" aria-hidden="true">{number(high)}</span><span className="au-chart-ylabel au-chart-ylabel-bottom" aria-hidden="true">{number(low)}</span></div>
-      <div className="au-chart-caption"><span>{when(start)}</span><span>{series.unit} · {numeric.length} {history.source.mode === 'DEMO' ? 'demo' : 'finalized'} points · {series.gaps.length} gaps</span><span>{when(end)}</span></div>
-    </> : <div className="au-chart-empty">No {history.source.mode === 'DEMO' ? 'demo' : 'finalized'} {series?.label.toLowerCase() ?? 'price'} history for this period.</div>}</div>
-    {!!clusters.length && <div className="au-chart-markers" aria-label="Participation markers">{clusters.map(cluster => <button key={cluster.id} type="button" className="au-chart-marker" style={{ left: `${cluster.x / 640 * 100}%` }} aria-label={`${cluster.actions.length} ${cluster.actions.length === 1 ? 'action' : 'actions'} at ${when(cluster.actions[0].atMs)}`} aria-expanded={selected?.id === cluster.id} onMouseEnter={() => setMarkerId(cluster.id)} onFocus={() => setMarkerId(cluster.id)} onClick={() => setMarkerId(cluster.id)}>{cluster.actions.length > 1 ? cluster.actions.length : cluster.actions[0].kind === 'CALL_OPEN' ? '+' : cluster.actions[0].kind === 'CALL_CLOSE' ? '−' : '•'}</button>)}</div>}
-    {selected && <div className="au-chart-detail" role="region" aria-label="Selected participation"><div className="au-chart-detail-head"><strong>{selected.actions.length} {selected.actions.length === 1 ? 'action' : 'actions'}</strong><button type="button" onClick={() => setMarkerId(null)} aria-label="Close marker details">×</button></div>
-      {selected.actions.map(action => <div className="au-chart-action" key={action.id}><button type="button" onClick={() => onSelectAction(action)}><strong>{names[action.kind]}</strong><span>{when(action.atMs)}</span></button><div className="au-chart-action-links"><a href={actorLink(action.actorId)}>{action.actorLabel}</a>{action.recordId && <a href={recordLink(action.recordId)}>Record</a>}{action.note && <a href={noteLink(action)}>Note</a>}</div><p>{action.kind.startsWith('CALL') ? 'Free call · no trade fill' : 'Finalized trade'}{action.value && action.seriesId === series?.id ? ` · ${action.value} ${series.unit}` : ''}{action.returnFraction !== null ? ` · ${action.returnFraction >= 0 ? '+' : ''}${number(action.returnFraction * 100)}%` : ''}</p>{action.note && <p className="au-chart-note">{action.note.body}{action.note.timing === 'ADDED_LATER' ? ' · Added later' : ''}{action.note.version > 1 ? ' · Edited' : ''}</p>}</div>)}
+  const noteLink = noteHref ?? ((action: ConsumerAction) =>
+    `${recordLink(action.recordId ?? action.id)}#note-${encodeURIComponent(action.note?.id ?? '')}`);
+
+  return <section className="au-chart" aria-label={`${history.market.title} chart and chip activity`}>
+    <div className="au-chart-head">
+      <div><span className="au-chart-eyebrow">{sourceLabel}</span><h2>{history.market.title} history</h2></div>
+      <div className="au-chart-periods" role="group" aria-label="Chart period">
+        {periods.map(period => <button key={period} type="button" aria-pressed={period === history.period}
+          disabled={!onPeriodChange} onClick={() => onPeriodChange?.(period)}>{period}</button>)}
+      </div>
+    </div>
+    <div className="au-chart-series" role="group" aria-label="Chart data">
+      {scopedHistory.series.map(item => <button key={item.id} type="button" aria-pressed={item.id === series?.id}
+        onClick={() => { setSeriesId(item.id); setMarkerId(null); }}>
+        <span className="au-chart-swatch" style={{ background: colors[item.kind] }} />{seriesName[item.kind]}
+      </button>)}
+    </div>
+    <div className="au-chart-plot">{series && points.length && low !== null && high !== null ? <>
+      <div className="au-chart-canvas">
+        <svg viewBox="0 0 640 220" role="img" preserveAspectRatio="none"
+          aria-label={`${seriesName[series.kind]}, ${points.length} ${history.source.mode === 'DEMO' ? 'sample' : 'observed'} points, ${number(low)} to ${number(high)} ${series.unit}. Missing intervals are not connected.`}>
+          <line x1={CHART_LEFT} y1={CHART_BOTTOM} x2={CHART_RIGHT} y2={CHART_BOTTOM} className="au-chart-axis" />
+          <line x1={CHART_LEFT} y1={CHART_TOP} x2={CHART_LEFT} y2={CHART_BOTTOM} className="au-chart-axis" />
+          {segments.map((segment, index) => segment.length > 1 && <polyline key={index} fill="none"
+            stroke={colors[series.kind]} strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round"
+            points={segment.map(point => `${point.x},${point.y}`).join(' ')} />)}
+          {points.map((point, index) => <circle key={`${point.atMs}-${index}`} cx={point.x} cy={point.y}
+            r={series.kind === 'TRADE_PRICE' ? 4 : 2.5} fill={colors[series.kind]} />)}
+        </svg>
+        <span className="au-chart-ylabel au-chart-ylabel-top" aria-hidden="true">{number(high)}</span>
+        <span className="au-chart-ylabel au-chart-ylabel-bottom" aria-hidden="true">{number(low)}</span>
+      </div>
+      <div className="au-chart-caption"><span>{when(bounds.start)}</span><span>{series.unit} · {points.length} points · {visibleGapCount} gaps</span><span>{when(bounds.end)}</span></div>
+    </> : <div className="au-chart-empty">No {history.source.mode === 'DEMO' ? 'sample' : 'observed'} {series ? seriesName[series.kind].toLowerCase() : 'chart'} data in this period.</div>}</div>
+
+    {!!clusters.length && <div ref={markerTrack} className="au-chart-markers" aria-label="Chip activity on this chart">
+      {clusters.map(cluster => {
+        const first = cluster.actions[0];
+        const single = cluster.actions.length === 1;
+        return <button key={cluster.id} type="button" className={`au-chart-marker ${single && (first.kind === 'BUY' || first.kind === 'SELL') ? 'au-chart-marker-trade' : ''}`}
+          style={{ left: `clamp(22px, ${cluster.x / 640 * 100}%, calc(100% - 22px))` }} aria-expanded={selected?.id === cluster.id}
+          aria-label={single ? `${actionName[first.kind]} by ${first.actorLabel} on ${history.market.title}, ${when(first.atMs)}. Show details.`
+            : `${cluster.actions.length} chip and trade actions near ${when(first.atMs)}. Show details.`}
+          onMouseEnter={() => setMarkerId(cluster.id)} onFocus={() => setMarkerId(cluster.id)}
+          onClick={() => setMarkerId(cluster.id)}>
+          <span aria-hidden="true">{single ? first.kind === 'CALL_OPEN' ? '+' : first.kind === 'CALL_CLOSE' ? '↶' : '•' : cluster.actions.length}</span>
+        </button>;
+      })}
     </div>}
+
+    {selected && <div className="au-chart-detail" role="region" aria-label="Selected chip activity">
+      <div className="au-chart-detail-head"><strong>{selected.actions.length === 1 ? 'Chip activity' : `${selected.actions.length} activities`}</strong>
+        <button type="button" onClick={() => setMarkerId(null)} aria-label="Close activity details">×</button></div>
+      {selected.actions.map(action => <article className="au-chart-action" key={action.id}>
+        <div className="au-chart-action-summary">
+          <Portrait src={action.actorAvatarUrl} label={action.actorLabel} type="person" />
+          <div><strong>{actionName[action.kind]}</strong><span>{shortName(action.actorLabel)} · {when(action.atMs)}</span></div>
+        </div>
+        <div className="au-chart-subject"><Portrait src={history.market.thumbnailUrl} label={history.market.title} type="subject" />
+          <div><span>On {history.market.title}</span><strong>{actionResult(action)}</strong></div></div>
+        {action.value !== null && scopedHistory.series.some(item => item.id === action.seriesId) &&
+          <p className="au-chart-at-value">{seriesName[scopedHistory.series.find(item => item.id === action.seriesId)!.kind]} then: {action.value} {scopedHistory.series.find(item => item.id === action.seriesId)!.unit}</p>}
+        {action.note && <p className="au-chart-note">{action.note.body}<small>{action.note.timing === 'ADDED_LATER' ? 'Added later' : 'At the time'}{action.note.version > 1 ? ' · Edited' : ''}</small></p>}
+        <div className="au-chart-action-links">
+          <a href={actorLink(action.actorId)}>View profile <span className="au-chart-wallet">{shortName(action.actorLabel)}</span></a>
+          {action.recordId && <a href={recordLink(action.recordId)}>View record</a>}
+          {action.note && <a href={noteLink(action)}>View note</a>}
+          <button type="button" onClick={() => onSelectAction(action)}>View activity</button>
+        </div>
+      </article>)}
+    </div>}
+    <details className="au-chart-source"><summary>About this chart</summary>
+      <p>{history.source.label}. Updated {when(history.source.asOfMs)}. {history.source.mode === 'DEMO'
+        ? 'Sample values and example activity are illustrative; they are not real wallet results or executable markets.'
+        : 'Observed history comes from Devnet records. Chip activity tracks attention, not cash profit.'}</p>
+      {series && <p>{seriesName[series.kind]} · {series.unit}. Missing intervals are left blank. Chart values are informational; current quotes and receipts govern transactions.</p>}
+      {history.source.sourceUrl && <a href={history.source.sourceUrl}>View data source</a>}
+    </details>
   </section>;
 }
