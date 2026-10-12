@@ -127,9 +127,11 @@ Earlier baseline checks completed on October 13, 2026. These do not verify this 
 
 Earlier consumer source: `8023388`. Integrated development baseline: `e66e708`. The subsequent R2 release was `6b7c9d1`. These are historical verification references; they do not establish deployment of the current source revision. Original development hashes may not resolve in this snapshot repository.
 
+The public catalog correction `e910fad` was deployed on October 13, 2026 KST. Production routing now uses 15 verified subjects and official media, six source-backed activity histories (270 daily observations), and actual Devnet wallet rankings only. Nine subjects have verified metadata without measured history. Album activity is explicitly English Wikipedia article pageviews, not music plays. Linux tests passed 49/49 web and 18/18 source/chart/social/Docs checks; responsive browser QA passed 66 views. Public HTTPS verified 11 routes and release asset hashes. See the [release report](docs/implementation/CONSUMER_R2_INTEGRATION.md) for evidence and limits.
+
 ### Remaining work
 
-- Verify and release the public reference catalog correction; repeat wallet approval, cancellation and response-loss recovery on the latest UI and verify an owning wallet's note write.
+- Repeat wallet approval, cancellation and response-loss recovery on the latest UI and verify an owning wallet's note write.
 - Integrate remaining proof-worker, keeper and operational follow-up changes from separate development branches.
 - Validate broader live source coverage, economic assumptions and production security before considering real assets.
 
