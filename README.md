@@ -144,5 +144,6 @@ Original source code and documentation are licensed under the [MIT License](LICE
 Brand images are excluded; third-party components retain their own licenses. See
 [licensing scope](LICENSING.md).
 
-The intended separate repository is `GsumLee/ante-up-app`. This local publication
+The intended separate repository is `unknown2733/ante-up-app`, owned by the shared
+GitHub organization. This local publication
 snapshot has not yet been pushed to GitHub.

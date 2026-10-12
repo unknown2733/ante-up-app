@@ -14,8 +14,10 @@ historical checks, not readiness of a newly installed instance.
 
 No remote is configured by this preparation step. No GitHub repository has been
 created and no push or deployment has been performed. The intended separate
-repository is `GsumLee/ante-up-app`. Original source code and documentation use
+repository is `unknown2733/ante-up-app`, owned by the shared GitHub organization.
+Original source code and documentation use
 MIT; brand images and third-party materials follow [LICENSING.md](LICENSING.md).
 
 The public commit identity is `GsumLee` with GitHub noreply email
 `58336942+GsumLee@users.noreply.github.com`. It is configured only in this repository.
+Repository ownership and individual commit authorship are separate.
