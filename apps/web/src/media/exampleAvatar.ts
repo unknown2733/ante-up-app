@@ -21,3 +21,17 @@ export function exampleAvatarUrl(address: string): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="32" fill="${background}"/><g fill="${foreground}">${shape}</g><circle cx="47" cy="18" r="5" fill="#fff" opacity=".72"/></svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
+
+/** Accept HTTPS and same-origin media references; reject executable URL schemes. */
+export function safeMediaSrc(src?: string | null): string | null {
+  if (!src) return null;
+  if (/^https:\/\/[^\s]+$/i.test(src)) return src;
+  if (/^\/(?!\/)[^\s]*$/.test(src)) return src;
+  return null;
+}
+
+/** The only accepted data URI is the SVG we deterministically generated for this address. */
+export function walletAvatarSrc(address: string, src?: string | null): string {
+  const generated = exampleAvatarUrl(address);
+  return src === generated ? generated : safeMediaSrc(src) ?? generated;
+}

@@ -23,3 +23,5 @@ The 15 subject names and destinations below refer to real public pages. Their fi
 | `new-frequency` | [Deno GitHub organization](https://github.com/denoland) | GitHub profile avatar on same page |
 
 Source pages and image links checked 2026-10-13 KST. Remote image fetching is subject to each host's availability and terms; the application must retain the source link and fallback. [NASA media guidelines](https://www.nasa.gov/nasa-brand-center/images-and-media/) describe use and attribution; no NASA insignia or logo is copied here. Music artwork remains artist/label property. No audio or video is copied or embedded in the fixture.
+
+The three NASA image URLs use a 720×480 `dynamicimage` derivative for mobile cards rather than the full-resolution download. NASA's [official API examples](https://api.nasa.gov/index.html) show the same `w`, `h`, `fit`, and `crop` query format. The original image pages and asset paths were verified; direct derivative response could not be fetched from this sandbox because `assets.science.nasa.gov` DNS was unavailable. The UI fallback covers a failed image request.

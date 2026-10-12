@@ -93,7 +93,7 @@ function noteFor(actionId: string, actorId: string, body: string | undefined, at
   if (createdAtMs > DEMO_AS_OF_MS) throw new Error(`Demo note lies after scenario as-of: ${actionId}`);
   return {
     id: `demo:note:${actionId}`, actionId, authorId: actorId,
-    body: `Fictional sample view: ${body}`,
+    body,
     createdAtMs, updatedAtMs: createdAtMs, version: 1,
     timing: delayDays > 0 ? 'ADDED_LATER' : 'AT_ACTION', proofCoverage: 'NONE',
   };
@@ -138,7 +138,7 @@ function buildMarket(scenario: DemoScenarioFixture): BuiltMarket {
   return {
     market: { id: marketId(scenario.slug), title: scenario.title, subtitle: scenario.subtitle,
       subject: scenario.subject, phase: scenario.phase, source: SOURCE, latestPrice,
-      priceUnit: 'demo price units', changeFraction,
+      priceUnit: 'sample units', changeFraction,
       subjectUrl: scenario.subjectUrl, creatorLabel: scenario.creatorLabel,
       thumbnailUrl: scenario.imageUrl, imageAlt: scenario.imageAlt, imageSourceUrl: scenario.imageSourceUrl },
     scenario, actions: actionsFor(scenario),
@@ -148,11 +148,11 @@ function buildMarket(scenario: DemoScenarioFixture): BuiltMarket {
 function seriesFor(scenario: DemoScenarioFixture, period: ConsumerPeriod): ConsumerSeries[] {
   const gaps = gapsFor(scenario, period);
   const series: ConsumerSeries[] = [{ id: `demo:series:${scenario.slug}:h`, kind: 'ATTENTION_INDEX',
-    label: 'Synthetic attention ratio (h)', unit: '×', points: pointsFor(scenario, 'h', period), gaps, source: SOURCE }];
+    label: 'Attention index', unit: '×', points: pointsFor(scenario, 'h', period), gaps, source: SOURCE }];
   if (scenario.phase !== 'PREVIEW') series.push({ id: `demo:series:${scenario.slug}:price`,
     kind: scenario.phase === 'POOL' ? 'REFERENCE_PRICE' : 'CURVE_PRICE',
-    label: scenario.phase === 'POOL' ? 'Illustrative reference price' : 'Illustrative curve quote',
-    unit: 'demo price units', points: pointsFor(scenario, 'price', period), gaps: gapsFor(scenario, period), source: SOURCE });
+    label: 'Sample price',
+    unit: 'sample units', points: pointsFor(scenario, 'price', period), gaps: gapsFor(scenario, period), source: SOURCE });
   return series;
 }
 

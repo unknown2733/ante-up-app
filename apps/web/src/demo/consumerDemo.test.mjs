@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createDemoConsumerReadApi, demoConsumerReadApi, DEMO_AS_OF_MS, isDemoConsumerId } from './consumerDemo.ts';
 import { demoActors, demoScenarioFixtures } from '../../../../contracts/fixtures/consumer/catalog.ts';
+import { exampleAvatarUrl, safeMediaSrc, walletAvatarSrc } from '../media/exampleAvatar.ts';
 
 const approx = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-10, `${actual} != ${expected}`);
 
@@ -26,6 +27,47 @@ test('fifteen real subjects retain fictional market identities and time narrativ
     for (const url of [market.subjectUrl, market.thumbnailUrl, market.imageSourceUrl])
       assert.equal(new URL(url).protocol, 'https:');
   }
+});
+
+test('sample narratives describe modeled subject attention without old fictional subject claims', async () => {
+  const staleClaims = /builders joining|launch post|remix|playlists? (?:are|is)|chorus|release week|weekly format|next issue|new edit|the clip|reviews are|updates slowed/i;
+  for (const scenario of demoScenarioFixtures) {
+    const notes = scenario.calls.flatMap(call => [call.openNote, call.closeNote].filter(Boolean));
+    assert.ok(notes.length >= 2, scenario.slug);
+    for (const note of notes) {
+      assert.match(note, /\b(sample|modeled)\b/i, `${scenario.slug}: ${note}`);
+      assert.doesNotMatch(note, staleClaims, `${scenario.slug}: ${note}`);
+    }
+    const history = await demoConsumerReadApi.getHistory(`demo:market:${scenario.slug}`, 'ALL');
+    assert.equal(history.series[0].label, 'Attention index');
+    assert.ok(history.series.slice(1).every(series => series.label === 'Sample price' && series.unit === 'sample units'));
+    assert.equal(history.market.priceUnit, 'sample units');
+    for (const close of history.actions.filter(action => action.kind === 'CALL_CLOSE' && action.note)) {
+      const note = close.note.body.toLowerCase();
+      if (/above|higher|rose|exceeded/.test(note)) assert.ok(close.returnFraction > 0, `${scenario.slug}: ${note}`);
+      if (/below|fell|faded|declined|falling/.test(note)) assert.ok(close.returnFraction < 0, `${scenario.slug}: ${note}`);
+      if (/barely changed|nearly flat/.test(note)) assert.ok(Math.abs(close.returnFraction) < 0.05, `${scenario.slug}: ${note}`);
+    }
+  }
+});
+
+test('NASA keyword images request mobile-sized derivatives of the verified source assets', () => {
+  for (const scenario of demoScenarioFixtures.filter(item => item.subject === 'KEYWORD')) {
+    const url = new URL(scenario.imageUrl);
+    assert.equal(url.hostname, 'assets.science.nasa.gov');
+    assert.equal(url.searchParams.get('w'), '720');
+    assert.equal(url.searchParams.get('h'), '480');
+    assert.ok(url.pathname.includes('/dynamicimage/'));
+  }
+});
+
+test('wallet avatar accepts only its own generated SVG data URL or safe image URLs', () => {
+  const generated = exampleAvatarUrl('demo:wallet:ava');
+  assert.equal(walletAvatarSrc('demo:wallet:ava', generated), generated);
+  assert.equal(walletAvatarSrc('demo:wallet:ava', exampleAvatarUrl('demo:wallet:ben')), generated);
+  assert.equal(walletAvatarSrc('demo:wallet:ava', 'javascript:alert(1)'), generated);
+  assert.equal(walletAvatarSrc('demo:wallet:ava', 'https://example.com/avatar.png'), 'https://example.com/avatar.png');
+  assert.equal(safeMediaSrc('//example.com/avatar.png'), null);
 });
 
 test('each market has a fixed five-week history with typed prices and no false fills', async () => {
@@ -127,7 +169,7 @@ test('call markers, notes and closed performance refer to their own entry and ex
           assert.equal(action.note.proofCoverage, 'NONE');
           assert.ok(action.note.createdAtMs >= action.atMs && action.note.updatedAtMs <= DEMO_AS_OF_MS);
           assert.ok([...action.note.body].length <= 280);
-          assert.ok(action.note.body.startsWith('Fictional sample view: '));
+          assert.match(action.note.body, /\b(sample|modeled)\b/i);
         }
         assert.ok(action.actorAvatarUrl.startsWith('data:image/svg+xml,'));
       }
