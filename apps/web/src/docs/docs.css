@@ -18,7 +18,7 @@
   .au-docs-rail nav a{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;padding:10px 12px}
   .au-docs-breadcrumb{min-height:44px;column-gap:4px;row-gap:0}
   .au-docs-breadcrumb a{display:inline-flex;align-items:center;min-width:44px;min-height:44px;padding:0 4px}
-  .au-docs-cta,.au-docs-end a{display:inline-flex;align-items:center;min-width:44px;min-height:44px}
+  .au-docs-cta,.au-docs-end a,.au-docs-not-found a{display:inline-flex;align-items:center;min-width:44px;min-height:44px}
   .au-docs-article ul a,.au-docs-article ol a{display:inline-flex;align-items:center;min-width:44px;min-height:44px;padding:8px 2px}
   .au-docs-article{overflow-wrap:anywhere}
 }
