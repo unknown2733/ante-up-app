@@ -81,7 +81,7 @@ export function SocialLeaderboard({ board, onOpenProfile, avatarByActorId, rende
   renderAvatar?: SocialAvatarRenderer;
 }) {
   return <section className="au-social" aria-label="Leaderboard">
-    <header className="au-social-heading"><div><span className="au-social-kicker">COMMUNITY</span><h2>Leaderboard</h2></div><span className="au-social-source">{board.source.mode === 'DEMO' ? 'Example' : 'Devnet'} · {board.source.label}</span></header>
+    <header className="au-social-heading"><div><span className="au-social-kicker">COMMUNITY</span><h2>Leaderboard</h2></div><span className="au-social-source" title={board.source.label}>{board.source.mode === 'DEMO' ? 'Sample history' : 'Devnet records'}</span></header>
     <p className="au-social-explain">Average return on valid closed chips. N/A closes are excluded. Returns are percentages, not money P&amp;L.</p>
     <p className="au-social-period">{board.period === '7D' ? 'Last 7 days · by close time' : 'All time'} · {board.source.mode === 'DEMO' ? 'Synthetic examples' : 'Public Devnet chips'} · Updated {date(board.source.asOfMs)}</p>
     {board.rows.length === 0 ? <p className="au-social-empty">No valid closed chips in this period yet.</p> :
@@ -122,7 +122,7 @@ export function SocialProfile({ profile, onOpenMarket, onOpenAction, onOpenProfi
   return <section className="au-social" aria-label={`${actorName} public profile`}>
     <header className="au-social-heading au-social-profile-heading">
       <div className="au-social-profile-identity"><ImageOrFallback url={profile.avatarUrl} alt={profile.avatarAlt || `${actorName} avatar`} label={actorName} actorId={profile.actorId} kind="avatar" renderAvatar={renderAvatar} /><div><span className="au-social-kicker">PUBLIC PROFILE</span><h2>{actorName}</h2><small>{shortActor(profile.actorId)}</small></div></div>
-      <span className="au-social-source">{profile.source.mode === 'DEMO' ? 'Example' : 'Devnet'} · {profile.source.label}</span>
+      <span className="au-social-source" title={profile.source.label}>{profile.source.mode === 'DEMO' ? 'Sample history' : 'Devnet records'}</span>
     </header>
     <p className="au-social-explain">{profile.source.mode === 'DEMO' ? 'Fictional sample activity. No real wallet, transaction, or proof is implied.' : 'Public Devnet chips only. Notes can be added later or edited and are not covered by SAS proof.'}</p>
     <dl className="au-social-stats"><div><dt>Valid closed average</dt><dd>{percent(profile.meanReturnFraction)}</dd></div><div><dt>Valid closed chips</dt><dd>{profile.closedCallCount}</dd></div><div><dt>N/A closes</dt><dd>{naCount}</dd></div><div><dt>Active chips</dt><dd>{profile.openCallCount}</dd></div></dl>
