@@ -74,3 +74,77 @@ test('leaderboard declares sample status and excludes money P&L framing', async 
     await server.close();
   }
 });
+
+test('a placed chip remains a past event when its record has closed', async () => {
+  const server = await createServer({ root: appDir, server: { middlewareMode: true }, appType: 'custom' });
+  try {
+    const { SocialProfile, actionDetailMessage } = await server.ssrLoadModule('/src/social/Social.tsx');
+    const opened = { ...action('ava-open', 'CALL_OPEN', Date.UTC(2026, 9, 10, 8)), recordId: 'ava-record' };
+    const closed = { ...action('ava-close', 'CALL_CLOSE', Date.UTC(2026, 9, 11, 8), 0.2), recordId: 'ava-record' };
+    const profile = {
+      actorId: 'demo:wallet:ava', actorLabel: 'Ava · sample wallet', source,
+      avatarUrl: 'data:image/svg+xml,%3Csvg%3Euntrusted%3C%2Fsvg%3E',
+      closedCallCount: 1, openCallCount: 0, meanReturnFraction: 0.2,
+      actions: [opened, closed]
+    };
+    const html = renderToStaticMarkup(React.createElement(SocialProfile, {
+      profile, onOpenMarket: () => {}, onOpenAction: () => {}
+    }));
+    assert.match(html, /Placed a chip/);
+    assert.doesNotMatch(html, />Active chip<|This chip is active/);
+    assert.match(html, /<dt>Active chips<\/dt><dd>0<\/dd>/);
+    assert.match(html, /<img[^>]+src="data:image\/svg\+xml,/);
+    assert.doesNotMatch(html, /untrusted/);
+    assert.match(actionDetailMessage(opened), /does not determine current chip status or final return/);
+    assert.doesNotMatch(actionDetailMessage(opened), /active/i);
+  } finally {
+    await server.close();
+  }
+});
+
+test('live and sample leaderboards use chip language', async () => {
+  const server = await createServer({ root: appDir, server: { middlewareMode: true }, appType: 'custom' });
+  try {
+    const { SocialLeaderboard, SocialProfile } = await server.ssrLoadModule('/src/social/Social.tsx');
+    const liveSource = { mode: 'LIVE', label: 'Devnet indexer', asOfMs: Date.UTC(2026, 9, 12) };
+    const rows = [{ actorId: 'wallet-1', actorLabel: 'Wallet 1', closedCallCount: 1, meanReturnFraction: 0.1, rank: 1 }];
+    for (const currentSource of [source, liveSource]) {
+      const board = renderToStaticMarkup(React.createElement(SocialLeaderboard, { board: { source: currentSource, period: '7D', rows }, onOpenProfile: () => {} }));
+      const profile = renderToStaticMarkup(React.createElement(SocialProfile, {
+        profile: { actorId: 'wallet-1', actorLabel: 'Wallet 1', source: currentSource, closedCallCount: 1, openCallCount: 0, meanReturnFraction: 0.1, actions: [{ ...action('open-event', 'CALL_OPEN', Date.UTC(2026, 9, 10)), actorId: 'wallet-1', source: currentSource }] },
+        onOpenMarket: () => {}, onOpenAction: () => {}
+      }));
+      assert.doesNotMatch(board + profile, /free call|Devnet calls/i);
+      assert.match(board + profile, /Leaderboard|Active chips/);
+      assert.match(profile, /Placed a chip/);
+      assert.doesNotMatch(profile, />Active chip</);
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+test('shared media renderers can be supplied without trusting arbitrary data URLs', async () => {
+  const server = await createServer({ root: appDir, server: { middlewareMode: true }, appType: 'custom' });
+  try {
+    const { SocialProfile } = await server.ssrLoadModule('/src/social/Social.tsx');
+    const profile = {
+      actorId: 'demo:wallet:ava', actorLabel: 'Ava', source,
+      avatarUrl: 'data:image/png;base64,dGVzdA==',
+      closedCallCount: 0, openCallCount: 0, meanReturnFraction: null,
+      actions: [action('open', 'CALL_OPEN', Date.UTC(2026, 9, 10))]
+    };
+    const html = renderToStaticMarkup(React.createElement(SocialProfile, {
+      profile, onOpenMarket: () => {}, onOpenAction: () => {},
+      marketMedia: { 'market-1': { title: 'A subject', thumbnailUrl: '/media/subject.png' } },
+      renderAvatar: ({ address, className }) => React.createElement('span', { className, 'data-address': address }, 'shared-avatar'),
+      renderSubjectImage: ({ alt, className }) => React.createElement('span', { className, role: 'img', 'aria-label': alt }, 'shared-subject')
+    }));
+    assert.match(html, /shared-avatar/);
+    assert.match(html, /shared-subject/);
+    assert.match(html, /data-address="demo:wallet:ava"/);
+    assert.doesNotMatch(html, /dGVzdA==/);
+  } finally {
+    await server.close();
+  }
+});

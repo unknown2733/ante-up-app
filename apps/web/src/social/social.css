@@ -47,7 +47,7 @@
 .au-social-activity-copy strong{font-size:14px;overflow-wrap:anywhere}
 .au-social-activity-copy time{color:var(--au-muted,#686761);font-size:11px;white-space:nowrap}
 .au-social-result{font-size:14px;font-weight:800;white-space:nowrap}
-.au-social-result--active{color:var(--au-blue,#235be3)}
+.au-social-result--event{color:var(--au-blue,#235be3)}
 .au-social-subject{border:1px solid var(--au-line,#ddd9d2);background:var(--au-note-bg,#faf8f4);color:inherit;border-radius:12px;display:flex;align-items:center;gap:12px;width:100%;min-height:72px;text-align:left;margin:15px 0 0;padding:5px}
 .au-social-subject>span:nth-child(2){min-width:0;flex:1}
 .au-social-subject strong,.au-social-subject small{display:block;overflow-wrap:anywhere}

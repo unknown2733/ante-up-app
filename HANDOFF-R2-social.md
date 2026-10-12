@@ -28,3 +28,10 @@
 - `git diff --check -- apps/web/src/social`: passed.
 - Build dependencies were absent in this clone. Offline `npm ci` could not create the local package link and then lacked a cached package. Existing QA clone dependency files were copied into ignored `node_modules` inside this clone for build verification; no tracked dependency or lockfile was changed.
 - The local preview server started at `http://127.0.0.1:5188/`. The Codex environment exposed no controllable browser tab, so 390px and desktop visual screenshots remain unverified. CSS has a mobile breakpoint at 620px, minimum 44px detail/chart/link targets, a 72px subject target, and wrapping for narrow text.
+
+## Follow-up correction
+
+- A `CALL_OPEN` row is a past placement event, not evidence of current active state. The row now shows `Placement`; its detail states that this event does not determine current status or final return. The aggregate `Active chips` stat still comes from `profile.openCallCount`. The regression fixture has Ava's open and close actions sharing a record with `openCallCount: 0`.
+- The local avatar fallback generates a fixed geometric SVG from the wallet ID. Incoming `data:` URLs are not trusted or rendered; HTTPS and same-origin image URLs are allowed. The generated SVG remains visible as an image when a sample profile supplies its own generated data URL. `renderAvatar` and `renderSubjectImage` can be passed from App to use the presets-owned `WalletAvatar` and `SubjectImage` components after integration. Their prop shapes match those components; this branch has no import or cherry-pick from the presets branch.
+- Live copy now says `Public Devnet chips` and removes `free call` and `Devnet calls` from social display text. The newer test renders both live and sample variants.
+- Before the correction, the added tests failed on the active badge and legacy live copy; the failing SSR output also showed no avatar `img` for a generated data URL. After correction, `node --test apps/web/src/social/Social.test.mjs` passes all 5 tests, and `npm --prefix apps/web run build` passes.
