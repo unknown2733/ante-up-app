@@ -30,3 +30,24 @@
 .au-reference-actions input:disabled,.au-reference-actions select:disabled{color:var(--au-muted);background:#eeece6;opacity:1}
 .au-reference-action-links{display:flex;flex-wrap:wrap;gap:12px 24px;margin-top:16px}
 .au-reference-action-links a{min-height:44px;display:inline-flex;align-items:center}
+
+/* Explore trends: keep genuine observed series visible at every screen width. */
+.au-discovery .au-market-columns,.au-discovery .au-market-row{grid-template-columns:minmax(200px,1.7fr) minmax(96px,.7fr) minmax(125px,1fr) minmax(180px,1.2fr) 20px;column-gap:16px}
+.au-discovery .au-market-columns span:nth-child(4){text-align:left}
+.au-discovery .au-market-row{min-height:144px;padding-block:14px}
+.au-trend-cell{display:block;min-width:0}
+.au-sparkline{display:flex;flex-direction:column;gap:3px;min-width:0;width:100%;color:var(--au-blue)}
+.au-sparkline-metric{font-size:10px;line-height:1.3;font-weight:600;color:var(--au-muted);white-space:normal;overflow-wrap:anywhere}
+.au-sparkline-plot{display:block;width:100%;height:50px;overflow:visible}
+.au-sparkline-segment{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.au-sparkline-point{fill:currentColor}
+.au-sparkline-down{color:var(--au-red)}
+.au-sparkline-summary{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.au-sparkline-summary strong{font-size:13px;font-variant-numeric:tabular-nums}
+.au-sparkline-summary small,.au-sparkline-basis{font-size:10px;line-height:1.35;color:var(--au-muted);font-weight:400}
+.au-sparkline-basis{display:block}
+.au-sparkline-empty{justify-content:center;min-height:84px;color:var(--au-muted);gap:5px}
+.au-sparkline-empty-label{font-size:12px;font-weight:600}
+.au-sparkline-empty small{font-size:10px;line-height:1.35}
+@media(min-width:701px) and (max-width:950px){.au-discovery .au-market-columns,.au-discovery .au-market-row{grid-template-columns:minmax(145px,1.3fr) minmax(90px,.7fr) minmax(110px,1fr) minmax(155px,1.2fr) 16px;column-gap:10px}.au-discovery .au-market-art{width:38px;height:38px}.au-discovery .au-market-identity{gap:8px}}
+@media(max-width:700px){.au-discovery .au-market-columns{display:none}.au-discovery .au-market-row{grid-template-columns:minmax(0,1fr) minmax(142px,1fr) 14px;gap:12px 10px;min-height:164px;padding-block:15px}.au-discovery .au-market-identity{grid-column:1/3;grid-row:1}.au-discovery .au-market-identity small{max-width:none}.au-discovery .au-price-cell{grid-column:1;grid-row:2;text-align:left;align-self:center}.au-discovery .au-price-cell small{white-space:normal;line-height:1.4;overflow-wrap:anywhere}.au-discovery .au-price-cell strong{font-size:12px;white-space:normal;overflow-wrap:anywhere}.au-discovery .au-trend-cell{grid-column:2;grid-row:2}.au-discovery .au-row-arrow{grid-column:3;grid-row:1/3}.au-discovery .au-sparkline-plot{height:46px}.au-sparkline-summary{gap:5px}.au-sparkline-summary strong{font-size:12px}.au-sparkline-summary small{font-size:9px}.au-sparkline-empty{min-height:75px}}

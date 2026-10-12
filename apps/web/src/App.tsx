@@ -318,7 +318,23 @@ function useConsumerHistory(mode: ConsumerMode, id: string, period: ConsumerPeri
 
 function ConsumerDiscoveryPage({ refresh }: { refresh: number }) {
   const catalog = useUnifiedCatalog(refresh);
-  return <MarketDiscovery markets={catalog.markets} loading={catalog.loading} liveError={catalog.liveError} onSelectMarket={id => go(marketHref(id))} onRegister={() => go('/register')} />;
+  const [histories, setHistories] = useState<Record<string, MarketHistory>>({});
+  useEffect(() => {
+    let active = true;
+    Promise.allSettled(catalog.markets.map(async market => {
+      const history = await consumerRead(market.source.mode).getHistory(market.id, market.source.mode === 'REFERENCE' ? 'ALL' : '1W');
+      return history && history.market.id === market.id && history.source.mode === market.source.mode ? history : null;
+    })).then(results => {
+      if (!active) return;
+      setHistories(Object.fromEntries(results.flatMap(result => result.status === 'fulfilled' && result.value ? [[result.value.market.id, result.value]] : [])));
+    });
+    return () => { active = false; };
+  }, [catalog.markets]);
+  const markets = [...catalog.markets].sort((a, b) => {
+    const rank = (market: ConsumerMarket) => market.source.mode === 'LIVE' ? 0 : market.activity?.historyLabel === 'Daily history' ? 1 : market.activity?.historyLabel ? 2 : 3;
+    return rank(a) - rank(b);
+  });
+  return <MarketDiscovery markets={markets} histories={histories} loading={catalog.loading} liveError={catalog.liveError} onSelectMarket={id => go(marketHref(id))} onRegister={() => go('/register')} />;
 }
 
 function ConsumerMarketPage({ id, mode, refresh, changed, transport, section, initialPeriod, actionId }: {

@@ -65,7 +65,8 @@ test('discovery renders the public activity metric and UTC observation date, not
   assert.match(html, /Oct 12, 2026/);
   assert.match(html, /1,234 pageviews/);
   assert.match(html, /Wikipedia article pageviews/);
-  assert.match(html, /\+25%/);
+  assert.match(html, /History not available/);
+  assert.doesNotMatch(html, /<svg|\+25%/);
   assert.doesNotMatch(html, /999 tUSD|\+900%|Sample history|Example activity|Devnet observed/);
 });
 
@@ -175,4 +176,19 @@ test('legacy synthetic routes cannot render a market, profile, record or proof',
     if (previousWindow === undefined) delete globalThis.window;
     else globalThis.window = previousWindow;
   }
+});
+
+test('chart summary reflects observed change and empty price series cannot hide attention history', async () => {
+  const { ConsumerChart } = await server.ssrLoadModule('/src/charts/ConsumerChart.tsx');
+  const { referenceConsumerReadApi: api } = await server.ssrLoadModule('/src/reference/referenceData.ts');
+  const market = (await api.listMarkets()).find(item => item.activity.historyLabel === 'Daily history');
+  const history = await api.getHistory(market.id, 'ALL');
+  history.series.unshift({ ...history.series[0], id: 'empty-price', kind: 'CURVE_PRICE', points: [] });
+  const html = render(ConsumerChart, { history, onSelectAction: noAction });
+  assert.match(html, /au-chart-value-summary/);
+  const points = history.series[1].points;
+  const change = (Number(points.at(-1).value) / Number(points[0].value) - 1) * 100;
+  assert.ok(html.includes(`${change > 0 ? '+' : ''}${change.toFixed(2)}%`));
+  assert.equal((html.match(/<circle /g) ?? []).length, points.length);
+  assert.ok(html.indexOf('au-chart-plot') < html.indexOf('au-chart-history-context'));
 });

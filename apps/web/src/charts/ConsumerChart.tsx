@@ -58,7 +58,8 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
   const sourceLabel = history.source.mode === 'REFERENCE' ? 'Public source data' : history.source.mode === 'DEMO' ? 'Sample history' : 'Live Devnet';
   const scopedHistory = scopedChartHistory(history);
   const series = scopedHistory.series.find(item => item.id === seriesId)
-    ?? scopedHistory.series.find(item => item.kind === 'CURVE_PRICE' || item.kind === 'REFERENCE_PRICE')
+    ?? scopedHistory.series.find(item => item.points.length > 0 && (item.kind === 'CURVE_PRICE' || item.kind === 'REFERENCE_PRICE'))
+    ?? scopedHistory.series.find(item => item.points.length > 0)
     ?? scopedHistory.series[0] ?? null;
   const bounds = chartBounds(scopedHistory);
   const points = chartPoints(series, bounds);
@@ -75,6 +76,8 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
   const visibleGapCount = series?.gaps.filter(gap => gap.toMs >= bounds.start && gap.fromMs <= bounds.end).length ?? 0;
   const low = values.length ? Math.min(...values) : null;
   const high = values.length ? Math.max(...values) : null;
+  const first = points[0], latest = points.at(-1);
+  const change = first && latest && points.length > 1 && first.value > 0 ? (latest.value / first.value - 1) * 100 : null;
   const actorLink = actorHref ?? ((id: string) => `/profiles/${encodeURIComponent(id)}`);
   const recordLink = recordHref ?? ((id: string) => `/records/${encodeURIComponent(id)}`);
   const noteLink = noteHref ?? ((action: ConsumerAction) =>
@@ -94,22 +97,27 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
         <span className="au-chart-swatch" style={{ background: colors[item.kind] }} />{item.kind === 'ACTIVITY_COUNT' ? item.label : seriesName[item.kind]}
       </button>)}
     </div>}
-    {dateOnly && <div className="au-chart-history-context"><strong>{series?.aggregation === 'daily' ? 'Daily activity' : 'Cumulative activity'}</strong><span>{series?.observationNote}</span><small>Report dates · ranges end at the latest available report · no live feed</small></div>}
+    {!snapshot && latest && series && <div className="au-chart-value-summary">
+      <div><strong>{number(latest.value)}</strong><span>{series.unit}</span></div>
+      <span className={change !== null && change < 0 ? 'negative' : change !== null && change > 0 ? 'positive' : ''}>{change === null ? 'One observation' : `${change > 0 ? '+' : ''}${change.toFixed(2)}%`}<small>{change === null ? 'More observations needed for a trend' : `${dateOnly ? 'Activity change' : 'Series change'} · first to last shown`}</small></span>
+    </div>}
     {snapshot && series ? <div className="au-chart-snapshot">
       <p className="au-snapshot-label">{series.label}</p>
       <div className="au-snapshot-value"><strong>{number(Number(snapshot.value))}</strong><span>{series.unit}</span></div>
       <p className="au-snapshot-date">Captured <time dateTime={new Date(snapshot.atMs).toISOString()}>{observedWhen(snapshot.atMs)}</time></p>
       {(series.source.observationLabel ?? history.source.observationLabel) && <p className="au-snapshot-observation">{series.source.observationLabel ?? history.source.observationLabel}</p>}
       <p className="au-snapshot-status">Captured snapshot</p>
+      <p className="au-snapshot-history-status">Trend unavailable · only one verified observation. A chart will appear when more dated observations are connected.</p>
       {sourceUrl && <a href={sourceUrl}>View source <span aria-hidden="true">↗</span></a>}
     </div> : <div className="au-chart-plot">{series && points.length && low !== null && high !== null ? <>
       <div className="au-chart-canvas">
         <svg viewBox="0 0 640 220" role="img" preserveAspectRatio="none"
           aria-label={`${seriesName[series.kind]}, ${points.length} ${history.source.mode === 'DEMO' ? 'sample' : 'observed'} points, ${number(low)} to ${number(high)} ${series.unit}. Missing intervals are not connected.`}>
+          {[CHART_TOP, (CHART_TOP + CHART_BOTTOM) / 2].map(y => <line key={y} x1={CHART_LEFT} y1={y} x2={CHART_RIGHT} y2={y} className="au-chart-grid" />)}
           <line x1={CHART_LEFT} y1={CHART_BOTTOM} x2={CHART_RIGHT} y2={CHART_BOTTOM} className="au-chart-axis" />
           <line x1={CHART_LEFT} y1={CHART_TOP} x2={CHART_LEFT} y2={CHART_BOTTOM} className="au-chart-axis" />
           {segments.map((segment, index) => segment.length > 1 && <polyline key={index} fill="none"
-            stroke={colors[series.kind]} strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round"
+            stroke={colors[series.kind]} strokeWidth="3" strokeLinejoin="round" strokeLinecap="round"
             points={segment.map(point => `${point.x},${point.y}`).join(' ')} />)}
           {points.map((point, index) => <circle key={`${point.atMs}-${index}`} cx={point.x} cy={point.y}
             r={series.kind === 'TRADE_PRICE' || dateOnly ? 4 : 2.5} fill={colors[series.kind]}><title>{`${axisWhen(point.atMs)} · ${number(point.value)} ${series.unit}`}</title></circle>)}
@@ -119,6 +127,8 @@ export function ConsumerChart({ history, onSelectAction, onPeriodChange, actorHr
       </div>
       <div className="au-chart-caption"><span>{axisWhen(bounds.start)}</span><span>{series.unit} · {points.length} points · {visibleGapCount} gaps</span><span>{axisWhen(bounds.end)}</span></div>
     </> : <div className="au-chart-empty">No {history.source.mode === 'DEMO' ? 'sample' : 'observed'} {series ? seriesName[series.kind].toLowerCase() : 'chart'} data in this period.</div>}</div>}
+
+    {dateOnly && <div className="au-chart-history-context"><strong>{series?.aggregation === 'daily' ? 'Daily activity' : 'Cumulative activity'}</strong><span>{series?.observationNote}</span><small>Report dates · ranges end at the latest available report · no live feed</small></div>}
 
     {dateOnly && series && <details className="au-chart-observations"><summary>View {points.length} recorded observations</summary><div className="au-chart-observation-scroll"><table><thead><tr><th>Report date</th><th>{series.unit}</th><th>Source</th></tr></thead><tbody>{series.points.map(point => <tr key={point.atMs}><td><time dateTime={point.reportedDate}>{point.reportedDate}</time></td><td>{number(Number(point.value))}</td><td>{point.sourceUrl && <a href={point.sourceUrl} target="_blank" rel="noopener noreferrer">View source ↗</a>}</td></tr>)}</tbody></table></div></details>}
     {!snapshot && !!clusters.length && <div ref={markerTrack} className="au-chart-markers" aria-label="Chip activity on this chart">
