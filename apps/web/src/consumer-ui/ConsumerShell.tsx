@@ -12,7 +12,7 @@ const routes: Array<{ id: ConsumerRoute; label: string; glyph: string }> = [
   { id: 'discover', label: 'Explore', glyph: '⌕' },
   { id: 'leaderboard', label: 'Leaderboard', glyph: '≡' },
   { id: 'activity', label: 'My activity', glyph: '◷' },
-  { id: 'funds', label: 'Test funds', glyph: '◇' },
+  { id: 'funds', label: 'Funds', glyph: '◇' },
   { id: 'docs', label: 'Docs', glyph: '☷' },
 ];
 
