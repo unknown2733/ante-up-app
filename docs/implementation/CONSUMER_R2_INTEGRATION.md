@@ -210,11 +210,11 @@ The coordinator verified these subsequent Seeker + Seed Vault actions on market 
 | Open a 5× long with 10 tUSD collateral | Request prefix `86c277c3`; position `BpRPnZuXg93PLcTsy6ebzhebKszv6REJDbU7ik4RcxCe` | FINALIZED; balance 989.618377 tUSD, maximum payout reserve 160 tUSD |
 | Close that Pro position | Request `6d25f8f4-0a96-4558-b76a-81f653aacff8` | Native unknown-instruction error; chain position remained OPEN and no claim was created |
 
-Request prefixes above are abbreviated coordinator references, not complete request IDs or transaction signatures. The Pro close failure is being investigated as a time-accrual/refund `minReceive` race. A fix and successful retry have **not** yet been established by this update. LP and spot round trips are complete; **Pro close/claim, remaining directional coverage and normal-maturity keeper validation remain open**. Do not report all financial QA complete.
+Request prefixes above are abbreviated coordinator references, not complete request IDs or transaction signatures. The Pro close failure was traced to a time-accrual/refund `minReceive` race; the API fix uses the quote-deadline refund for the minimum receipt while the actual claim retains the execution-time refund. A subsequent fix seals deadlines after pricing reads. Linux regression and deployment are recorded below, but **a successful device close retry is not established by this update**. LP and spot round trips are complete; **Pro close/claim, remaining directional coverage and normal-maturity keeper validation remain open**. See `docs/qa/liquidity-demo-20261013/MOBILE_EXECUTION.md` for simulation versus signed-execution evidence. Do not report all financial QA complete.
 
 The scheduled Free admission gate closure was verified at **10:08:55 KST**. This records closure of new admission, not deletion of existing chip records.
 
-### Current live deployment
+### 09:58 KST deployment checkpoint
 
 - Public source: `20780b3`; web image: `ante-up:mobile-followup-20780b3`.
 - Image SHA-256: `161b8119db416069cf9823d40255539a37e989510f7715a0d96557e5d5743868`.
@@ -224,3 +224,42 @@ The scheduled Free admission gate closure was verified at **10:08:55 KST**. This
 - Only web was replaced; the new registry/indexer paths and other services were preserved. ADB access is restored; device QA continues with the unresolved Pro close path above.
 
 The preceding `f4e335e` exact Linux bundle passed 26 chart/layout cases and 27 result/proof cases; the latter report is `.runtime/result-card-qa/browser-9rlfI9/report.json`. Those browser results belong to that earlier bundle, not an additional exact-bundle run of `20780b3`.
+
+### 10:38 KST capture and quote-fix deployment
+
+The coordinator deployed image `ante-up:capture-quote-78a1d10`, with public source checkpoint `206d58d` and tested integration source `78a1d10`. Public HTTPS verified 11 routes and exact asset delivery. Live JS is `index-CZJIxf0K.js` (SHA-256 `9ec7b02700456e976692c1046cc9f1e1dff4386a43b1a9b49143d29f022a8d0f`); CSS is `index-Dly_HIQq.css` (SHA-256 `611e7066f3daf0462a29a613dff0fa216e97c0c9c7687b9ea5ff381dc987bacd`). Linux financial tests passed 16 cases plus typechecking; web tests passed 80 with one existing skip. Exact-bundle market QA passed four views and the existing result/proof regression passed 27 cases.
+
+The localized capture changes explain attention measurement next to the chart, remove mobile chart pinning during chip participation, and condense the record's top summary. The real `EfCpStfVtdF1zuToUpjSuqviW5cG4VT952PiP1dAh8nY` result is approximately **−0.00881226067274309%**, displayed as **−0.01%** by exact rational rounding in both its summary and existing result card. The summary shows solana, closed/finalized state, placement **00:37 UTC**, return **00:43 UTC**, **Proof pending**, and a Verify record link. Long IDs and original rational values remain in collapsed details; full evidence and sharing remain below. No proof issuance is inferred from closure or card generation.
+
+Additional exact-bundle QA at **400×712** passed all **10 cases** with zero page overflow, browser errors or blocked requests. It exercised the actual EfCp record, issued/pending/invalid evidence paths and PNG sharing, with local response overrides only for the documented synthetic QA cases. Visual inspection confirmed every summary item above fits before bottom navigation. Report: `.runtime/result-card-qa/browser-g0rCKD/report.json`; actual-record screenshot: `.runtime/result-card-qa/browser-g0rCKD/mobile-400-closed_result-0-summary.png`. This isolated browser capture is not a Seeker screenshot or a new wallet transaction. Root continues actual Pro device retesting; no successful close/claim is claimed here.
+
+### 10:40 KST Pro long close confirmed
+
+The coordinator confirmed the real Seeker long close FINALIZED: request `4a75b231-2946-47df-a08d-03b3c905c12d`, signature `44vdwm48Wa833XtatiHAWJ8KvxgHiviVJabpgZaDKSYYwhW7iUbMThFTJEUxwyjFycckYU1PQ19CUDCRjfY3wudW`. Position `BpRPnZuXg93PLcTsy6ebzhebKszv6REJDbU7ik4RcxCe` became SETTLED. Claim `BJmxZLkNEJTKKsVym5X3qXQirkgDyiwwLzTMJ6Eb8kR1` was UNPAID for 10 tUSD payout + 0.326152 tUSD refund = **10.326152 tUSD**. The signed minimum was 10.326145 tUSD; actual settlement exceeded it, confirming the refund/deadline fix in a real transaction.
+
+Pro reservations fell to zero and other reservations became 10.326152 tUSD for the unpaid claim. Wallet balance remained 989.618377 tUSD: closing created the claim, not a completed payout. At the subsequent 01:41:59 UTC claim-approval step, the user's signature was pending. Claim payment, short-side coverage and remaining maturity checks are not marked complete. Earlier failure/pending entries above remain historical checkpoints.
+## Final Seeker QA readback — 01:49:53 UTC / 10:49:53 KST
+
+The coordinator observed native wallet success for the completed Seeker chip, curve, spot, LP and Pro long/short open→close→claim flows. The final financial readback establishes the following additional completions:
+
+| Action | Request | Finalized signature / result |
+| --- | --- | --- |
+| Long claim | `ae34d59c-3c7a-4a53-86d4-c7ffd85881da` | `5i7GF8BsoRAbMFprQLMwqdH6zYeRLB76efavY91HMq2pdKvAvujaHL9DxM4Zq3oiRQ5gJbL3CXd296Zj2gxrMsEz`; paid 10.326152 tUSD, wallet 999.944529 tUSD before the short flow |
+| Short close | `a20cfb2d-717b-4c59-82e6-8be447699766` | `5G4uy3DM1RFGM11QAzgNXKzwvy8AcbCd5DebPSSs9JLN2RtuxdQKxY8a9LKH5f9V9smdXTVE3Qaf4x6zcPzd1ZCm`; FINALIZED |
+| Short claim | `73dce29b-af52-4173-b8c7-e960ee521709` | `ipPZyH9FqkZY95Z7Qb6iQ4qyAWULb65DWYz4cv4cymPnB7p9Jf4tXSj8NWochNQaFi3qnH73j9wkf5iZdpfCi4W`; FINALIZED |
+
+Short claim `H5BUJJVzeGmGuUJZoGoiATrNmGdXxb7bdakFTQpFRVLJ` is PAID: 10 tUSD payout + 0.207451 tUSD refund = **10.207451 tUSD**. Both long and short positions are SETTLED and their claims paid. Final test-wallet balance is **999.894497 tUSD**, with zero LP shares and zero market tokens. Pro reserve and other reserve are both zero. Vault assets are **8300.083021 tUSD**, NAV **7100.083021 tUSD**, and free capital **3000.083021 tUSD**. `outsideQ = 1000` refers to the initial QA holdings elsewhere, not residual holdings in this tester's wallet.
+
+This closes the previously pending device close/claim paths; earlier pending and failure paragraphs preserve their observation-time history. It does not establish normal weekly maturity execution, stress safety, mainnet readiness, or completed demo recording. **Normal weekly maturity and recording remain untested/unfinished.** New-chip admission and the initial LP window are closed.
+
+Bounded feed final readback: ApyEau has one graduation observation plus 15 refreshes (16 total), last observed at **01:49:55 UTC**. The feed container exited **0 at 01:49:59.400 UTC**, with no writer lock remaining. No restart or extension was performed. The Free gate and both synthetic feeds have finished; the actual X collector is unchanged.
+
+Deployment remains public source `206d58d` / tested integration `78a1d10`, image `ante-up:capture-quote-78a1d10`. This closeout updates documentation only and adds no deployment, transaction or device action.
+Fee reconciliation for this constant-price test: 999.997998 → 999.894497 tUSD, a net cost of **0.103501 tUSD** = spot 0.0024 + long 0.051069 + short 0.050032. Vault gain was 0.083021 tUSD and protocol income 0.02048 tUSD. The synthetic price stayed at **1.2**; these executions validate flow, costs, refunds and reserve release, not gains/losses under a changing market price. A separate post-payment empty-claim UI message correction is in progress and is not part of the recorded deployed release.
+## Final empty-state UI release and Seeker record check
+
+Integration `b478b85` clarifies empty claim/close controls in `Financial.tsx`; financial guards and payment rules are unchanged. The web-only image is `ante-up:final-empty-ui-20261013`, SHA-256 `c20c87b9edb6c778e92ea13417692a7708bede2ad062f08d770db764f7a07086`. Live/image JS `index-CBla-MRm.js` matches SHA-256 `cec1f2af06d3abe2d9515bf2b547f6c1513bfb09d128740d7ba05ad15938fcd6`; CSS remains `index-Dly_HIQq.css`. API remains `ante-up:capture-quote-78a1d10`, and `/api/v1/markets` returned 200. Linux build, API typecheck and 14 financial UI tests passed.
+
+Root also verified the actual Seeker EfCp record page: solana, **−0.01%**, placement **00:37 UTC**, return **00:43 UTC**, **Proof pending**, and Verify record. This adds a physical-device display check to the earlier isolated-browser capture. It adds no wallet transaction or proof issuance; normal weekly maturity remains unverified.
+
+For completeness, the successful SHORT open preceding the close/claim above was request `e303b48b-42d4-41ef-b41b-ea07373aaa9f`, signature `5rg4TSa5EFd62Xt2wANceXXmD6Cvh4EDxCb9sUtmMicDxmSyj5ShQZoCyhahZYUfWaTUtKo1sF7KhfJVVnexK1VJ`, position `CgSs5WcQ2CWgAoCRBwwz3KjRHN5BDTT5BZEjZEGiTa9V`: collateral 10 tUSD, notional 50 tUSD, 5× leverage, entry price 1.2, maximum payout 60 tUSD, prepaid cost 0.207483 tUSD. This is the already-completed short flow, not an additional position.
