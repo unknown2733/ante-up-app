@@ -34,7 +34,7 @@ sh deploy/run-financial-demo.sh feed
 
 The feed has a hard 15-pass maximum, waits 240 seconds between successful publications, stops on the first failed/unknown child, and never resubmits an unknown transaction. Default synthetic activity is constant 125/100. Explicit `ANTE_UP_QA_SCENARIO=up` uses 150/100; `down` uses 100/100. These are test inputs, not measured attention or EWMA. Stop the previous feed before switching scenarios; one writer lock guards the state directory. A stale feed correctly disables new entries; it must not silently fall back to real data.
 
-The gate's 1-hour reopening is separate and remains held until root's UI deployment and current-data health checks. Root should reuse the existing bounded gate script and preserve 200 outstanding / 100 daily caps.
+The gate's 1-hour reopening is separate and remains held until root's UI deployment and current-data health checks. Use `deploy/demo-admission-window.sh` inside a container with `/run/secrets/rpc.url`, `/run/secrets/admin.json`, and `/state` mounted. It checks real solana freshness and preserves 200 outstanding / 100 daily caps. Set Docker stop grace to at least 60 seconds. It journals under this new demo state directory and closes on normal completion or TERM. Do not reuse `device-android-window.sh` unchanged: its hardcoded old open journal only confirms the historical transaction rather than opening a new window. A forced kill/host loss can prevent the close trap; root must read back the gate and reconcile the close journal.
 
 ## Remaining verification
 
