@@ -386,10 +386,14 @@ export class FirstSliceFinancialReader implements FinancialReader {
           position.state!==PositionState.Open || BigInt(now)>=position.maturity || await this.state.settlement(marketId,position.cycle)) return null;
       const terms=pro(position.collateral,position.leverageBps,position.entryPrice,price,fm.pmax,
         position.direction===PositionDirection.Long?'long':'short') as {payout:bigint;reserve:bigint;notional:bigint};
-      const fee=timeFee(position.capital,position.notional,position.maturity-position.openedAt,BigInt(now)-position.openedAt) as {prepaid:bigint;refund:bigint};
+      // Refund keeps decreasing while the wallet approves. Quote a lower bound
+      // through the last executable second, while preserving exact price/state guards.
+      const expiresAt=Math.min(base.expiresAt,Number(position.maturity-1n));
+      if (!Number.isSafeInteger(expiresAt) || expiresAt<=now) return null;
+      const fee=timeFee(position.capital,position.notional,position.maturity-position.openedAt,BigInt(expiresAt)-position.openedAt) as {prepaid:bigint;refund:bigint};
       if (terms.reserve!==position.maximumPayout || terms.notional!==position.notional || fee.prepaid!==position.prepaidFee) return null;
       const due=terms.payout+fee.refund;
-      return {...withPrice,grossAtoms:terms.payout.toString(),timePrepaidAtoms:position.prepaidFee.toString(),minReceiveAtoms:due.toString()};
+      return {...withPrice,expiresAt,grossAtoms:terms.payout.toString(),timePrepaidAtoms:position.prepaidFee.toString(),minReceiveAtoms:due.toString()};
     }
     if (intent.action==='depositLP' || intent.action==='withdrawLP') {
       if (!lpAllowed || !intent.quantityAtoms || !['LP_WINDOW','INITIAL_LP'].includes(view.epochPhase??'') ||

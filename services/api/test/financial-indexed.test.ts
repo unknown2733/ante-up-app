@@ -7,7 +7,8 @@ import { address, decompileTransactionMessage, getBase58Decoder, getCompiledTran
 import { ANTE_UP_PROGRAM_ADDRESS, AdmissionState, DataStatus, MarketPhase, PositionState,
   SPOT_BUY_DISCRIMINATOR, OPEN_PRO_DISCRIMINATOR, DEPOSIT_LP_DISCRIMINATOR, WITHDRAW_LP_DISCRIMINATOR,
   CLOSE_PRO_DISCRIMINATOR, CLAIM_PRO_DISCRIMINATOR, getSpotBuyInstructionDataDecoder, getOpenProInstructionDataDecoder,
-  getDepositLpInstructionDataDecoder } from '../../../clients/chain/dist/index.js';
+  getDepositLpInstructionDataDecoder, getCloseProInstructionDataDecoder } from '../../../clients/chain/dist/index.js';
+import { pro as proTerms, timeFee } from '../../../contracts/reference.mjs';
 import { FinalizedFinancialAccounts, FirstSliceFinancialReader } from '../src/financial-chain.ts';
 import { KitFirstSliceFinancialTransactionAdapter } from '../src/financial-transaction.ts';
 import { SqliteFinancialRegistrationStore } from '../src/registration.ts';
@@ -79,6 +80,29 @@ test('indexed spot, Pro open/close/claim and LP quotes compile B instructions wi
   (state as any).settlementAddress=async()=>settlementAddress;
   const close=await build('closePro',{positionId:positionAddress});
   assert.deepEqual([...close.ix.data!.subarray(0,8)],[...CLOSE_PRO_DISCRIMINATOR]);
+  // Wallet latency must not violate the minimum receipt solely through earned fees.
+  for (const direction of ['long','short'] as const) {
+    const terms=proTerms(10n*unit,50_000n,unit,unit,fm.pmax,direction);
+    Object.assign(opened,{direction:direction==='long'?0:1,collateral:10n*unit,leverageBps:50_000n,
+      notional:terms.notional,maximumPayout:terms.reserve,capital:terms.capital,openedAt:BigInt(now-12345),maturity:BigInt(now+86400)});
+    opened.prepaidFee=timeFee(opened.capital,opened.notional,opened.maturity-opened.openedAt,0n).prepaid;
+    const delayed=await build('closePro',{positionId:positionAddress});
+    const decoded=getCloseProInstructionDataDecoder().decode(delayed.ix.data!);
+    assert.equal(decoded.minReceipt,BigInt(delayed.quote.minReceiveAtoms));
+    assert.equal(decoded.deadline,BigInt(delayed.quote.expiresAt));
+    assert.equal(decoded.expectedSequence,7n);
+    assert.equal(decoded.expectedStateVersion,3n);
+    const startDue=terms.payout+timeFee(opened.capital,opened.notional,opened.maturity-opened.openedAt,BigInt(now)-opened.openedAt).refund;
+    assert.ok(decoded.minReceipt<startDue,'must allow the actual declining refund');
+    for(let at=now;at<=delayed.quote.expiresAt;at++) {
+      const actualDue=terms.payout+timeFee(opened.capital,opened.notional,opened.maturity-opened.openedAt,BigInt(at)-opened.openedAt).refund;
+      assert.ok(actualDue>=decoded.minReceipt,`${direction} closes after ${at-now}s`);
+    }
+    opened.maturity=BigInt(now+10);
+    opened.prepaidFee=timeFee(opened.capital,opened.notional,opened.maturity-opened.openedAt,0n).prepaid;
+    const nearMaturity=await build('closePro',{positionId:positionAddress});
+    assert.equal(nearMaturity.quote.expiresAt,now+9);
+  }
   fm.otherReserved=100n*unit;
   opened.state=PositionState.Settled;
   (state as any).claimByAddress=async()=>({address:claimAddress,value:{market:address(marketId),owner:address(wallet),position:address(positionAddress),
