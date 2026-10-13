@@ -50,6 +50,8 @@ export function createLiveFreeFlow(options: FreeFlowOptions) {
   const origin = options.baseUrl.replace(/\/$/, '');
   let session: WalletSession | null = null;
   let sessionGeneration = 0;
+  let sessionWallet: WalletContext | null = null;
+  let authorizing: { wallet: WalletContext; generation: number; promise: Promise<WalletSession> } | null = null;
   const active = new Set<string>();
   const uncertain = new Map<string, FreeOutcome>();
   const reviews = new Map<FreeReview, { requestValue: FreeRequest; wallet: WalletContext; authorized: WalletSession; executable: ExecutablePrepare }>();
@@ -58,7 +60,7 @@ export function createLiveFreeFlow(options: FreeFlowOptions) {
   const projectionPending = (marketId: string, wallet: WalletContext | null) => wallet ? projection.pending(identity(wallet, marketId)) : null;
   const observeProfile = (marketId: string, wallet: WalletContext | null, profile: PublicProfile | null) => wallet ? projection.observe(identity(wallet, marketId), profile) : false;
 
-  function clearSession() { session = null; sessionGeneration++; reviews.clear(); }
+  function clearSession() { session = null; sessionWallet = null; authorizing = null; sessionGeneration++; reviews.clear(); }
   function requireWallet(wallet: WalletContext) {
     if (!matchingWallet(wallet, options.getWallet())) { clearSession(); throw new Error('Wallet or cluster changed.'); }
   }
@@ -78,25 +80,41 @@ export function createLiveFreeFlow(options: FreeFlowOptions) {
   const jsonBody = (value: unknown) => JSON.stringify(value);
   const authHeaders = (token: string) => ({ Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' });
 
-  async function authorize(wallet: WalletContext): Promise<WalletSession> {
-    requireWallet(wallet);
-    if (session && session.wallet === wallet.address && session.cluster === wallet.cluster && session.expiresAt > now() + 30) return session;
+  function authorize(wallet: WalletContext): Promise<WalletSession> {
+    try { requireWallet(wallet); } catch (cause) { return Promise.reject(cause); }
+    if (session && matchingWallet(wallet, sessionWallet) && session.expiresAt > now() + 30) return Promise.resolve(session);
+    if (authorizing && authorizing.generation === sessionGeneration && matchingWallet(wallet, authorizing.wallet)) return authorizing.promise;
     clearSession();
     const generation = sessionGeneration;
+    const promise = authorizeFresh(wallet, generation).finally(() => {
+      // An older response must not release a newer wallet's authentication.
+      if (authorizing?.promise === promise) authorizing = null;
+    });
+    authorizing = { wallet, generation, promise };
+    return promise;
+  }
+
+  async function authorizeFresh(wallet: WalletContext, generation: number): Promise<WalletSession> {
+    const requireCurrentAuthorization = () => {
+      // Check generation first: a stale response must not clear the new session.
+      if (generation !== sessionGeneration) throw new Error('Wallet authentication changed. Try again.');
+      requireWallet(wallet);
+    };
     const challengePage = await request<Challenge>('/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: jsonBody({ wallet: wallet.address, cluster: wallet.cluster }) }, wallet.cluster);
-    requireWallet(wallet);
+    requireCurrentAuthorization();
     const challenge = object(challengePage.data);
     if (typeof challenge.nonce !== 'string' || !challenge.nonce || !Number.isSafeInteger(challenge.expiresAt) || (challenge.expiresAt as number) <= now() || (challenge.expiresAt as number) > now() + 300) throw new Error('Wallet challenge is invalid or expired.');
     const expectedMessage = `Ante Up API v1\ncluster:${wallet.cluster}\nwallet:${wallet.address}\nnonce:${challenge.nonce}\nexpiresAt:${challenge.expiresAt}`;
     if (challenge.message !== expectedMessage) throw new Error('Wallet challenge text does not match this session.');
     const signature = await options.signMessage(new TextEncoder().encode(expectedMessage), wallet);
-    requireWallet(wallet);
+    requireCurrentAuthorization();
     if (signature.length !== 64) throw new Error('Wallet returned an invalid message signature.');
     const sessionPage = await request<WalletSession>('/auth/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: jsonBody({ wallet: wallet.address, cluster: wallet.cluster, nonce: challenge.nonce, signature: getBase64Decoder().decode(signature) }) }, wallet.cluster);
-    requireWallet(wallet);
+    requireCurrentAuthorization();
     const received = object(sessionPage.data);
     if (generation !== sessionGeneration || typeof received.token !== 'string' || !received.token || received.wallet !== wallet.address || received.cluster !== wallet.cluster || !Number.isSafeInteger(received.expiresAt) || (received.expiresAt as number) <= now() || (received.expiresAt as number) > now() + 900) throw new Error('Wallet session response is invalid.');
     session = received as unknown as WalletSession;
+    sessionWallet = wallet;
     return session;
   }
 

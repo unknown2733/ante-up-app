@@ -287,3 +287,64 @@ test('wallet change after message signature cancels before prepare and discards 
   assert.equal(result.state, 'AWAITING_SIGNATURE');
   assert.match(result.reason, /Wallet or cluster changed/);
 });
+
+
+test('parallel private reads share one authentication challenge and message signature', async () => {
+  let finishSignature;
+  const gate = new Promise(resolve => { finishSignature = resolve; });
+  const { flow, calls, wallet } = setup({ signMessage: () => gate });
+  const first = flow.authorize(wallet);
+  const second = flow.authorize({ ...wallet });
+  assert.equal(first, second, 'same identity shares the actual in-flight promise');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls.filter(call => call[1] === '/api/v1/auth').length, 1);
+  assert.equal(calls.filter(call => call[0] === 'signMessage').length, 1);
+  finishSignature(new Uint8Array(64).fill(2));
+  const [a, b] = await Promise.all([first, second]);
+  assert.equal(a, b);
+  await flow.authorize(wallet);
+  assert.equal(calls.filter(call => call[1] === '/api/v1/auth/session').length, 1);
+});
+
+test('shared authentication rejection releases the in-flight state for a fresh retry', async () => {
+  let attempts = 0;
+  const { flow, calls, wallet } = setup({ signMessage: async () => {
+    if (++attempts === 1) throw new Error('Wallet approval rejected');
+    return new Uint8Array(64).fill(2);
+  } });
+  const results = await Promise.allSettled([flow.authorize(wallet), flow.authorize(wallet)]);
+  assert.ok(results.every(result => result.status === 'rejected'));
+  assert.equal(attempts, 1);
+  await flow.authorize(wallet);
+  assert.equal(attempts, 2);
+  assert.equal(calls.filter(call => call[1] === '/api/v1/auth/session').length, 1);
+});
+
+test('signer change and explicit invalidation reject stale authorization without clearing its replacement', async () => {
+  for (const replaceSigner of [true, false]) {
+    let finishOld;
+    let attempts = 0;
+    const gate = new Promise(resolve => { finishOld = resolve; });
+    const { flow, calls, wallet, setWallet } = setup({ signMessage: () => ++attempts === 1 ? gate : Promise.resolve(new Uint8Array(64).fill(2)) });
+    const first = flow.authorize(wallet);
+    const stale = assert.rejects(first, /authentication changed/);
+    await new Promise(resolve => setImmediate(resolve));
+    const nextWallet = replaceSigner ? { ...wallet, signer: { ...wallet.signer } } : wallet;
+    if (replaceSigner) setWallet(nextWallet); else flow.clearSession();
+    const current = await flow.authorize(nextWallet);
+    finishOld(new Uint8Array(64).fill(2));
+    await stale;
+    assert.equal(await flow.authorize(nextWallet), current);
+    assert.equal(attempts, 2);
+    assert.equal(calls.filter(call => call[1] === '/api/v1/auth/session').length, 1, 'stale auth is stopped before submitting a session');
+  }
+});
+
+test('a cached API session is not reused after signer identity changes', async () => {
+  const { flow, calls, wallet, setWallet } = setup();
+  await flow.authorize(wallet);
+  const nextWallet = { ...wallet, signer: { ...wallet.signer } };
+  setWallet(nextWallet);
+  await flow.authorize(nextWallet);
+  assert.equal(calls.filter(call => call[0] === 'signMessage').length, 2);
+});
