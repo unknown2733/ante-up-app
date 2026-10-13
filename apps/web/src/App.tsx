@@ -5,7 +5,7 @@ import { useConnectedWallet } from '@solana/kit-plugin-wallet/react';
 import { api, isFixture, liveFreeFlow, transportMode } from './api';
 import { DEMO_WALLET } from './wallet';
 import { currentWalletContext, walletClient, walletCluster, WalletPanel, WalletProfile } from './walletSdk';
-import type { FreeOutcome, FreeProgress, FreeRequest } from './liveFree';
+import type { FreeOutcome, FreeProgress, FreeRequest, FreeReview } from './liveFree';
 import { FinancialFaucet, FinancialMarket, FinancialRegistration, PrivateFinancialPanel } from './Financial';
 import { displayConsumerError } from './consumer-ui/copy';
 import type { ConsumerAction, ConsumerMarket, ConsumerMode, ConsumerNote, ConsumerPeriod, ConsumerSeriesKind, MarketHistory } from '../../../contracts/consumer';
@@ -107,12 +107,30 @@ function LiveFreeAction({ market, recordId, mode, profileLoading, limitReached, 
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<FreeProgress | null>(null);
   const [outcome, setOutcome] = useState<FreeOutcome | null>(null);
+  const [review, setReview] = useState<FreeReview | null>(null);
+  const [remaining, setRemaining] = useState(0);
+  const reviewRef = useRef<FreeReview | null>(null);
+  const contextVersion = useRef(0);
   const running = useRef(false);
   const [outcomeAction, setOutcomeAction] = useState<FreeRequest['action']>(recordId ? 'closeFree' : 'openFree');
   const outcomeRequest = useRef<FreeRequest | null>(null);
   const wallet = currentWalletContext();
   const requestValue: FreeRequest = { market, action: recordId ? 'closeFree' : 'openFree', recordId };
   const unavailable = mode !== walletCluster ? 'The API network does not match your wallet network.' : !liveFreeFlow ? 'Chip placement is unavailable here.' : limitReached && !recordId ? 'You have reached the three active chip limit.' : liveFreeFlow.supportReason(requestValue, wallet);
+  function cancelReview() {
+    if (reviewRef.current) liveFreeFlow?.cancelReview(reviewRef.current);
+    reviewRef.current = null; setReview(null); setRemaining(0); setProgress(null);
+  }
+  useEffect(() => {
+    contextVersion.current++; cancelReview();
+    return () => { contextVersion.current++; if (reviewRef.current) liveFreeFlow?.cancelReview(reviewRef.current); reviewRef.current = null; };
+  }, [connected?.account.address, market.id, recordId, mode]);
+  useEffect(() => {
+    if (!review || !liveFreeFlow) return;
+    const update = () => setRemaining(liveFreeFlow!.reviewSecondsRemaining(review));
+    update(); const timer = window.setInterval(update, 250);
+    return () => window.clearInterval(timer);
+  }, [review]);
   useEffect(() => {
     if (outcome) return;
     const pendingOutcome = liveFreeFlow?.pending(requestValue, currentWalletContext()) ?? null;
@@ -120,9 +138,26 @@ function LiveFreeAction({ market, recordId, mode, profileLoading, limitReached, 
   }, [recordId, outcome]);
   async function run() {
     if (!liveFreeFlow || running.current || unavailable || profileLoading) return;
+    const version = contextVersion.current;
     running.current = true; outcomeRequest.current = requestValue; setOutcomeAction(requestValue.action); setBusy(true); setOutcome(null); setProgress('AUTH');
     try {
-      const result = await liveFreeFlow.run(requestValue, setProgress);
+      cancelReview();
+      const result = await liveFreeFlow.prepare(requestValue, setProgress);
+      if (version !== contextVersion.current) { if (result.state === 'PREPARED') liveFreeFlow.cancelReview(result.review); return; }
+      if (result.state === 'PREPARED') {
+        reviewRef.current = result.review; setReview(result.review); setRemaining(liveFreeFlow.reviewSecondsRemaining(result.review)); setProgress(null);
+      } else setOutcome(result);
+    } finally { running.current = false; setBusy(false); }
+  }
+  async function sign() {
+    if (!liveFreeFlow || !review || running.current || unavailable || profileLoading) return;
+    const version = contextVersion.current;
+    running.current = true; setBusy(true); setOutcome(null); setProgress('AWAITING_SIGNATURE');
+    const signing = review;
+    reviewRef.current = null; setReview(null);
+    try {
+      const result = await liveFreeFlow.signReviewed(signing, setProgress);
+      if (version !== contextVersion.current) return;
       setOutcome(result);
       if (result.state === 'FINALIZED') changed();
     } finally { running.current = false; setBusy(false); }
@@ -140,7 +175,9 @@ function LiveFreeAction({ market, recordId, mode, profileLoading, limitReached, 
   const disabled = busy || profileLoading || !!unavailable || pending || outcome?.state === 'FINALIZED';
   const progressText: Record<FreeProgress, string> = { AUTH: 'Authenticating wallet…', PREPARING: 'Preparing transaction…', AWAITING_SIGNATURE: 'Waiting for wallet signature…', SUBMITTED: 'Submitted · checking finality…', CONFIRMED: 'Confirming on chain…' };
   return <>
-    <button className={`button full ${disabled ? 'button-disabled' : 'button-chip'}`} disabled={disabled} onClick={run}>{busy ? progressText[progress ?? 'AUTH'] : recordId ? 'Take back chip' : 'Place chip'} <span>↗</span></button>
+    <button className={`button full ${disabled ? 'button-disabled' : 'button-chip'}`} disabled={disabled} onClick={review && remaining > 0 ? sign : run}>{busy ? progressText[progress ?? 'AUTH'] : review ? remaining > 0 ? 'Sign in wallet' : 'Review chip request' : recordId ? 'Take back chip' : 'Place chip'} <span>↗</span></button>
+    {review && <p className="tiny muted">{remaining > 0 ? `${recordId ? 'Take back' : 'Place'} one chip · ready to sign for ${remaining}s. Tap Sign in wallet to continue.` : 'Chip request expired without being sent. Review it again for a fresh request.'}</p>}
+    {review && <button className="button button-dark full" disabled={busy} onClick={cancelReview}>Cancel review</button>}
     {unavailable && <p className="tiny muted">{displayConsumerError(unavailable)}</p>}
     {outcome && <ExecutionResult outcome={outcome} action={outcomeAction} mode={mode} onNavigate={go} />}
     {outcome?.state === 'FINALIZED' && <button className="button button-dark full" disabled={busy || profileLoading || projectionWaiting} onClick={() => { setOutcome(null); setProgress(null); outcomeRequest.current = null; }}>Continue in this market</button>}

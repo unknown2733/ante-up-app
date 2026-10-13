@@ -5,7 +5,7 @@ import { ANTE_UP_PROGRAM_ADDRESS, AdmissionReason, AdmissionState, DataStatus, M
   findAdmissionPda, findMarketPda, getAdmissionEncoder, getMarketEncoder } from '../../../clients/chain/dist/index.js';
 import { SqliteProjectionStore } from '../../indexer/src/sqlite.ts';
 import { SqliteEventRepositories } from '../../indexer/src/repositories.ts';
-import { SqliteFinalizedReadAdapter, mergeMarketRegistry } from '../src/live-read.ts';
+import { SqliteFinalizedReadAdapter, mergeMarketRegistry, indexedCapabilities } from '../src/live-read.ts';
 import type { FinalizedFinancialAccounts } from '../src/financial-chain.ts';
 
 test('finalized market and global admission permit free entry before numeric data, but gate closure preserves exit',async()=>{
@@ -60,13 +60,18 @@ test('indexed market price requires matching fresh finalized snapshot and blocks
   store.snapshots=()=>[{payload:{marketId:String(marketAddress),sequence:'3'},payloadHash:Buffer.from(hash).toString('hex'),finality:'finalized'}] as any;
   const fm={anchorPg:1_000_000n,anchorSg:1_000_000_000_000n,anchorDg:1_000_000_000_000n,pmax:5_000_000n,
     lpWindowStart:BigInt(now-100),lpWindowEnd:BigInt(now+100),proReopenAt:BigInt(now+100),
-    currentMaturity:0n,currentCycle:1n,openPositions:0,lpGeneration:0n,lastLpMaturity:BigInt(now)};
+    currentMaturity:0n,currentCycle:1n,openPositions:0,lpGeneration:0n,lastLpMaturity:BigInt(now),
+    paymentVault:'vault',vaultInventory:'inventory',keywordMint:programId,externalQ:1000_000000n,
+    proReserved:0n,otherReserved:0n,totalShares:7100_000000n,lockedShares:7100_000000n};
   let settled=false;
-  const financial=({async financeMarket(){return fm;},async settlement(){return settled?{}:null;}}) as unknown as FinalizedFinancialAccounts;
+  const financial=({async financeMarket(){return fm;},async settlement(){return settled?{}:null;},
+    async financeConfig(){return {paymentMint:programId};},async tokenAt(id:string){return {amount:id==='vault'?8300_000000n:1000_000000n};}}) as unknown as FinalizedFinancialAccounts;
   const read=new SqliteFinalizedReadAdapter({mode:'localnet',programId,store,repositories,accounts:accountReader,financial,
     registry:[{address:String(marketAddress),seedHex:Buffer.from(seed).toString('hex'),keyword:'test',aliases:[]}],now:()=>now});
   assert.deepEqual((await read.markets())[0].price,{kind:'indexed',atoms:'1000000',executable:true});
   assert.equal((await read.markets())[0].epochPhase,'LP_WINDOW');
+  assert.equal((await read.markets())[0].capabilities.depositLP?.allowed,true);
+  assert.equal((await read.markets())[0].capabilities.spotBuy?.allowed,true);
   fm.lpWindowEnd=BigInt(now-100);fm.proReopenAt=BigInt(now-100);
   assert.equal((await read.markets())[0].epochPhase,'PRO_OPEN');
   fm.currentMaturity=BigInt(now+2000);settled=true;
@@ -83,4 +88,23 @@ test('operator synthetic provenance cannot be stripped by an automatic registrat
   const configured={...real,keyword:'Synthetic finance demo',dataProvenance:'SYNTHETIC_QA' as const};
   assert.deepEqual(mergeMarketRegistry([configured],[real]),[configured]);
   assert.deepEqual(mergeMarketRegistry([configured],[real,{...real,address:'other'}]),[configured,{...real,address:'other'}]);
+});
+
+test('indexed capabilities open initial LP, then Pro, without relaxing exit or capital checks',()=>{
+ const base={price:{kind:'indexed' as const,atoms:'1200000',executable:true},epochPhase:'INITIAL_LP' as const,
+   lowActivity:false,assets:8300000000n,free:3000000000n,nav:7100000000n,externalQ:1000000000n,
+   inventory:1000000000n,totalShares:7100000000n,lockedShares:7100000000n,openPositions:0,otherReserved:0n};
+ const initial=indexedCapabilities(base);
+ assert.equal(initial.depositLP?.allowed,true);assert.equal(initial.spotBuy?.allowed,true);
+ assert.equal(initial.openPro?.allowed,false);assert.equal(initial.withdrawLP?.allowed,false);
+ assert.equal(indexedCapabilities({...base,totalShares:7200000000n}).withdrawLP?.allowed,true);
+ const pro=indexedCapabilities({...base,epochPhase:'PRO_OPEN',openPositions:1});
+ assert.equal(pro.openPro?.allowed,true);assert.equal(pro.closePro?.allowed,true);
+ assert.equal(pro.depositLP?.reason,'LP_WINDOW_CLOSED');
+ const low=indexedCapabilities({...base,lowActivity:true,price:{...base.price,executable:false}});
+ assert.equal(low.spotBuy?.allowed,false);assert.equal(low.spotSell?.allowed,true);assert.equal(low.depositLP?.allowed,true);
+ const stale=indexedCapabilities({...base,price:null,otherReserved:100n});
+ assert.equal(stale.depositLP?.allowed,false);assert.equal(stale.spotSell?.allowed,false);assert.equal(stale.claim?.allowed,true);
+ assert.equal(indexedCapabilities({...base,free:0n}).spotBuy?.reason,'INSUFFICIENT_FREE_CAPITAL');
+ assert.equal(indexedCapabilities({...base,epochPhase:'SETTLING',openPositions:1}).closePro?.allowed,false);
 });

@@ -26,5 +26,8 @@ test('proof and execution components render links only for eligible states, with
   assert.match(success,/View result/);assert.match(success,/\/records\/Cjbps/);
   const uncertain=renderToStaticMarkup(React.createElement(ExecutionResult,{mode:'devnet',action:'closeFree',outcome:{state:'UNKNOWN',signature:point.signature,recordId:id,requestId:'request'}}));
   assert.match(uncertain,/Check the existing request/);assert.doesNotMatch(uncertain,/View result|View transaction/);
+  const unsigned=renderToStaticMarkup(React.createElement(ExecutionResult,{mode:'devnet',action:'openFree',outcome:{state:'AWAITING_SIGNATURE',signature:null,requestId:'request',reason:'Wallet challenge is invalid or expired.'}}));
+  assert.match(unsigned,/Wallet authentication did not complete/);assert.match(unsigned,/Wallet challenge is invalid or expired/);
+  assert.doesNotMatch(unsigned,/Check the existing request|Your request is not final|View transaction|View result/);
  } finally {await server.close();}
 });

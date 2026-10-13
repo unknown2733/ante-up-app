@@ -102,6 +102,55 @@ test('device clock ahead or behind does not reject a fresh API challenge or tran
   }
 });
 
+test('review finishes authentication and preparation without opening the transaction wallet; second explicit step sends once', async () => {
+  const {flow,calls}=setup();
+  const result=await flow.prepare({market,action:'openFree',recordId:null});
+  assert.equal(result.state,'PREPARED');
+  assert.equal(calls.filter(call=>call[0]==='signMessage').length,1);
+  assert.equal(calls.filter(call=>call[1]==='/api/v1/transactions/prepare').length,1);
+  assert.equal(calls.filter(call=>call[0]==='signAndSend').length,0);
+  const count=calls.length;
+  const signed=flow.signReviewed(result.review);
+  const duplicate=await flow.signReviewed(result.review);
+  assert.equal(duplicate.state,'AWAITING_SIGNATURE');
+  assert.equal((await signed).state,'FINALIZED');
+  assert.equal(calls[count][0],'signAndSend','no auth or prepare HTTP call precedes the second wallet intent');
+  assert.equal(calls.filter(call=>call[0]==='signAndSend').length,1);
+});
+
+test('cancelled, expired, forged, superseded and wallet-changed reviews cannot send', async () => {
+  for(const kind of ['cancelled','expired','forged','superseded','wallet-changed']) {
+    let seconds=now;
+    const {flow,calls,setWallet}=setup({clock:{nowSeconds:()=>seconds}});
+    const result=await flow.prepare({market,action:'openFree',recordId:null});
+    assert.equal(result.state,'PREPARED');
+    if(kind==='cancelled') flow.cancelReview(result.review);
+    if(kind==='expired') seconds=now+20;
+    if(kind==='superseded') await flow.prepare({market,action:'openFree',recordId:null});
+    if(kind==='wallet-changed') setWallet(null);
+    const signed=await flow.signReviewed(kind==='forged'?{...result.review}:result.review);
+    assert.equal(signed.state,'AWAITING_SIGNATURE',kind);
+    assert.equal(calls.filter(call=>call[0]==='signAndSend').length,0,kind);
+  }
+});
+
+test('two-step signing retains wire validation and ambiguous-send recovery without resending', async () => {
+  const malformed=setup({prepareResult:{kind:'transaction',action:'openFree',requestId:'00000000-0000-4000-8000-000000000001',wallet:owner,cluster:'devnet',programId,recordId,expiresAt:now+20,unsignedTransaction:'AAAA',lastValidBlockHeight:'10',quoteRef:null}});
+  const bad=await malformed.flow.prepare({market,action:'openFree',recordId:null});
+  assert.equal(bad.state,'PREPARED');
+  assert.equal((await malformed.flow.signReviewed(bad.review)).state,'AWAITING_SIGNATURE');
+  assert.equal(malformed.calls.filter(call=>call[0]==='signAndSend').length,0);
+  const {flow,calls,wallet}=setup({signAndSend:async()=>{throw new Error('transport disconnected');}});
+  const request={market,action:'openFree',recordId:null};
+  const ready=await flow.prepare(request);
+  const unknown=await flow.signReviewed(ready.review);
+  assert.equal(unknown.state,'UNKNOWN');
+  assert.equal(flow.pending(request,wallet).requestId,unknown.requestId);
+  assert.equal((await flow.prepare(request)).state,'UNKNOWN');
+  assert.equal((await flow.recheck(request,unknown.requestId,null)).state,'FINALIZED');
+  assert.equal(calls.filter(call=>call[0]==='signAndSend').length,1);
+});
+
 test('API clock advances without wall time and stale observations cannot extend expiry', () => {
   let tick=0,wall=1;
   const clock=createApiClock(()=>tick,()=>wall);

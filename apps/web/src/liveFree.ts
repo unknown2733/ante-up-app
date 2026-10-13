@@ -14,6 +14,9 @@ export type FreeOutcome = (
   | { state: 'FAILED'; reason?: string; requestId: string; signature: string | null }
   | { state: 'UNKNOWN'; reason: string; requestId: string; signature: string | null }) & { recordId?: string };
 export interface FreeRequest { market: MarketView; action: FreeAction; recordId: string | null }
+/** Opaque, one-use review handle. Transaction bytes and authentication stay in this flow. */
+export interface FreeReview { readonly requestId: string; readonly expiresAt: number; readonly action: FreeAction }
+export type FreePreparation = { state: 'PREPARED'; review: FreeReview } | FreeOutcome;
 export interface FreeFlowOptions {
   baseUrl: string;
   getWallet(): WalletContext | null;
@@ -49,12 +52,13 @@ export function createLiveFreeFlow(options: FreeFlowOptions) {
   let sessionGeneration = 0;
   const active = new Set<string>();
   const uncertain = new Map<string, FreeOutcome>();
+  const reviews = new Map<FreeReview, { requestValue: FreeRequest; wallet: WalletContext; authorized: WalletSession; executable: ExecutablePrepare }>();
   const projection = createFreeProjectionGate(options.storage ?? (typeof sessionStorage === 'undefined' ? undefined : sessionStorage));
   const identity = (wallet: WalletContext, marketId: string) => ({ wallet: wallet.address, cluster: wallet.cluster, marketId });
   const projectionPending = (marketId: string, wallet: WalletContext | null) => wallet ? projection.pending(identity(wallet, marketId)) : null;
   const observeProfile = (marketId: string, wallet: WalletContext | null, profile: PublicProfile | null) => wallet ? projection.observe(identity(wallet, marketId), profile) : false;
 
-  function clearSession() { session = null; sessionGeneration++; }
+  function clearSession() { session = null; sessionGeneration++; reviews.clear(); }
   function requireWallet(wallet: WalletContext) {
     if (!matchingWallet(wallet, options.getWallet())) { clearSession(); throw new Error('Wallet or cluster changed.'); }
   }
@@ -110,7 +114,7 @@ export function createLiveFreeFlow(options: FreeFlowOptions) {
   }
   const keyFor = (wallet: WalletContext, requestValue: FreeRequest) => `${wallet.cluster}:${wallet.address}:${requestValue.market.id}:${requestValue.action}`;
 
-  async function run(requestValue: FreeRequest, onProgress?: (state: FreeProgress) => void): Promise<FreeOutcome> {
+  async function prepare(requestValue: FreeRequest, onProgress?: (state: FreeProgress) => void): Promise<FreePreparation> {
     const wallet = options.getWallet();
     const unsupported = supportReason(requestValue, wallet);
     if (unsupported || !wallet) return { state: 'UNAVAILABLE', reason: unsupported ?? 'Wallet unavailable.', requestId: null, signature: null };
@@ -118,6 +122,7 @@ export function createLiveFreeFlow(options: FreeFlowOptions) {
     if (active.size > 0) return { state: 'BUSY', reason: 'Waiting for your earlier wallet request. Open the wallet to approve or cancel it. If it does not respond, cancel the pending request in the wallet, refresh this page, and check your activity.', requestId: null, signature: null };
     const previous = uncertain.get(key);
     if (previous) return previous;
+    reviews.clear();
     active.add(key);
     const requestId = newRequestId();
     try {
@@ -132,6 +137,36 @@ export function createLiveFreeFlow(options: FreeFlowOptions) {
       if (prepared.kind === 'notExecutable') return { state: 'UNAVAILABLE', reason: typeof prepared.reason === 'string' ? prepared.reason : 'API execution adapter is unavailable.', requestId, signature: null };
       if (prepared.kind !== 'transaction' || prepared.wallet !== wallet.address || prepared.cluster !== wallet.cluster || prepared.programId !== ANTE_UP_PROGRAM_ADDRESS || prepared.action !== requestValue.action || prepared.requestId !== requestId || typeof prepared.recordId !== 'string' || !prepared.recordId || (requestValue.action === 'closeFree' && prepared.recordId !== requestValue.recordId) || !Number.isSafeInteger(prepared.expiresAt) || (prepared.expiresAt as number) <= now() || (prepared.expiresAt as number) > now() + 30) return { state: 'AWAITING_SIGNATURE', reason: 'Prepared transaction identity or expiry is invalid.', requestId, signature: null };
       const executable = prepared as unknown as ExecutablePrepare;
+      const review: FreeReview = Object.freeze({ requestId, expiresAt: executable.expiresAt, action: requestValue.action });
+      reviews.set(review, { requestValue, wallet, authorized, executable });
+      return { state: 'PREPARED', review };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Could not prepare this request.';
+      return { state: 'AWAITING_SIGNATURE', reason, requestId, signature: null };
+    } finally { active.delete(key); }
+  }
+
+  function cancelReview(review: FreeReview) { reviews.delete(review); }
+  function reviewSecondsRemaining(review: FreeReview) { return Math.max(0, review.expiresAt - now()); }
+
+  /** Called by a second user gesture, after authentication and HTTP preparation finish. */
+  async function signReviewed(review: FreeReview, onProgress?: (state: FreeProgress) => void): Promise<FreeOutcome> {
+    const context = reviews.get(review);
+    if (!context) return { state: 'AWAITING_SIGNATURE', reason: 'Review this chip request again before signing.', requestId: review.requestId, signature: null };
+    if (active.size > 0) return { state: 'BUSY', reason: 'A request is already in progress.', requestId: review.requestId, signature: null };
+    // Consume before any asynchronous work: a second tap cannot send this request twice.
+    reviews.delete(review);
+    const { requestValue, wallet, authorized, executable } = context;
+    const requestId = review.requestId;
+    const key = keyFor(wallet, requestValue);
+    const previous = uncertain.get(key);
+    if (previous) return previous;
+    active.add(key);
+    try {
+      requireWallet(wallet);
+      const unsupported = supportReason(requestValue, wallet);
+      if (unsupported) return { state: 'UNAVAILABLE', reason: unsupported, requestId, signature: null };
+      if (now() >= executable.expiresAt || now() >= authorized.expiresAt) return { state: 'AWAITING_SIGNATURE', reason: 'Chip request expired. Review it again before signing.', requestId, signature: null };
       onProgress?.('AWAITING_SIGNATURE');
       const result: SendResult = await sendPreparedTransaction({
         prepared: executable,
@@ -161,6 +196,12 @@ export function createLiveFreeFlow(options: FreeFlowOptions) {
       const reason = error instanceof Error ? error.message : 'Could not process this request.';
       return { state: 'AWAITING_SIGNATURE', reason, requestId, signature: null };
     } finally { active.delete(key); }
+  }
+
+  // Non-UI callers retain the existing contract; mobile UI always uses the two explicit steps.
+  async function run(requestValue: FreeRequest, onProgress?: (state: FreeProgress) => void): Promise<FreeOutcome> {
+    const result = await prepare(requestValue, onProgress);
+    return result.state === 'PREPARED' ? signReviewed(result.review, onProgress) : result;
   }
 
   async function recheck(requestValue: FreeRequest, requestId: string, signature: string | null): Promise<FreeOutcome> {
@@ -195,5 +236,5 @@ export function createLiveFreeFlow(options: FreeFlowOptions) {
     } finally { active.delete(key); }
   }
   const pending = (requestValue: FreeRequest, wallet: WalletContext | null) => wallet ? uncertain.get(keyFor(wallet, requestValue)) ?? null : null;
-  return { run, recheck, supportReason, pending, clearSession, authorize, projectionPending, observeProfile };
+  return { run, prepare, signReviewed, cancelReview, reviewSecondsRemaining, recheck, supportReason, pending, clearSession, authorize, projectionPending, observeProfile };
 }

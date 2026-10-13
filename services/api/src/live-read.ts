@@ -1,19 +1,39 @@
 import { address } from '@solana/kit';
-import { AdmissionState, DataStatus, MarketPhase, findMarketPda, findAdmissionPda, getMarketDecoder, getAdmissionDecoder,
+import { AdmissionState, DataStatus, MarketPhase, findMarketPda, findAdmissionPda, findFinanceMarketPda, getMarketDecoder, getAdmissionDecoder,
   MARKET_DISCRIMINATOR, ADMISSION_DISCRIMINATOR } from '../../../clients/chain/dist/index.js';
-import type { Capability, FreeRecord, MarketView, ProofStatus } from '../../../contracts/types.ts';
+import type { Capability, ErrorCode, FreeRecord, MarketView, ProofStatus } from '../../../contracts/types.ts';
 import { SqliteProjectionStore } from '../../indexer/src/sqlite.ts';
 import { SqliteEventRepositories, type FinalizedAccountReader } from '../../indexer/src/repositories.ts';
 import type { ReadAdapter } from './app.ts';
 import type { FreeStateReader } from './transaction.ts';
 import { FinalizedFinancialAccounts, financialEpochPhase } from './financial-chain.ts';
 import type { SqliteFinancialRegistrationStore } from './registration.ts';
-import { UNIT, indexPrice } from '../../../contracts/reference.mjs';
+import { UNIT, indexPrice, freeCapital } from '../../../contracts/reference.mjs';
 
 export interface MarketRegistryEntry {address:string;seedHex:string;keyword:string;aliases:string[];dataProvenance?:'SYNTHETIC_QA'}
 export function mergeMarketRegistry(registry:MarketRegistryEntry[],registrations:MarketRegistryEntry[]):MarketRegistryEntry[] {
   return [...new Map([...registrations,...registry].map(entry=>[entry.address,entry])).values()];
 }
+
+/** Market-level eligibility only; wallet, amount and exact solvency are checked by quote + program. */
+export function indexedCapabilities(input:{price:MarketView['price'];epochPhase:MarketView['epochPhase'];
+  lowActivity:boolean;assets:bigint;free:bigint;nav:bigint;externalQ:bigint;inventory:bigint;
+  totalShares:bigint;lockedShares:bigint;openPositions:number;otherReserved:bigint}):MarketView['capabilities'] {
+  const cap=(allowed:boolean,reason:ErrorCode):Capability=>({allowed,reason:allowed?null:reason});
+  const data=!!input.price,entry=input.price?.executable===true;
+  const lpWindow=['INITIAL_LP','LP_WINDOW'].includes(input.epochPhase??'');
+  const lp=data&&(entry||input.lowActivity)&&lpWindow&&input.openPositions===0&&input.nav>0n&&input.totalShares>0n;
+  return {
+    spotBuy:cap(entry&&input.free>0n&&input.inventory>0n,!entry?'DATA_NOT_READY':'INSUFFICIENT_FREE_CAPITAL'),
+    spotSell:cap(data&&input.externalQ>0n&&input.assets>0n,!data?'DATA_NOT_READY':'LIMIT_REACHED'),
+    openPro:cap(entry&&input.epochPhase==='PRO_OPEN'&&input.free>0n,!entry?'DATA_NOT_READY':input.epochPhase!=='PRO_OPEN'?'WRONG_PHASE':'INSUFFICIENT_FREE_CAPITAL'),
+    closePro:cap(data&&input.openPositions>0&&['PRO_OPEN','OPEN_CUTOFF'].includes(input.epochPhase??''),!data?'DATA_NOT_READY':'WRONG_PHASE'),
+    claim:cap(input.otherReserved>0n,'LIMIT_REACHED'),
+    depositLP:cap(lp,!data?'DATA_NOT_READY':!lpWindow?'LP_WINDOW_CLOSED':'LIMIT_REACHED'),
+    withdrawLP:cap(lp&&input.free>0n&&input.totalShares>input.lockedShares,!data?'DATA_NOT_READY':!lpWindow?'LP_WINDOW_CLOSED':input.free<=0n?'INSUFFICIENT_FREE_CAPITAL':'LIMIT_REACHED'),
+  };
+}
+
 export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader {
   readonly mode: 'localnet'|'devnet';
   private readonly programId: string;
@@ -63,6 +83,7 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
       const matched=latest && latest.payload.sequence===chain.latestSequence.toString() && Buffer.from(chain.latestHash).toString('hex')===latest.payloadHash;
       const snapshot=matched?latest:null;
       let anchor=null,price=null,epochPhase=null;
+      let financialCaps:MarketView['capabilities']={};
       if (this.financial) {
         try {
           const fm=await this.financial.financeMarket(entry.address);
@@ -80,13 +101,23 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
                   executable:chain.dataStatus===DataStatus.Valid && chain.admission.state===AdmissionState.Open && calculated.price>0n};
               } catch { /* Invalid on-chain ratio has no displayed price. */ }
             }
+            const financeConfig=await this.financial.financeConfig();
+            const [fmAddress]=await findFinanceMarketPda({market:address(entry.address)},{programAddress:address(this.programId)});
+            const [vault,inventory]=await Promise.all([
+              this.financial.tokenAt(String(fm.paymentVault),String(financeConfig.paymentMint),String(fmAddress)),
+              this.financial.tokenAt(String(fm.vaultInventory),String(fm.keywordMint),String(fmAddress))]);
+            const free=freeCapital(vault.amount,fm.externalQ,fm.pmax,fm.proReserved,fm.otherReserved,500n*UNIT) as bigint;
+            const nav=price?vault.amount-fm.externalQ*BigInt(price.atoms)/UNIT-fm.otherReserved:0n;
+            financialCaps=indexedCapabilities({price,epochPhase,lowActivity:dataStatus==='LOW_ACTIVITY',assets:vault.amount,
+              free,nav,externalQ:fm.externalQ,inventory:inventory.amount,totalShares:fm.totalShares,lockedShares:fm.lockedShares,
+              openPositions:fm.openPositions,otherReserved:fm.otherReserved});
           }
         } catch (error) { if (this.registrations?.finalized().some(r=>r.address===entry.address)) throw error; }
       }
       result.push({id:entry.address,keyword:entry.keyword,aliases:entry.aliases,phase,dataStatus,epochPhase,supported:true,
         ...(entry.dataProvenance==='SYNTHETIC_QA'?{dataProvenance:'SYNTHETIC_QA' as const}:{}),
         chain:{cluster:this.mode,programId:this.programId,address:entry.address},snapshot,anchor,price,
-        capabilities:{curveBuy:{allowed:phase==='CURVE',reason:phase==='CURVE'?null:'WRONG_PHASE'},curveSell:{allowed:phase==='CURVE',reason:phase==='CURVE'?null:'WRONG_PHASE'},
+        capabilities:{...financialCaps,curveBuy:{allowed:phase==='CURVE',reason:phase==='CURVE'?null:'WRONG_PHASE'},curveSell:{allowed:phase==='CURVE',reason:phase==='CURVE'?null:'WRONG_PHASE'},
           openFree:entry.dataProvenance==='SYNTHETIC_QA'?{allowed:false,reason:'ENTRY_PAUSED'}:freeEntry,
           closeFree:{allowed:true,reason:null}}});
     }

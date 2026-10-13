@@ -38,3 +38,35 @@ test('success navigation is finalized-only and recovery never implies retrying a
  assert.equal(executionResult({...outcome,state:'FAILED',reason:'user cancelled'},'closeFree','devnet').title,'Request cancelled.');
  assert.equal(executionResult({...outcome,recordId:'demo:record'},'closeFree','devnet').recordHref,null);
 });
+
+test('pre-signing failures expose their reason without offering nonexistent request reconciliation',()=>{
+ const model=(state,reason)=>executionResult({state,reason,requestId:'request',signature:null},'openFree','devnet');
+ const auth=model('AWAITING_SIGNATURE','Wallet challenge is invalid or expired.');
+ assert.equal(auth.title,'Wallet authentication did not complete.');
+ assert.match(auth.description,/Wallet challenge is invalid or expired/);
+ assert.equal(auth.pending,false);
+ const expired=model('AWAITING_SIGNATURE','Wallet changed or preparation expired.');
+ assert.equal(expired.title,'Request expired.');
+ const cancel=model('AWAITING_SIGNATURE','You cancelled signing in the wallet. Press the action button to try again.');
+ assert.equal(cancel.title,'Request cancelled.');
+ const invalid=model('AWAITING_SIGNATURE','Prepared transaction identity or expiry is invalid.');
+ assert.match(invalid.description,/Prepared transaction identity or expiry is invalid/);
+ const unavailable=model('UNAVAILABLE','DATA_NOT_READY');
+ assert.match(unavailable.description,/Market data is still being prepared/);
+ const busy=model('BUSY','A request is already in progress.');
+ assert.match(busy.description,/Finish or cancel the earlier request in your wallet/);
+ for(const result of [auth,expired,cancel,invalid,unavailable,busy]) {
+  assert.equal(result.pending,false);assert.equal(result.recordHref,null);assert.equal(result.transactionHref,null);
+  assert.doesNotMatch(result.description,/Check the existing request|Review the request status/);
+ }
+});
+
+test('unknown submission preserves actual diagnostics and stays uncertain even if reason mentions cancellation',()=>{
+ for(const state of ['UNKNOWN','CONFIRMED','SUBMITTED']) {
+  const result=executionResult({state,reason:'Network cancelled the response after sending.',requestId:'request',signature:state==='UNKNOWN'?null:signature},'closeFree','devnet');
+  assert.equal(result.pending,true);assert.equal(result.title,'Your request is not final yet.');
+  assert.match(result.description,/Network cancelled the response after sending/);
+  assert.match(result.description,/Check the existing request before starting another one/);
+  assert.equal(result.recordHref,null);
+ }
+});
