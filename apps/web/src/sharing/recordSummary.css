@@ -1,0 +1,19 @@
+.au-record-summary{border:1px solid #dedbd2;border-radius:22px;background:#fffdf8;overflow:hidden;margin:14px 0 18px;color:#20201e}
+.au-record-summary header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:22px 24px 12px}
+.au-record-summary h1{font-size:36px;line-height:1.08;margin:6px 0 0;overflow-wrap:anywhere;letter-spacing:-1.4px}
+.au-record-state{font-size:11px;font-weight:700;padding:7px 10px;border-radius:99px;background:#efede6;flex-shrink:0}
+.au-record-result{padding:12px 24px 18px;display:grid;gap:5px}
+.au-record-result>span{font-size:12px;color:#64635f}
+.au-record-result>strong{font-size:52px;line-height:1.1;font-weight:750;letter-spacing:-2px;overflow-wrap:anywhere}
+.au-record-result .au-record-negative{color:#ba443d}
+.au-record-result p{font-size:12px;line-height:1.4;margin:2px 0 0;color:#6e6c67}
+.au-record-times{display:grid;grid-template-columns:1fr 1fr;padding:16px 24px;border-top:1px solid #e5e1d8;gap:18px}
+.au-record-times>div{display:grid;gap:5px}
+.au-record-times>div>span,.au-record-times time>span{font-size:11px;color:#716f69}
+.au-record-times time{display:grid;gap:3px}
+.au-record-times strong{font-size:19px;line-height:1.25}
+.au-record-times small{font-size:11px;font-weight:500}
+.au-record-summary footer{display:flex;justify-content:space-between;align-items:center;gap:12px;background:#f1efe8;padding:14px 24px;font-size:12px}
+.au-record-summary footer a{font-weight:700;min-height:30px;display:inline-flex;align-items:center;color:#2455cd;white-space:nowrap}
+.au-record-page #record-proof{scroll-margin-top:88px}
+@media(max-width:480px){.au-record-summary header{padding:18px 18px 10px}.au-record-summary h1{font-size:32px}.au-record-state{font-size:10px;padding:6px 8px}.au-record-result{padding:10px 18px 16px}.au-record-result>strong{font-size:46px}.au-record-times{padding:14px 18px;gap:12px}.au-record-summary footer{padding:10px 18px}.au-record-page>.back{margin-bottom:0}.au-record-page>.au-evidence-details{margin-top:0}.au-record-summary{margin-top:10px}}

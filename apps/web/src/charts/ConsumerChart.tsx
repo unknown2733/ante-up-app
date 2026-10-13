@@ -3,12 +3,15 @@ import type { PointerEvent, KeyboardEvent } from 'react';
 import type { ConsumerAction, ConsumerPeriod, ConsumerSeries, MarketHistory } from '../../../../contracts/consumer';
 import { actionName, actionResult, chartBounds, chartClusters, chartPoints, chartSegments, portraitImageSource, scopedChartHistory,
   CHART_BOTTOM, CHART_LEFT, CHART_RIGHT, CHART_TOP, inspectChart, chartViewport, chartX } from './chartModel';
+import type { MarketView } from '../../../../contracts/types';
+import { AttentionContext } from '../consumer-ui/AttentionContext';
 import type { ChartBounds } from './chartModel';
 import './ConsumerChart.css';
 import { marketDisplayTitle } from '../consumer-ui/catalog';
 
 export interface ConsumerChartProps {
   history: MarketHistory;
+  marketContext?: MarketView | null;
   preferredSeriesKind?: ConsumerSeries['kind'];
   onSelectAction: (action: ConsumerAction) => void;
   onPeriodChange?: (period: ConsumerPeriod) => void;
@@ -44,7 +47,7 @@ function Portrait({ src, label, type }: { src?: string; label: string; type: 'pe
   </span>;
 }
 
-export function ConsumerChart({ history, preferredSeriesKind, onSelectAction, onPeriodChange, actorHref, recordHref, noteHref }: ConsumerChartProps) {
+export function ConsumerChart({ history, marketContext, preferredSeriesKind, onSelectAction, onPeriodChange, actorHref, recordHref, noteHref }: ConsumerChartProps) {
   const [seriesId, setSeriesId] = useState<string | null>(null);
   const [markerId, setMarkerId] = useState<string | null>(null);
   const [viewport, setViewport] = useState<ChartBounds | null>(null);
@@ -195,6 +198,7 @@ export function ConsumerChart({ history, preferredSeriesKind, onSelectAction, on
       <p className="au-chart-hint" id={instructionId}>Hover or drag to inspect · Zoom to explore. Keyboard: ← →, Home, End; Esc to clear.</p>
     </div>}
 
+    {series?.kind === 'ATTENTION_INDEX' && history.source.mode === 'LIVE' && !illustrative && <AttentionContext market={marketContext} observedAtMs={latest?.atMs ?? null} />}
     {dateOnly && <div className="au-chart-history-context"><strong>{series?.aggregation === 'daily' ? 'Daily activity' : 'Cumulative activity'}</strong><span>{series?.observationNote}</span><small>Report dates · ranges end at the latest available report · no live feed</small></div>}
 
     {dateOnly && series && <details className="au-chart-observations"><summary>View all {series.points.length} recorded observations</summary><div className="au-chart-observation-scroll"><table><thead><tr><th>Report date</th><th>{series.unit}</th><th>Source</th></tr></thead><tbody>{series.points.map(point => <tr key={point.atMs}><td><time dateTime={point.reportedDate}>{point.reportedDate}</time></td><td>{number(Number(point.value))}</td><td>{point.sourceUrl && <a href={point.sourceUrl} target="_blank" rel="noopener noreferrer">View source ↗</a>}</td></tr>)}</tbody></table></div></details>}

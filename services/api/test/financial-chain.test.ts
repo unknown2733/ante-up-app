@@ -81,6 +81,21 @@ test('B quotes, registration reservation and prepared instructions share the con
   await assert.rejects(()=>reader.quote({...curveIntent,requestId:randomUUID()},market,now),/REQUOTE_REQUIRED/);
   clockTime=now-1;
   assert.equal(await reader.quote(validateFinancialIntent({requestId:randomUUID(),wallet,action:'spotBuy',marketId,quantityAtoms:'1'}),market,now),null);
+  // Slow account reads must precede the final Clock sample, not eat the review window.
+  let completedAt=now;
+  const originalTokenAt=state.tokenAt.bind(state);
+  state.tokenAt=async(...args:Parameters<typeof state.tokenAt>)=>{completedAt+=4;return originalTokenAt(...args);};
+  let sampledAt=0;
+  const slowReader=new FirstSliceFinancialReader(state,store,()=>completedAt,async()=>{
+    sampledAt=completedAt;return {unixTimestamp:completedAt,observedAt:completedAt};
+  });
+  const delayedQuote=await slowReader.quote({...curveIntent,requestId:randomUUID()},market,now);
+  assert.ok(delayedQuote);
+  assert.ok(completedAt>now);
+  assert.equal(sampledAt,completedAt);
+  assert.equal(delayedQuote.quotedAt,completedAt);
+  assert.equal(delayedQuote.expiresAt-completedAt,29,'29 seconds remain after all quote reads');
+  validateFinancialQuote(delayedQuote,delayedQuote.intent,market,{cluster:'localnet',programId,now:completedAt});
   store.close();
 });
 
@@ -97,7 +112,7 @@ test('fresh wallet creates payment ATA for faucet and keyword ATA for first curv
     async associatedToken(owner:string,mint:string){const payment=mint===paymentMint;return {address:payment?paymentAccount:keywordAccount,owner,mint,amount:payment&&paymentExists?100_000_000_000n:0n,exists:payment?paymentExists:false};},
     async market(){return {phase:MarketPhase.Curve,latestSequence:7n};},async financeMarket(){return fm;},
     async config(){return {configVersion:3n};},async tokenAt(a:string,m:string,o:string){return {address:a,mint:m,owner:o,amount:100_000_000_000n,exists:true};}}) as unknown as FinalizedFinancialAccounts;
-  const reader=new FirstSliceFinancialReader(state,store);
+  const reader=new FirstSliceFinancialReader(state,store,()=>now);
   const tx=new KitFirstSliceFinancialTransactionAdapter({state,reader,blockhashes:{async latest(){return {blockhash:wallet,lastValidBlockHeight:999n};}},now:()=>now});
   const faucetIntent=validateFinancialIntent({requestId:randomUUID(),wallet,action:'faucet',marketId:null});
   const faucet=await reader.quote(faucetIntent,null,now);

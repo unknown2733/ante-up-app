@@ -43,7 +43,8 @@ const localProofs=[
   {...issuedProof,id:'qa-local:invalid-proof',recordId:'qa-local:proof-invalid',state:'INVALID',error:'CALCULATION_ERROR'},
 ];
 const proofCases=[issuedProof,...localProofs];
-const cases = [...actualCases, ...localCases];
+const summaryCase = args.includes('--record-summary') ? (await getPublic('/api/v1/records/EfCpStfVtdF1zuToUpjSuqviW5cG4VT952PiP1dAh8nY')).data : null;
+const cases = [...(summaryCase ? [summaryCase] : []), ...actualCases, ...localCases];
 const allowedImageOrigins = [...new Set(catalog.map(item => {
   try { const url = new URL(item.thumbnailUrl); return url.protocol === 'https:' ? url.origin : null; } catch { return null; }
 }).filter(Boolean))];
@@ -180,7 +181,7 @@ try {
     state=await proofProbe();assert(state.overflow===0,`expanded proof overflow ${state.overflow}px`);
     return state;
   };
-  for(const viewport of [{name:'desktop-1440',width:1440,height:900,mobile:false},{name:'mobile-390',width:390,height:844,mobile:true},{name:'mobile-320',width:320,height:568,mobile:true}]){
+  for(const viewport of summaryCase ? [{name:'mobile-400',width:400,height:712,mobile:true}] : [{name:'desktop-1440',width:1440,height:900,mobile:false},{name:'mobile-390',width:390,height:844,mobile:true},{name:'mobile-320',width:320,height:568,mobile:true}]){
     await send('Emulation.setDeviceMetricsOverride',{...viewport,name:undefined,deviceScaleFactor:1});
     await send('Emulation.setTouchEmulationEnabled',{enabled:viewport.mobile,maxTouchPoints:viewport.mobile?5:1});
     for(const [index,record] of cases.entries()){
@@ -189,6 +190,13 @@ try {
       await send('Page.navigate',{url:new URL(`/records/${encodeURIComponent(record.id)}`,base).href});
       let probe=await waitFor(state=>record.status==='OPEN'?state.text.includes('Active'):state.shareSection);
       check(probe.overflow===0,`record page overflow ${probe.overflow}px`);
+      if(summaryCase){
+        const summary=await evaluate(`(()=>{const e=document.querySelector('.au-record-summary');return {text:e?.innerText,bottom:e?.getBoundingClientRect().bottom,detailsClosed:!document.querySelector('.au-record-page>.au-evidence-details')?.open}})()`);
+        check(summary.bottom<=viewport.height-60,'summary proof/times below mobile bottom navigation');
+        check(summary.detailsClosed,'original IDs unexpectedly expanded');
+        if(record.id===summaryCase.id){check(summary.text?.includes('−0.01%')&&summary.text?.includes('00:37')&&summary.text?.includes('00:43'),'actual record summary result or UTC times differ');check(summary.text?.includes('Proof pending')&&!summary.text?.includes('SAS issued'),'actual pending proof relabeled issued');}
+        await screenshot(`${name}-summary`);
+      }
       const recordProof=proofCases.find(p=>p.id===record.proofId);
       if(recordProof){const evidence=await checkProof(recordProof,name);await screenshot(`${name}-evidence`);check(evidence.panel,'record proof evidence absent');}
       if(record.status==='OPEN'){

@@ -255,6 +255,22 @@ export class FirstSliceFinancialReader implements FinancialReader {
     const pending=this.registrations.pending(intent.requestId);
     return pending && pending.address===derived.address && pending.queryHash===derived.queryHash ? pending : null;
   }
+  /** Seal the validity window only after pricing/account reads have completed. */
+  private async finishQuote(quote:FinancialQuote, view:MarketView|null=null, deadlineLimit=Number.MAX_SAFE_INTEGER):Promise<FinancialQuote> {
+    let sample=null;
+    try {sample=this.clock?await this.clock():null;} catch {throw new Error('REQUOTE_REQUIRED');}
+    const quotedAt=this.now();
+    const expiresAt=Math.min(sample?financialQuoteDeadline(quotedAt,quotedAt,sample):quotedAt+30,deadlineLimit);
+    if (!Number.isSafeInteger(quotedAt) || !Number.isSafeInteger(expiresAt) || expiresAt<=quotedAt) throw new Error('REQUOTE_REQUIRED');
+    // Latency must never turn an expired observation or closing phase into a fresh quote.
+    if (quote.snapshot) {
+      const snapshot=view?.snapshot;
+      if (!snapshot || snapshot.payload.sequence!==quote.snapshot.sequence || snapshot.payloadHash!==quote.snapshot.payloadHash ||
+          snapshot.payload.dataThrough>quotedAt || quotedAt-snapshot.payload.dataThrough>=600) throw new Error('DATA_NOT_READY');
+    }
+    if (quote.intent.action==='openPro' && (quote.maturityAt===null || quotedAt>=quote.maturityAt-1800)) throw new Error('REQUOTE_REQUIRED');
+    return {...quote,quotedAt,expiresAt};
+  }
   async quote(intent:FinancialIntent,market:MarketView|null,now:number):Promise<FinancialQuote|null> {
     if (!Number.isSafeInteger(now) || now<0) return null;
     if (!['faucet','registerMarket','curveBuy','curveSell','spotBuy','spotSell','openPro','closePro','claim','depositLP','withdrawLP'].includes(intent.action)) return null;
@@ -262,11 +278,7 @@ export class FirstSliceFinancialReader implements FinancialReader {
     const [financeConfigAddress]=await findFinanceConfigPda({programAddress:address(this.state.options.programId)});
     await this.state.mintAt(String(finance.paymentMint),String(financeConfigAddress));
     if (intent.action!=='faucet') await this.state.tokenAt(String(finance.protocolTreasury),String(finance.paymentMint),String(finance.admin));
-    let expiresAt=now+30;
-    if (this.clock) {
-      try {const sample=await this.clock();expiresAt=financialQuoteDeadline(now,this.now(),sample);}
-      catch {throw new Error('REQUOTE_REQUIRED');}
-    }
+    const expiresAt=now+30; // Draft only; finishQuote seals time after the account reads.
     const base={id:randomUUID(),intent,chain:{cluster:this.state.options.cluster,programId:this.state.options.programId,address:this.state.options.programId},
       phase:null,quotedAt:now,expiresAt,configVersion:'0',snapshot:null,stateVersion:'0',priceAtoms:'0',grossAtoms:'0',
       tradeFeeAtoms:'0',timePrepaidAtoms:'0',maxPaymentAtoms:'0',minReceiveAtoms:'0',maxPayoutAtoms:null,maturityAt:null,executable:true} as FinancialQuote;
@@ -276,7 +288,7 @@ export class FirstSliceFinancialReader implements FinancialReader {
           receipt && BigInt(now)-receipt.lastClaimAt<finance.faucetCooldown) return null;
       await this.state.associatedToken(intent.wallet,String(finance.paymentMint));
       const [pda]=await findFinanceConfigPda({programAddress:address(this.state.options.programId)});
-      return {...base,chain:{...base.chain,address:String(pda)},stateVersion:finance.faucetMinted.toString(),minReceiveAtoms:finance.faucetAmount.toString()};
+      return this.finishQuote({...base,chain:{...base.chain,address:String(pda)},stateVersion:finance.faucetMinted.toString(),minReceiveAtoms:finance.faucetAmount.toString()});
     }
     if (intent.action==='registerMarket') {
       const entry=await deriveRegistration(intent,this.state.options.programId);
@@ -284,8 +296,9 @@ export class FirstSliceFinancialReader implements FinancialReader {
       if (await this.state.options.accounts.get(String(marketPda))) return null;
       const payment=await this.state.associatedToken(intent.wallet,String(finance.paymentMint));
       if (payment.amount<10n*UNIT) return null;
-      this.registrations.reserve(entry,intent.requestId,base.expiresAt,now);
-      return {...base,chain:{...base.chain,address:String(marketPda)},grossAtoms:(10n*UNIT).toString(),maxPaymentAtoms:(10n*UNIT).toString()};
+      const sealed=await this.finishQuote({...base,chain:{...base.chain,address:String(marketPda)},grossAtoms:(10n*UNIT).toString(),maxPaymentAtoms:(10n*UNIT).toString()});
+      this.registrations.reserve(entry,intent.requestId,sealed.expiresAt,sealed.quotedAt);
+      return sealed;
     }
     if (!market || !intent.marketId) return null;
     if (market.phase==='INDEXED' && ['spotBuy','spotSell','openPro','closePro','claim','depositLP','withdrawLP'].includes(intent.action))
@@ -309,9 +322,9 @@ export class FirstSliceFinancialReader implements FinancialReader {
     if (intent.action==='curveBuy' && (payment.amount<amount || inventory.amount<q) ||
         intent.action==='curveSell' && (keyword.amount<q || vault.amount<amount+fee.protocol)) return null;
     const price=UNIT+sold/5000n;
-    return {...base,chain:{...base.chain,address:intent.marketId},phase:'CURVE',configVersion:config.configVersion.toString(),
+    return this.finishQuote({...base,chain:{...base.chain,address:intent.marketId},phase:'CURVE',configVersion:config.configVersion.toString(),
       stateVersion:fm.stateVersion.toString(),priceAtoms:price.toString(),grossAtoms:gross.toString(),tradeFeeAtoms:fee.total.toString(),
-      maxPaymentAtoms:intent.action==='curveBuy'?amount.toString():'0',minReceiveAtoms:intent.action==='curveSell'?amount.toString():'0'};
+      maxPaymentAtoms:intent.action==='curveBuy'?amount.toString():'0',minReceiveAtoms:intent.action==='curveSell'?amount.toString():'0'});
   }
   private async indexedQuote(base:FinancialQuote,intent:FinancialIntent,view:MarketView,finance:FinanceConfig,now:number):Promise<FinancialQuote|null> {
     const marketId=intent.marketId!;
@@ -332,7 +345,7 @@ export class FirstSliceFinancialReader implements FinancialReader {
       const due=verified.value.payout+verified.value.refund;
       if (!u64(due) || due>fm.otherReserved || due>vault.amount) return null;
       await this.state.associatedToken(intent.wallet,String(finance.paymentMint));
-      return {...common,snapshot:null,minReceiveAtoms:due.toString(),grossAtoms:verified.value.payout.toString()};
+      return this.finishQuote({...common,snapshot:null,minReceiveAtoms:due.toString(),grossAtoms:verified.value.payout.toString()});
     }
     const snapshot=view.snapshot;
     if (!snapshot || snapshot.finality!=='finalized' || snapshot.payload.sequence!==market.latestSequence.toString() ||
@@ -358,8 +371,8 @@ export class FirstSliceFinancialReader implements FinancialReader {
       if (amount<=0n || !u64(amount) || intent.action==='spotBuy' &&
           (inventory.amount<q || payment.amount<amount || freeCapital(vault.amount+gross+fee.vault,fm.externalQ+q,fm.pmax,fm.proReserved,fm.otherReserved,500n*UNIT)<0n) ||
           intent.action==='spotSell' && (keyword.amount<q || fm.externalQ<q || vault.amount<amount+fee.protocol)) return null;
-      return {...withPrice,grossAtoms:gross.toString(),tradeFeeAtoms:fee.total.toString(),
-        maxPaymentAtoms:intent.action==='spotBuy'?amount.toString():'0',minReceiveAtoms:intent.action==='spotSell'?amount.toString():'0'};
+      return this.finishQuote({...withPrice,grossAtoms:gross.toString(),tradeFeeAtoms:fee.total.toString(),
+        maxPaymentAtoms:intent.action==='spotBuy'?amount.toString():'0',minReceiveAtoms:intent.action==='spotSell'?amount.toString():'0'},view);
     }
     if (intent.action==='openPro') {
       if (!entry || !intent.collateralAtoms || !intent.leverageBps || !intent.direction || view.epochPhase!=='PRO_OPEN' ||
@@ -376,8 +389,8 @@ export class FirstSliceFinancialReader implements FinancialReader {
       const total=BigInt(intent.collateralAtoms)+fee.total+prepaid;
       if (![terms.notional,terms.reserve,terms.capital,prepaid,total].every(u64) || payment.amount<total || freeCapital(vault.amount+BigInt(intent.collateralAtoms)+fee.vault+prepaid,
           fm.externalQ,fm.pmax,fm.proReserved+terms.reserve,fm.otherReserved+prepaid,500n*UNIT)<0n) return null;
-      return {...withPrice,grossAtoms:terms.notional.toString(),tradeFeeAtoms:fee.total.toString(),timePrepaidAtoms:prepaid.toString(),
-        maxPaymentAtoms:total.toString(),maxPayoutAtoms:terms.reserve.toString(),maturityAt:Number(maturity)};
+      return this.finishQuote({...withPrice,grossAtoms:terms.notional.toString(),tradeFeeAtoms:fee.total.toString(),timePrepaidAtoms:prepaid.toString(),
+        maxPaymentAtoms:total.toString(),maxPayoutAtoms:terms.reserve.toString(),maturityAt:Number(maturity)},view,Number(maturity-1801n));
     }
     if (intent.action==='closePro') {
       if (!intent.positionId || !view.epochPhase || view.epochPhase==='SETTLING') return null;
@@ -388,12 +401,12 @@ export class FirstSliceFinancialReader implements FinancialReader {
         position.direction===PositionDirection.Long?'long':'short') as {payout:bigint;reserve:bigint;notional:bigint};
       // Refund keeps decreasing while the wallet approves. Quote a lower bound
       // through the last executable second, while preserving exact price/state guards.
-      const expiresAt=Math.min(base.expiresAt,Number(position.maturity-1n));
-      if (!Number.isSafeInteger(expiresAt) || expiresAt<=now) return null;
+      const sealed=await this.finishQuote(withPrice,view,Number(position.maturity-1n));
+      const expiresAt=sealed.expiresAt;
       const fee=timeFee(position.capital,position.notional,position.maturity-position.openedAt,BigInt(expiresAt)-position.openedAt) as {prepaid:bigint;refund:bigint};
       if (terms.reserve!==position.maximumPayout || terms.notional!==position.notional || fee.prepaid!==position.prepaidFee) return null;
       const due=terms.payout+fee.refund;
-      return {...withPrice,expiresAt,grossAtoms:terms.payout.toString(),timePrepaidAtoms:position.prepaidFee.toString(),minReceiveAtoms:due.toString()};
+      return {...sealed,grossAtoms:terms.payout.toString(),timePrepaidAtoms:position.prepaidFee.toString(),minReceiveAtoms:due.toString()};
     }
     if (intent.action==='depositLP' || intent.action==='withdrawLP') {
       if (!lpAllowed || !intent.quantityAtoms || !['LP_WINDOW','INITIAL_LP'].includes(view.epochPhase??'') ||
@@ -403,12 +416,12 @@ export class FirstSliceFinancialReader implements FinancialReader {
       if (intent.action==='depositLP') {
         const shares=q*fm.totalShares/nav;
         if (shares<=0n || !u64(shares) || payment.amount<q || freeCapital(vault.amount+q,fm.externalQ,fm.pmax,fm.proReserved,fm.otherReserved,500n*UNIT)<0n) return null;
-        return {...withPrice,grossAtoms:q.toString(),maxPaymentAtoms:q.toString(),minReceiveAtoms:shares.toString()};
+        return this.finishQuote({...withPrice,grossAtoms:q.toString(),maxPaymentAtoms:q.toString(),minReceiveAtoms:shares.toString()},view,Number(fm.lpWindowEnd-1n));
       }
       const holding=await this.state.holding(marketId,intent.wallet),payout=q*nav/fm.totalShares;
       if (!holding || holding.value.shares<q || payout<=0n || !u64(payout) || payout>vault.amount || fm.totalShares-q<fm.lockedShares ||
           freeCapital(vault.amount-payout,fm.externalQ,fm.pmax,fm.proReserved,fm.otherReserved,500n*UNIT)<0n) return null;
-      return {...withPrice,grossAtoms:payout.toString(),minReceiveAtoms:payout.toString()};
+      return this.finishQuote({...withPrice,grossAtoms:payout.toString(),minReceiveAtoms:payout.toString()},view,Number(fm.lpWindowEnd-1n));
     }
     return null;
   }

@@ -118,3 +118,23 @@ test('older Free operation rows gain an explicit discovery address on startup',(
   assert.equal(store.get(id)?.discoveryAddress,programId);
   store.close();
 });
+
+
+test('quote endpoint validates and timestamps a newly sealed quote after reader latency',async()=>{
+  const startedAt=now,store=new LiveStore(resolve(work,`${randomUUID()}.sqlite`));
+  const delayedFinancial:FinancialReader={...financial,async quote(intent,market,at){
+    now=at+12;
+    return financial.quote(intent,market,now);
+  }};
+  const api=createApp({mode:'localnet',programId,read,financial:delayedFinancial,financialTransactions:transactions,liveStore:store,chain,now:()=>now,verifier:{async verify(){return true;}}});
+  try {
+    const challenge=(await json(await api.handle(new Request(`${base}/v1/auth`,{method:'POST',body:JSON.stringify({wallet,cluster:'localnet'})})))).data;
+    const token=(await json(await api.handle(new Request(`${base}/v1/auth/session`,{method:'POST',body:JSON.stringify({wallet,cluster:'localnet',nonce:challenge.nonce,signature:'test'})})))).data.token;
+    const response=await post(api,'/v1/financial/quotes',{action:'faucet',marketId:null,wallet,requestId:randomUUID()},token);
+    const result=await json(response);
+    assert.equal(response.status,200);
+    assert.equal(result.asOf,startedAt+12);
+    assert.equal(result.data.quote.quotedAt,result.asOf);
+    assert.equal(result.data.quote.expiresAt-result.asOf,30);
+  } finally {now=startedAt;store.close();}
+});

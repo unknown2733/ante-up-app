@@ -127,8 +127,9 @@ export function createApp(options: {
           if (intent.marketId && !market) return fail('INVALID_INPUT','market not found',intent.requestId);
           const quoted = await options.financial.quote(intent,market,asOf);
           if (!quoted) return json(envelope(notExecutable('FINANCIAL_CHAIN_STATE_NOT_READY'),asOf));
-          const quote = validateFinancialQuote(quoted,intent,market,{cluster:mode,programId:options.programId!,now:asOf});
-          return json(envelope({kind:'quote',quote:options.liveStore!.saveFinancialQuote(quote,mode,options.programId!)},asOf));
+          const quoteAsOf = now();
+          const quote = validateFinancialQuote(quoted,intent,market,{cluster:mode,programId:options.programId!,now:quoteAsOf});
+          return json(envelope({kind:'quote',quote:options.liveStore!.saveFinancialQuote(quote,mode,options.programId!)},quoteAsOf));
         }
         if (request.method === 'POST' && parts.length === 4 && parts[2] === 'transactions' && parts[3] === 'prepare') {
           const body = await parseBody(request) as Partial<FinancialPrepareRequest> | null;

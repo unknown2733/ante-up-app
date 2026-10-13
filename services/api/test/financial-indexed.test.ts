@@ -40,12 +40,13 @@ test('indexed spot, Pro open/close/claim and LP quotes compile B instructions wi
     async associatedToken(owner:string,mint:string){return {address:mint===paymentMint?paymentAta:keywordAta,owner,mint,amount:100_000n*unit,exists:true};},
     async holding(){return {address:programId,value:{market:address(marketId),owner:address(wallet),shares:500n*unit}};},
     async settlement(){return null;},async position(){return null;},async programAccounts(){return {slot:'7',accounts:[]};}}) as unknown as FinalizedFinancialAccounts;
-  const reader=new FirstSliceFinancialReader(state,store,()=>now);
+  let wallNow=now;
+  const reader=new FirstSliceFinancialReader(state,store,()=>wallNow);
   assert.ok((await reader.vault(marketId))?.value.navAtoms);
   fm.openPositions=1;
   assert.equal((await reader.vault(marketId))?.value.navAtoms,null);
   fm.openPositions=0;
-  const tx=new KitFirstSliceFinancialTransactionAdapter({state,reader,blockhashes:{async latest(){return {blockhash:wallet,lastValidBlockHeight:999n};}},now:()=>now});
+  const tx=new KitFirstSliceFinancialTransactionAdapter({state,reader,blockhashes:{async latest(){return {blockhash:wallet,lastValidBlockHeight:999n};}},now:()=>wallNow});
   const snapshot={payload:{marketId,sequence:'7',dataThrough:now-50,configVersion:'4'},payloadHash:hash,finality:'finalized' as const};
   const market:MarketView={id:marketId,keyword:'test',aliases:[],phase:'INDEXED',dataStatus:'VALID',epochPhase:'LP_WINDOW',supported:true,
     chain:{cluster:'localnet',programId,address:marketId},snapshot:snapshot as any,anchor:null,
@@ -53,8 +54,8 @@ test('indexed spot, Pro open/close/claim and LP quotes compile B instructions wi
   async function build(action:string,extra:Record<string,unknown>={}){
     const intent=validateFinancialIntent({requestId:randomUUID(),wallet,action,marketId,...extra});
     const quote=await reader.quote(intent,market,now);assert.ok(quote,action);
-    validateFinancialQuote(quote,intent,market,{cluster:'localnet',programId,now});
-    const built=await validatePreparedFinancial(await tx.prepare(quote),quote,tx,{cluster:'localnet',programId,now});
+    validateFinancialQuote(quote,intent,market,{cluster:'localnet',programId,now:wallNow});
+    const built=await validatePreparedFinancial(await tx.prepare(quote),quote,tx,{cluster:'localnet',programId,now:wallNow});
     return {quote,ix:message(built.prepared.unsignedTransaction).instructions.at(-1)!};
   }
   const spot=await build('spotBuy',{quantityAtoms:'1000000'});
@@ -103,6 +104,21 @@ test('indexed spot, Pro open/close/claim and LP quotes compile B instructions wi
     const nearMaturity=await build('closePro',{positionId:positionAddress});
     assert.equal(nearMaturity.quote.expiresAt,now+9);
   }
+  // A later sealing time must drive the refund bound as well as expiry.
+  opened.maturity=BigInt(now+86400);
+  opened.prepaidFee=timeFee(opened.capital,opened.notional,opened.maturity-opened.openedAt,0n).prepaid;
+  wallNow=now+11;
+  const sealedClose=await build('closePro',{positionId:positionAddress});
+  assert.equal(sealedClose.quote.quotedAt,wallNow);
+  assert.equal(sealedClose.quote.expiresAt,wallNow+30);
+  const finalFee=timeFee(opened.capital,opened.notional,opened.maturity-opened.openedAt,BigInt(sealedClose.quote.expiresAt)-opened.openedAt);
+  const finalTerms=proTerms(opened.collateral,opened.leverageBps,opened.entryPrice,unit,fm.pmax,'short');
+  assert.equal(BigInt(sealedClose.quote.minReceiveAtoms),finalTerms.payout+finalFee.refund);
+  wallNow=now+550; // dataThrough is now-50: precisely 600 seconds old after reads.
+  await assert.rejects(()=>build('closePro',{positionId:positionAddress}),/DATA_NOT_READY/);
+  wallNow=now+10;opened.maturity=BigInt(now+10);
+  await assert.rejects(()=>build('closePro',{positionId:positionAddress}),/REQUOTE_REQUIRED/);
+  wallNow=now;
   fm.otherReserved=100n*unit;
   opened.state=PositionState.Settled;
   (state as any).claimByAddress=async()=>({address:claimAddress,value:{market:address(marketId),owner:address(wallet),position:address(positionAddress),

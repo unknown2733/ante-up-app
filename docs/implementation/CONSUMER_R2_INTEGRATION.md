@@ -1,5 +1,7 @@
 # Unified consumer R2 integration — 2026-10-13
 
+Current deployment and device status are recorded in **Mobile signing and device QA — October 13, 2026 KST** below. Earlier sections preserve their checkpoint-specific results and limitations.
+
 ## Scope and source
 
 Integrated in `consumer/unified-integration`, starting from public snapshot `e5a8b70` and shared contract `9da25f7`. This report describes local integration; it does not claim a public push, production deployment or a new physical-wallet test.
@@ -171,3 +173,54 @@ Finalized action receipts persist through data refresh; stale or incomplete refr
 The operator-paused Free gate now has a distinct explanation from data failure and numeric limits. A bounded one-hour admission helper preserves existing caps. Keeper changes include bounded execution and empty-cycle recovery. The prepared synthetic financial market has explicit provenance, uses no additional X collection and cannot create Free records through the API. Graduation and its 15-minute initial LP clock are intentionally deferred until the tester is ready.
 
 Exact Linux image ante-up:demo-experience-82340ef (SHA256 6b10fed774e19e077f5acda87652b13d712cb7db47881c4109526c96620b17c2) built successfully. Tests: 61 web passed/1 existing HTTP skip, 8 chart, 19 keeper, 11 API/history/keeper adapter, 5 financial harness. Exact-bundle browser QA: 22 trading/interaction cases and 27 result/proof cases, no failures/errors/blocked requests; 15 PNG exports validated. Reports: .runtime/trading-layout-qa/browser-XUW2v7/report.json and .runtime/result-card-qa/browser-d182ha/report.json. Assets: index-CBeu4pgo.js and index-DjPue-GC.css. Deployment and device evidence follow below.
+
+## Mobile signing and device QA — October 13, 2026 KST
+
+Source: project Working note `20_Working/2026-10-13 컨슈머 UX와 데모 완성 작업안.md`, section 23, plus the deployment coordinator's exact asset identifiers. This is a status reconciliation; no device or server actions were performed while updating this report.
+
+### Confirmed Free chip flow
+
+- Seeker + Seed Vault: entry at 09:37 KST and close at 09:43 KST completed with the user's approval and FINALIZED UI. Record: `EfCpStfVtdF1zuToUpjSuqviW5cG4VT952PiP1dAh8nY`.
+- Entry signature: `2dB6JMRo2f3dzzT5sBWynv2UdTc3EneHCR4aRpn5aCdNB2Zni7UshKt7mETfcMJqDPofFx5U6odW4oCQA7kEMQqb`.
+- Close signature: `1i8Bpbe6gmqtt65GozoZ6nK7XmeCrFN9n41WhRUSyCddu4yvecdksTPs2CaKNNmBVRtBRT3eFuRoFnW3jADhMh7`.
+- Active slots returned from 1/3 to 0/3. The closed result generated a PNG card and enabled share/save controls. SAS for this record was still pending at the observation; card creation does not establish SAS issuance or an external social post.
+- In the observed wallet flow, Native Success sometimes required tapping Close before the web response returned. The user performed biometric approval. An earlier expired blockhash attempt was confirmed unexecuted before the fresh successful request.
+
+### Financial signing changes and remaining device blocker
+
+Financial preparation and signing now use separate taps. Input, wallet, signer or screen changes invalidate stale prepared quotes; the review displays the actual action, direction and leverage. MWA authorization cannot reuse another chain's cached authorization. SDK overlay layering was corrected. Display copy was simplified while Devnet, source and illustrative-history qualifications remain available in details.
+
+`0cd5dfe` fixes duplicate authentication during parallel balance/vault reads by sharing an in-progress authorization for the same wallet, signer and chain, with correct failure/change cleanup. Its focused checks passed 17 cases. This code defect was not established as the sole cause of the earlier native websocket error. A read using the existing approved session showed **999.997998 tUSD and zero LP shares**.
+
+The first financial market's LP window had ended. A new liquidity market, `ApyEauP8KhFLxo6v1BTkJSiJogN9dKXueM715GBdyZDP`, was prepared and graduated after authentication, with its feed started and the initial LP window scheduled to end at 10:07:12 KST.
+
+For the 10 tUSD LP request `3e65bae3-5f11-4175-9cb7-b2bd1817de6f`, the user reported a native error after approval. At 09:57 KST, the server still reported UNKNOWN with a null signature, while chain checks showed the expiry height had passed, no holding account or new transaction, **zero LP shares**, and **999.997998 tUSD unchanged**. These observations establish an expired, unexecuted attempt; they do not establish a successful deposit or a known cause of the native error. No automatic resubmission occurred. The earlier LP request `ad464214-dddf-48ae-bcd5-dfdb3d6f7aca` also expired without a signature, LP shares or balance change and was resolved through status lookup.
+
+USB debugging disconnected while inspecting that native error. Windows reported the device present, but ADB was offline. The device connection was subsequently restored and device QA resumed. Sandbox command escalation was a separate tooling restriction, not evidence of a continuing device fault. The earlier native error's precise cause remains unconfirmed.
+
+### Device QA after connection recovery
+
+The coordinator verified these subsequent Seeker + Seed Vault actions on market `ApyEauP8KhFLxo6v1BTkJSiJogN9dKXueM715GBdyZDP`:
+
+| Action | Evidence | Verified result |
+| --- | --- | --- |
+| Deposit 10 tUSD into LP | Signature `3BjzmBmhxFQMzhukBCDLc3qnWB7fMjvDatJcKwxGczzqkfovtqpoVG93Ve3hKjro1rzVqaCfSSEyfeXaq5Dpky9t` | FINALIZED |
+| Withdraw the 10 tUSD LP deposit | Signature `4PpFmpJXBA4L4MrUNMAPM5Ut8HdmGEN25k7ci4uthzw8S9exvTN1b4bNCg8hntBjNG4GQx9T6QnXX6Z6Gggq7Gs6` | FINALIZED; LP shares returned to zero and balance to 999.997998 tUSD |
+| Buy 1 spot token, then sell it | Request prefixes `31e8e3fd` and `819b21b8` | Both FINALIZED; tokens returned to zero, balance 999.995598 tUSD, 0.0024 tUSD round-trip fees |
+| Open a 5× long with 10 tUSD collateral | Request prefix `86c277c3`; position `BpRPnZuXg93PLcTsy6ebzhebKszv6REJDbU7ik4RcxCe` | FINALIZED; balance 989.618377 tUSD, maximum payout reserve 160 tUSD |
+| Close that Pro position | Request `6d25f8f4-0a96-4558-b76a-81f653aacff8` | Native unknown-instruction error; chain position remained OPEN and no claim was created |
+
+Request prefixes above are abbreviated coordinator references, not complete request IDs or transaction signatures. The Pro close failure is being investigated as a time-accrual/refund `minReceive` race. A fix and successful retry have **not** yet been established by this update. LP and spot round trips are complete; **Pro close/claim, remaining directional coverage and normal-maturity keeper validation remain open**. Do not report all financial QA complete.
+
+The scheduled Free admission gate closure was verified at **10:08:55 KST**. This records closure of new admission, not deletion of existing chip records.
+
+### Current live deployment
+
+- Public source: `20780b3`; web image: `ante-up:mobile-followup-20780b3`.
+- Image SHA-256: `161b8119db416069cf9823d40255539a37e989510f7715a0d96557e5d5743868`.
+- Live assets: `index-Bd0h9Qo_.js` and `index-3VbIcoYB.css`.
+- Linux checks: **76 passed, one pre-existing independent HTTP skip**. HTTPS delivery passed. This does not substitute for financial device QA.
+- The release includes the Seeker/400px Explore registration CTA overflow fix (client width 400 / scroll width 423 corrected to 400), checked at 320/400/1440 widths and through registration navigation.
+- Only web was replaced; the new registry/indexer paths and other services were preserved. ADB access is restored; device QA continues with the unresolved Pro close path above.
+
+The preceding `f4e335e` exact Linux bundle passed 26 chart/layout cases and 27 result/proof cases; the latter report is `.runtime/result-card-qa/browser-9rlfI9/report.json`. Those browser results belong to that earlier bundle, not an additional exact-bundle run of `20780b3`.
