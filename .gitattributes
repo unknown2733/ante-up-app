@@ -1,2 +1,4 @@
 # Public response evidence must retain exact bytes on every checkout.
 contracts/reference/raw/*.json -text
+# Shell entrypoints must run on Linux after a Windows checkout.
+*.sh text eol=lf
