@@ -3,9 +3,9 @@ import { ActionTabs, type ActionTab } from '../consumer-ui/controls';
 
 const details: Record<ActionTab, { title: string; description: string; requirement: string }> = {
   call: { title: 'Place a chip', description: 'Pick this subject, follow attention, and take back your chip to record the result.', requirement: 'Chip placement opens when this subject has a connected Devnet market and participation is enabled.' },
-  trade: { title: 'Buy / Sell', description: 'Trade this subject’s tokens with test tUSD.', requirement: 'Trading opens when this subject has a connected token market and an executable quote.' },
-  pro: { title: 'Pro', description: 'Take a long or short position with test assets.', requirement: 'Pro opens after a connected market graduates and its vault can accept positions.' },
-  liquidity: { title: 'Liquidity', description: 'Supply test assets to a market vault and manage your LP shares.', requirement: 'Liquidity opens when this subject has a connected vault with deposits enabled.' },
+  trade: { title: 'Buy / Sell', description: 'Trade this subject’s tokens with tUSD.', requirement: 'Trading opens when this subject has a connected token market and an executable quote.' },
+  pro: { title: 'Pro', description: 'Take a long or short position in this market.', requirement: 'Pro opens after a connected market graduates and its vault can accept positions.' },
+  liquidity: { title: 'Liquidity', description: 'Supply assets to a market vault and manage your LP shares.', requirement: 'Liquidity opens when this subject has a connected vault with deposits enabled.' },
 };
 
 /** Keep the product actions discoverable without authorizing an unregistered subject. */
@@ -32,7 +32,7 @@ export function ReferenceMarketActions({ section, onChange }: { section: ActionT
         <div><span>{section === 'call' ? 'Participation' : section === 'liquidity' ? 'Vault' : 'Execution quote'}</span><strong>{section === 'call' ? 'No money required' : 'Not available'}</strong></div>
         <div><span>Market connection</span><strong>Not connected</strong></div>
       </div>
-      <p id="reference-action-reason">{info.requirement} The public activity above is source data, not an execution price.</p>
+      <p id="reference-action-reason">This subject is not open for {section === 'call' ? 'chips' : section === 'liquidity' ? 'liquidity' : 'trading'} yet.</p><details className="au-evidence-details"><summary>Market availability</summary><p>{info.requirement} Public activity measures the linked source. Transactions, when available, use Devnet test assets.</p></details>
       <button type="button" className={`button full ${section === 'call' ? 'button-chip' : 'button-blue'}`} disabled aria-describedby="reference-action-reason">{action} · Not open yet</button>
       <div className="au-reference-action-links"><a className="text-link" href="/markets">Explore markets ↗</a><a className="text-link" href="/docs/markets-trading">How markets work ↗</a></div>
     </section>

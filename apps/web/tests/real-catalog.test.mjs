@@ -208,7 +208,11 @@ test('illustrative defaults are labeled and never borrow observed provenance', a
     const html = render(ConsumerChart, { history, onSelectAction: noAction });
     assert.match(html, /au-chart-illustrative/);
     assert.match(html, /temporary values, not measured activity/);
-    assert.match(html, /Illustrative change/);
+    const sourceDetails = html.match(/<details class="au-chart-source">([\s\S]*?)<\/details>/)?.[0];
+    assert.match(sourceDetails ?? '', /temporary values, not measured activity/);
+    assert.doesNotMatch(html.replace(sourceDetails ?? '', ''), /temporary values, not measured activity/);
+    assert.match(html, /Preview change/);
+    assert.match(html, /aria-pressed="true"[^>]*>[\s\S]*?Illustrative trend<\/button>/);
     assert.equal((html.match(/<circle /g) ?? []).length, 29);
     assert.doesNotMatch(html, /View data source|recorded observations|29 observed points/);
     const spark = render(MarketSparkline, { market, history });
@@ -217,4 +221,18 @@ test('illustrative defaults are labeled and never borrow observed provenance', a
     assert.equal((spark.match(/<circle /g) ?? []).length, 29);
   }
   assert.equal(count, 9);
+});
+
+test('display names preserve original market data and source provenance', async () => {
+  const { marketDisplayTitle, marketDisplaySubtitle } = await server.ssrLoadModule('/src/consumer-ui/catalog.ts');
+  const { MarketDiscovery } = await server.ssrLoadModule('/src/consumer-ui/MarketDiscovery.tsx');
+  const item = { ...market, id: 'synthetic-market', title: 'Synthetic finance demo', subtitle: 'Synthetic financial test · not measured attention', source: { mode: 'LIVE', label: 'Synthetic test feed · Devnet', asOfMs: source.asOfMs, observationLabel: 'Operator-generated test inputs; no real-world traffic' } };
+  const original = structuredClone(item);
+  assert.equal(marketDisplayTitle(item.title), 'Market index');
+  assert.equal(marketDisplayTitle('solana'), 'solana');
+  assert.equal(marketDisplaySubtitle(item), 'Index market');
+  const html = render(MarketDiscovery, { markets: [item], onSelectMarket: noAction });
+  assert.match(html, /Market index/);
+  assert.doesNotMatch(html, /Synthetic finance demo|Devnet observed/);
+  assert.deepEqual(item, original);
 });

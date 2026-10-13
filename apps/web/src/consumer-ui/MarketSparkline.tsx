@@ -49,7 +49,7 @@ export function MarketSparkline({ market, history }: { market: ConsumerMarket; h
     : points.reduce((best, point) => Math.abs(point.atMs - cursor) < Math.abs(best.atMs - cursor) ? point : best, points[0]);
   const sparse = segments.every(segment => segment.length === 1);
   const dates = `${dateLabel(first.atMs)} – ${dateLabel(last.atMs)}`;
-  const metric = illustrative ? 'Illustrative trend · preview index' : series.label;
+  const metric = illustrative ? 'Illustrative trend' : series.label;
   const description = illustrative ? `${metric}: ${points.length} temporary values, not measured activity. Latest preview index 100.` : `${metric}: ${points.length} observations, ${dates}. ${change === null ? 'Change unavailable because the first observation is zero.' : `${formatChange(change)} from first to last observed value.`}${sparse ? ' Separate dots show sparse observations; intervals are unobserved.' : ' Lines connect consecutive observations; missing intervals remain blank.'}`;
   return <span className={`au-sparkline${change !== null && change < 0 ? ' au-sparkline-down' : ''}`} data-market-id={market.id} data-series-kind={series.kind}>
     <span className="au-sparkline-metric" title={metric}>{metric}</span>
@@ -65,6 +65,6 @@ export function MarketSparkline({ market, history }: { market: ConsumerMarket; h
       {selected && <g pointerEvents="none"><line x1={selected.x} x2={selected.x} y1="5" y2="50" stroke="currentColor" strokeDasharray="2 2" /><circle cx={selected.x} cy={selected.y} r="4" fill="currentColor" /></g>}
     </svg>
     <span className="au-sparkline-summary"><strong>{cursor === null ? formatChange(change) : selected ? new Intl.NumberFormat('en', { maximumFractionDigits: 4 }).format(selected.value) : 'No observation'}</strong><small>{cursor === null ? sparse ? 'Sparse observations' : dates : selected ? `${dateLabel(selected.atMs)} · ${series.unit}` : 'Missing interval'}</small></span>
-    <small className="au-sparkline-basis">{illustrative ? 'Illustrative change · not measured' : `First → last observation${sparse ? ` · ${dates}` : ''}`}</small>
+    <small className="au-sparkline-basis">{illustrative ? 'Preview index · latest 100' : `First → last observation${sparse ? ` · ${dates}` : ''}`}</small>
   </span>;
 }

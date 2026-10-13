@@ -68,6 +68,7 @@ export function createLiveFinancialFlow(options: FinancialFlowOptions) {
   let lastAuthorization: WalletSession | null = null;
   const quoted = new Map<string, FinancialQuote>();
   const timings = new WeakMap<FinancialQuote, ReturnType<typeof startFinancialTiming>>();
+  const verified = new Map<FinancialQuote, { wallet: WalletContext; transaction: Transaction; result: Extract<FinancialPrepared, {kind:'transaction'}>; session: WalletSession; fingerprint: string }>();
 
   function requireWallet(wallet: WalletContext) { if (!sameWallet(wallet, options.getWallet())) throw new Error('Wallet or cluster changed.'); }
   async function request<T>(path: string, wallet: WalletContext, init: RequestInit = {}, existingSession?: WalletSession): Promise<T> {
@@ -86,7 +87,7 @@ export function createLiveFinancialFlow(options: FinancialFlowOptions) {
     requireWallet(wallet);
     return page.data;
   }
-  const post = <T,>(path: string, wallet: WalletContext, body: unknown) => request<T>(path, wallet, { method: 'POST', body: JSON.stringify(body) });
+  const post = <T,>(path: string, wallet: WalletContext, body: unknown, existingSession?: WalletSession) => request<T>(path, wallet, { method: 'POST', body: JSON.stringify(body) }, existingSession);
   function pending(wallet: WalletContext): FinancialPending | null {
     let value: string | null | undefined;
     try { value = storage?.getItem(pendingKey(wallet)); } catch { return null; }
@@ -123,6 +124,7 @@ export function createLiveFinancialFlow(options: FinancialFlowOptions) {
     if (!wallet) throw new Error('Connect a wallet before requesting a quote.');
     if (active) throw new Error('Another financial action is in progress.');
     if (pending(wallet)) throw new Error('Resolve the pending financial request before another action.');
+    verified.clear();
     const intent: FinancialIntent = { requestId: makeId(), wallet: wallet.address, ...fields };
     checkIntent(intent);
     const timing = startFinancialTiming(); timing('quote.start');
@@ -137,7 +139,7 @@ export function createLiveFinancialFlow(options: FinancialFlowOptions) {
     } catch (error) { timing('quote.failed'); throw error; }
   }
 
-  async function execute(quoteValue: FinancialQuote, onProgress?: (state: FinancialProgress) => void): Promise<FinancialOutcome> {
+  async function prepareQuote(quoteValue: FinancialQuote, onProgress?: (state: FinancialProgress) => void): Promise<FinancialOutcome | null> {
     const wallet = options.getWallet();
     const requestId = quoteValue.intent.requestId;
     if (!wallet) return { state: 'UNAVAILABLE', reason: 'Connect a wallet.', requestId, signature: null };
@@ -145,6 +147,7 @@ export function createLiveFinancialFlow(options: FinancialFlowOptions) {
     if (!canExecute(quoteValue.intent.action) || !verifier || !storage || !wallet.signer) return { state: 'UNAVAILABLE', reason: 'Verified on-chain financial signing or pending-request storage is not available.', requestId, signature: null };
     if (active || pending(wallet)) return { state: 'UNAVAILABLE', reason: 'Another financial request is pending.', requestId, signature: null };
     if (quoted.get(quoteValue.id) !== quoteValue) return { state: 'UNAVAILABLE', reason: 'Request a fresh quote.', requestId, signature: null };
+    verified.delete(quoteValue);
     const timing = timings.get(quoteValue) ?? startFinancialTiming();
     active = true;
     try {
@@ -167,6 +170,34 @@ export function createLiveFinancialFlow(options: FinancialFlowOptions) {
       timing('verify.ready', quoteValue.expiresAt - now());
       requireWallet(wallet);
       if (now() >= result.expiresAt || now() >= quoteValue.expiresAt) throw new Error('Quote or prepared transaction expired.');
+      const session = lastAuthorization;
+      if (!session || session.wallet !== wallet.address || session.cluster !== wallet.cluster || session.expiresAt <= now()) throw new Error('Financial session expired or changed.');
+      verified.set(quoteValue, {wallet, transaction, result, session, fingerprint: canonical(quoteValue)});
+      return null;
+    } catch (error) {
+      timing('execute.failed', quoteValue.expiresAt - now());
+      return {state:'AWAITING_SIGNATURE', reason:error instanceof Error ? error.message : 'Financial preparation failed.', requestId, signature:null};
+    } finally { active = false; }
+  }
+
+  async function signReviewed(quoteValue: FinancialQuote, onProgress?: (state: FinancialProgress) => void): Promise<FinancialOutcome> {
+    const wallet = options.getWallet();
+    const requestId = quoteValue.intent.requestId;
+    if (!wallet) return { state: 'UNAVAILABLE', reason: 'Connect a wallet.', requestId, signature: null };
+    const verifier = options.verifyInstruction;
+    if (!canExecute(quoteValue.intent.action) || !verifier || !storage || !wallet.signer) return { state: 'UNAVAILABLE', reason: 'Verified on-chain financial signing or pending-request storage is not available.', requestId, signature: null };
+    if (active || pending(wallet)) return { state: 'UNAVAILABLE', reason: 'Another financial request is pending.', requestId, signature: null };
+    if (quoted.get(quoteValue.id) !== quoteValue) return { state: 'UNAVAILABLE', reason: 'Request a fresh quote.', requestId, signature: null };
+    const timing = timings.get(quoteValue) ?? startFinancialTiming();
+    active = true;
+    try {
+      const ready = verified.get(quoteValue);
+      verified.delete(quoteValue);
+      if (!ready || ready.fingerprint !== canonical(quoteValue)) throw new Error('Review a fresh quote before signing.');
+      requireWallet(ready.wallet);
+      checkQuote(quoteValue, quoteValue.intent, wallet, now());
+      const {transaction, result, session} = ready;
+      if (now() >= result.expiresAt || now() >= session.expiresAt) throw new Error('Quote or prepared transaction expired.');
       quoted.delete(quoteValue.id);
       const pendingValue: FinancialPending = { requestId, wallet: wallet.address, cluster: wallet.cluster, action: quoteValue.intent.action, marketId: quoteValue.intent.marketId, signature: null };
       savePending(wallet, pendingValue);
@@ -174,7 +205,6 @@ export function createLiveFinancialFlow(options: FinancialFlowOptions) {
       let signature: string;
       try {
         timing('wallet.start', quoteValue.expiresAt - now());
-        const session = lastAuthorization;
         let stopped = false;
         const walletResult = wallet.signer.signAndSendTransactions([transaction]).then(
           signed => ({ kind: 'wallet' as const, signed }),
@@ -198,7 +228,7 @@ export function createLiveFinancialFlow(options: FinancialFlowOptions) {
               if (operation.requestId !== requestId || operation.wallet !== wallet.address || operation.action !== pendingValue.action) continue;
               if (operation.state === 'FINALIZED' || operation.state === 'FAILED') {
                 if (!(typeof operation.signature === 'string' && operation.signature.length > 0) && !(operation.state === 'FAILED' && operation.error?.code === 'REQUOTE_REQUIRED' && operation.signature === null)) continue;
-                return { state: operation.state, requestId, signature: operation.signature, reason: operation.error?.message } as FinancialOutcome;
+                return { state: operation.state, requestId, signature: operation.signature, reason: operation.error?.code === 'REQUOTE_REQUIRED' ? 'REQUOTE_REQUIRED' : operation.error?.message } as FinancialOutcome;
               }
             } catch { /* No status response can prove nonexecution; keep the pending marker. */ }
             finally { if (timer) clearTimeout(timer); controller.abort(); }
@@ -230,11 +260,11 @@ export function createLiveFinancialFlow(options: FinancialFlowOptions) {
       catch { return { state: 'UNKNOWN', reason: 'Signature returned, but pending record update failed. Recheck by request ID.', requestId, signature }; }
       if (!sameWallet(wallet, options.getWallet())) return { state: 'UNKNOWN', reason: 'Wallet changed after send.', requestId, signature };
       try {
-        const reported = await post<Operation>(`/operations/${encodeURIComponent(requestId)}/submit`, wallet, { wallet: wallet.address, signature });
+        const reported = await post<Operation>(`/operations/${encodeURIComponent(requestId)}/submit`, wallet, { wallet: wallet.address, signature }, session);
         if (reported.requestId !== requestId || reported.wallet !== wallet.address || reported.action !== quoteValue.intent.action || reported.signature !== signature) throw new Error('Submission identity differs from the signed transaction.');
         if (reported.state === 'FINALIZED' || reported.state === 'FAILED') {
           savePending(wallet, null);
-          return { state: reported.state, requestId, signature, reason: reported.error?.message };
+          return { state: reported.state, requestId, signature, reason: reported.error?.code === 'REQUOTE_REQUIRED' ? 'REQUOTE_REQUIRED' : reported.error?.message };
         }
         if (reported.state === 'SUBMITTED' || reported.state === 'CONFIRMED') onProgress?.(reported.state);
       } catch { return { state: 'UNKNOWN', reason: 'Submission report was not acknowledged.', requestId, signature }; }
@@ -242,11 +272,11 @@ export function createLiveFinancialFlow(options: FinancialFlowOptions) {
       for (let i = 0; i < (options.pollAttempts ?? 8); i++) {
         if (!sameWallet(wallet, options.getWallet())) return { state: 'UNKNOWN', reason: 'Wallet changed during finality check.', requestId, signature };
         try {
-          const operation = await request<Operation>(`/operations/${encodeURIComponent(requestId)}?wallet=${encodeURIComponent(wallet.address)}`, wallet);
+          const operation = await request<Operation>(`/operations/${encodeURIComponent(requestId)}?wallet=${encodeURIComponent(wallet.address)}`, wallet, {}, session);
           if (operation.requestId === requestId && operation.wallet === wallet.address && operation.action === quoteValue.intent.action && operation.signature === signature) {
             if (operation.state === 'FINALIZED' || operation.state === 'FAILED') {
               savePending(wallet, null);
-              return { state: operation.state, requestId, signature, reason: operation.error?.message };
+              return { state: operation.state, requestId, signature, reason: operation.error?.code === 'REQUOTE_REQUIRED' ? 'REQUOTE_REQUIRED' : operation.error?.message };
             }
             if (operation.state === 'SUBMITTED' || operation.state === 'CONFIRMED') onProgress?.(operation.state);
           }
@@ -259,6 +289,12 @@ export function createLiveFinancialFlow(options: FinancialFlowOptions) {
       return { state: 'AWAITING_SIGNATURE', reason: error instanceof Error ? error.message : 'Financial preparation failed.', requestId, signature: null };
     } finally { active = false; }
   }
+
+  async function execute(quoteValue: FinancialQuote, onProgress?: (state: FinancialProgress) => void): Promise<FinancialOutcome> {
+    const failure = await prepareQuote(quoteValue, onProgress);
+    return failure ?? signReviewed(quoteValue, onProgress);
+  }
+  function cancelReview(quoteValue: FinancialQuote) { verified.delete(quoteValue); quoted.delete(quoteValue.id); }
 
   async function recheck(): Promise<FinancialOutcome> {
     const wallet = options.getWallet();
@@ -273,7 +309,7 @@ export function createLiveFinancialFlow(options: FinancialFlowOptions) {
       if (operation.state === 'FINALIZED' || operation.state === 'FAILED') {
         if (!operation.signature && !(operation.state==='FAILED' && operation.error?.code==='REQUOTE_REQUIRED' && !p.signature)) throw new Error('Final operation has no transaction signature.');
         savePending(wallet, null);
-        return { state: operation.state, requestId: p.requestId, signature: operation.signature, reason: operation.error?.message };
+        return { state: operation.state, requestId: p.requestId, signature: operation.signature, reason: operation.error?.code === 'REQUOTE_REQUIRED' ? 'REQUOTE_REQUIRED' : operation.error?.message };
       }
       const next = { ...p, signature: operation.signature ?? p.signature };
       savePending(wallet, next);
@@ -281,5 +317,5 @@ export function createLiveFinancialFlow(options: FinancialFlowOptions) {
     } finally { active = false; }
   }
 
-  return { portfolio, vault, quote, execute, recheck, pending, canExecute };
+  return { portfolio, vault, quote, prepareQuote, signReviewed, cancelReview, execute, recheck, pending, canExecute };
 }

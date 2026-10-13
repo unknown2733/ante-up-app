@@ -17,3 +17,7 @@ export function mergeConsumerMarkets(samples: ConsumerMarket[], live: ConsumerMa
     ? a.title.localeCompare(b.title) || a.id.localeCompare(b.id)
     : a.source.mode === 'LIVE' ? -1 : 1);
 }
+
+/** Display names only: API identity, measurements, and provenance stay unchanged. */
+export const marketDisplayTitle = (title: string) => title === 'Synthetic finance demo' ? 'Market index' : title;
+export const marketDisplaySubtitle = (market: ConsumerMarket) => market.source.observationLabel === 'Operator-generated test inputs; no real-world traffic' ? 'Index market' : market.subtitle;

@@ -5,6 +5,7 @@ import { useConnect, useConnectedWallet, useDisconnect, useWalletStatus, useWall
 import { registerMwa, createDefaultAuthorizationCache, createDefaultChainSelector } from '@solana-mobile/wallet-standard-mobile';
 import type { Cluster, WalletContext } from './transactionBoundary';
 import { walletDisplayError } from './walletErrors';
+import { chainScopedAuthorizationCache } from './mobileAuthorizationCache';
 
 export const walletCluster: Cluster = import.meta.env.VITE_WALLET_CLUSTER === 'localnet' ? 'localnet' : 'devnet';
 const appUri = import.meta.env.VITE_MWA_APP_URI || (typeof location !== 'undefined' && location.protocol === 'https:' ? location.origin : '');
@@ -12,7 +13,7 @@ if (import.meta.env.VITE_API_BASE_URL && typeof navigator !== 'undefined' && /An
   registerMwa({
     appIdentity: { name: 'Ante Up', uri: appUri },
     chains: [`solana:${walletCluster}`],
-    authorizationCache: createDefaultAuthorizationCache(),
+    authorizationCache: chainScopedAuthorizationCache(createDefaultAuthorizationCache(), `solana:${walletCluster}`),
     chainSelector: createDefaultChainSelector(),
     onWalletNotFound: async () => { /* Keep the user on this page; show connection error below. */ },
   });

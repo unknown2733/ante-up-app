@@ -226,7 +226,7 @@ export function createLiveFreeFlow(options: FreeFlowOptions) {
           if (finalRecordId) projection.remember({ ...identity(wallet, requestValue.market.id), action: requestValue.action, recordId: finalRecordId, requestId, signature: page.data.signature! });
           return {state:'FINALIZED',requestId,signature:page.data.signature!,recordId:finalRecordId ?? undefined};
         }
-        return { state:'FAILED', requestId, signature: page.data.signature, reason: page.data.error?.message };
+        return { state:'FAILED', requestId, signature: page.data.signature, reason: page.data.error?.code === 'REQUOTE_REQUIRED' ? 'Request expired without execution. Review a new request before signing.' : page.data.error?.message };
       }
       const pending: FreeOutcome = { state: 'UNKNOWN', reason: `Not finalized yet (${page.data.state}).`, requestId, signature: page.data.signature ?? signature, recordId: uncertain.get(key)?.recordId };
       uncertain.set(key, pending);

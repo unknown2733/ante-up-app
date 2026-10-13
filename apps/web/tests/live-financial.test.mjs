@@ -121,15 +121,16 @@ test('wallet transport failure keeps UNKNOWN and traces timing without capturing
 });
 
 function hangingFlow(operation) {
-  const disk=new Map(), walletPromises=[]; let authCalls=0, submits=0, sequence=0;
-  let waitForPoll=async()=>{};
+  const disk=new Map(), walletPromises=[]; let authCalls=0, submits=0, sequence=0, verifies=0, requests=0, seconds=now;
+  let waitForPoll=async()=>{};let onVerify=()=>{};
   const owner={...wallet,signer:{signAndSendTransactions(){return new Promise((resolve,reject)=>walletPromises.push({resolve,reject}))}}};
-  const offers=new Map();
-  const flow=createLiveFinancialFlow({baseUrl:'/api',getWallet:()=>owner,nowSeconds:()=>now,
+  const offers=new Map(); let current=owner;
+  const flow=createLiveFinancialFlow({baseUrl:'/api',getWallet:()=>current,nowSeconds:()=>seconds,
     authorize:async()=>{authCalls++;return {token:'private-auth',wallet:owner.address,cluster:'devnet',expiresAt:now+300}},
-    requestId:()=>`hanging-${++sequence}`,verifyInstruction:async()=>{},pollAttempts:2,wait:()=>waitForPoll(),
+    requestId:()=>`hanging-${++sequence}`,verifyInstruction:async()=>{verifies++;onVerify()},pollAttempts:2,wait:()=>waitForPoll(),
     storage:{getItem:key=>disk.get(key)??null,setItem:(key,value)=>disk.set(key,value),removeItem:key=>disk.delete(key)},
     fetcher:async(url,init)=>{
+      requests++;
       if(url.endsWith('/submit')) {submits++;throw new Error('No late response should be submitted')}
       if(url.includes('/operations/')) {const id=decodeURIComponent(url.split('/operations/')[1].split('?')[0]);return envelope(operation(id,owner))}
       if(url.endsWith('/quotes')) {const q=quote(JSON.parse(init.body),{id:`offer-${sequence}`});offers.set(q.id,q);return envelope({kind:'quote',quote:q})}
@@ -137,7 +138,7 @@ function hangingFlow(operation) {
       const messageBytes=getCompiledTransactionMessageEncoder().encode({version:'legacy',header:{numSignerAccounts:1,numReadonlySignerAccounts:0,numReadonlyNonSignerAccounts:1},staticAccounts:[owner.address,ANTE_UP_PROGRAM_ADDRESS],lifetimeToken:'11111111111111111111111111111111',instructions:[{programAddressIndex:1,accountIndices:[0],data:new Uint8Array()}]});
       return envelope({kind:'transaction',wallet:owner.address,cluster:'devnet',programId:ANTE_UP_PROGRAM_ADDRESS,action:q.intent.action,requestId:q.intent.requestId,quote:q,expiresAt:q.expiresAt,unsignedTransaction:Buffer.from(getTransactionEncoder().encode({messageBytes,signatures:{[owner.address]:null}})).toString('base64')});
     }});
-  return {flow,owner,walletPromises,setWait:fn=>{waitForPoll=fn},counts:()=>({authCalls,submits})};
+  return {flow,owner,walletPromises,setWait:fn=>{waitForPoll=fn},setTime:value=>{seconds=value},setVerify:fn=>{onVerify=fn},setWallet:value=>{current=value},counts:()=>({authCalls,submits,verifies,requests})};
 }
 const finalOperation=(id,owner)=>({requestId:id,wallet:owner.address,action:'spotBuy',state:'FINALIZED',signature:`verified-${id}`,error:null});
 
@@ -173,4 +174,62 @@ test('only verified unsigned REQUOTE_REQUIRED failure releases a hanging wallet 
   const h=hangingFlow((id,owner)=>({...finalOperation(id,owner),state:'FAILED',signature:null,error:{code:'REQUOTE_REQUIRED',message:'Verified unlanded expiry'}}));
   const offered=await h.flow.quote({action:'spotBuy',marketId,quantityAtoms:'1'});
   assert.equal((await h.flow.execute(offered.quote)).state,'FAILED');assert.equal(h.flow.pending(h.owner),null);
+});
+
+
+test('verified financial review invokes wallet synchronously on the second tap without auth, HTTP or RPC',async()=>{
+  const h=hangingFlow(finalOperation);
+  const offer=await h.flow.quote({action:'spotBuy',marketId,quantityAtoms:'1'});
+  assert.equal(await h.flow.prepareQuote(offer.quote),null);
+  assert.equal(h.walletPromises.length,0);
+  const before=h.counts();
+  const running=h.flow.signReviewed(offer.quote);
+  assert.equal(h.walletPromises.length,1,'signer must start before signReviewed returns its Promise');
+  assert.deepEqual(h.counts(),before,'no auth, HTTP or verifier after trusted second tap');
+  assert.equal((await h.flow.signReviewed(offer.quote)).state,'UNAVAILABLE');
+  assert.equal((await running).state,'FINALIZED');
+  assert.equal(h.walletPromises.length,1);
+});
+
+test('financial prepared reviews invalidate on expiry, cancellation, quote mutation, new quote and signer change',async()=>{
+  for(const reason of ['expiry','cancel','mutation','new-quote','signer-change']) {
+    const h=hangingFlow(finalOperation);
+    const offer=await h.flow.quote({action:'spotBuy',marketId,quantityAtoms:'1'});
+    assert.equal(await h.flow.prepareQuote(offer.quote),null);
+    if(reason==='expiry') h.setTime(now+25);
+    if(reason==='cancel') h.flow.cancelReview(offer.quote);
+    if(reason==='mutation') offer.quote.maxPaymentAtoms='1';
+    if(reason==='new-quote') await h.flow.quote({action:'spotBuy',marketId,quantityAtoms:'2'});
+    if(reason==='signer-change') h.setWallet({...h.owner,signer:{...h.owner.signer}});
+    const result=await h.flow.signReviewed(offer.quote);
+    assert.ok(['AWAITING_SIGNATURE','UNAVAILABLE'].includes(result.state),reason);
+    assert.equal(h.walletPromises.length,0,reason);
+    assert.equal(h.flow.pending(h.owner),null,reason);
+  }
+});
+
+test('cancelled financial wallet signature clears pending and requires a newly reviewed quote',async()=>{
+  const h=hangingFlow(finalOperation);let release;
+  h.setWait(()=>new Promise(resolve=>{release=resolve}));
+  const offer=await h.flow.quote({action:'spotBuy',marketId,quantityAtoms:'1'});
+  assert.equal(await h.flow.prepareQuote(offer.quote),null);
+  const running=h.flow.signReviewed(offer.quote);
+  h.walletPromises[0].reject(Object.assign(new Error('User rejected'),{code:4001}));
+  assert.equal((await running).state,'AWAITING_SIGNATURE');
+  assert.equal(h.flow.pending(h.owner),null);
+  assert.equal((await h.flow.signReviewed(offer.quote)).state,'UNAVAILABLE');
+  release();
+});
+
+
+test('a quote expiring during verification is never exposed as ready to sign',async()=>{
+  const h=hangingFlow(finalOperation);
+  const offer=await h.flow.quote({action:'spotBuy',marketId,quantityAtoms:'1'});
+  h.setVerify(()=>h.setTime(now+25));
+  const failed=await h.flow.prepareQuote(offer.quote);
+  assert.equal(failed.state,'AWAITING_SIGNATURE');
+  assert.match(failed.reason,/expired/);
+  await h.flow.signReviewed(offer.quote);
+  assert.equal(h.walletPromises.length,0);
+  assert.equal(h.flow.pending(h.owner),null);
 });
