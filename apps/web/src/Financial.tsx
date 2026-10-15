@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useConnectedWallet } from '@solana/kit-plugin-wallet/react';
 import type { Action, MarketView } from '../../../contracts/types';
 import type { FinancialAction, FinancialIntent, FinancialPortfolio, FinancialQuote, FinancialVault } from '../../../contracts/financial';
-import { apiClock, isFixture, liveFinancialFlow } from './api';
+import { apiClock, isFixture, liveFinancialFlow, visitorSolFlow } from './api';
+import type { SolReadiness, SolClaim } from './visitorSol';
 import { currentWalletContext, walletClient, walletCluster } from './walletSdk';
 import type { FinancialOutcome, FinancialProgress } from './liveFinancial';
 import { displayConsumerError } from './consumer-ui/copy';
@@ -23,6 +24,10 @@ function amount(value: string | null | undefined) {
   const whole = BigInt(value) / 1_000_000n;
   const fraction = (BigInt(value) % 1_000_000n).toString().padStart(6, '0').replace(/0+$/, '');
   return `${whole.toLocaleString('en-US')}${fraction ? `.${fraction}` : ''}`;
+}
+function solAmount(lamports: string) {
+  const value = BigInt(lamports);
+  return `${(value / 1_000_000_000n).toString()}.${((value % 1_000_000_000n) / 100_000n).toString().padStart(4, '0')}`;
 }
 const date = (seconds: number | null) => seconds === null ? '—' : new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }).format(seconds * 1000) + ' UTC';
 const actionLabel: Record<FinancialAction, string> = { faucet: 'Get tUSD', registerMarket: 'Register market', curveBuy: 'Buy on curve', curveSell: 'Sell on curve', graduate: 'Graduate', spotBuy: 'Buy spot', spotSell: 'Sell spot', openPro: 'Open Pro', closePro: 'Close Pro', claim: 'Claim payout', depositLP: 'Deposit liquidity', withdrawLP: 'Withdraw liquidity' };
@@ -202,9 +207,43 @@ export function FinancialFaucet({ onFinalized }: { onFinalized: () => void }) {
   const [outcome, setOutcome] = useState<FinancialOutcome | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [solReadiness, setSolReadiness] = useState<SolReadiness | null>(null);
+  const [solClaim, setSolClaim] = useState<SolClaim | null>(null);
+  const [solError, setSolError] = useState('');
+  const [solBusy, setSolBusy] = useState(false);
+  const [solRefresh, setSolRefresh] = useState(0);
   const quoteGeneration = useQuoteGeneration(JSON.stringify([connected?.account.address, wallet?.cluster]), wallet?.signer);
   const pending = wallet && liveFinancialFlow?.pending(wallet);
   useEffect(() => { setQuote(null); setOutcome(null); setError(''); }, [connected?.account.address]);
+  useEffect(() => {
+    let current = true;
+    setSolReadiness(null); setSolClaim(null); setSolError('');
+    if (wallet?.cluster === 'devnet' && visitorSolFlow) void visitorSolFlow.readiness()
+      .then(value => { if (current) setSolReadiness(value); })
+      .catch(cause => { if (current) setSolError(textError(cause)); });
+    return () => { current = false; };
+  }, [connected?.account.address, wallet?.cluster, solRefresh]);
+  async function requestSol() {
+    if (!visitorSolFlow) return;
+    setSolBusy(true); setSolError('');
+    try {
+      const result = await visitorSolFlow.claim();
+      setSolClaim(result);
+      if (result.state === 'FINALIZED' || result.state === 'ENOUGH_SOL') setSolRefresh(value => value + 1);
+    } catch (cause) { setSolError(textError(cause)); }
+    finally { setSolBusy(false); }
+  }
+  async function recheckSol() {
+    if (!visitorSolFlow) return;
+    setSolBusy(true); setSolError('');
+    try {
+      const result = await visitorSolFlow.recheck();
+      setSolClaim(result);
+      if (result.state === 'FINALIZED') setSolRefresh(value => value + 1);
+    } catch (cause) { setSolError(textError(cause)); }
+    finally { setSolBusy(false); }
+  }
+  const solPending = wallet?.cluster === 'devnet' && visitorSolFlow ? visitorSolFlow.pending() : null;
   async function getQuote() {
     if (!liveFinancialFlow) return;
     const version = quoteGeneration.current.version;
@@ -225,13 +264,23 @@ export function FinancialFaucet({ onFinalized }: { onFinalized: () => void }) {
     try { const result = await liveFinancialFlow.recheck(); setOutcome(result); if (result.state === 'FINALIZED') onFinalized(); }
     catch (cause) { setError(textError(cause)); } finally { setBusy(false); }
   }
-  return <div className="page"><div className="profile-header"><span className="eyebrow orange-text">FUNDS</span><h1>Get tUSD<span className="title-dot">.</span></h1><p>Request tUSD for your market balance.</p></div><section className="detail-panel finance-panel"><h2>Request tUSD</h2><p>Review the amount, then confirm in your wallet.</p><details className="au-evidence-details"><summary>Asset details</summary><p>Network: Devnet · tUSD is a test asset. Devnet SOL covers network fees. Your balance updates after confirmation; request limits and retry times apply.</p></details>
+  return <div className="page"><div className="profile-header"><span className="eyebrow orange-text">FUNDS</span><h1>Get ready to play<span className="title-dot">.</span></h1><p>Devnet SOL pays network fees. tUSD is the test asset for trading.</p></div>
+  <section className="detail-panel finance-panel"><h2>1 · Check network fees</h2><p>Every chip and trade needs a small amount of Devnet SOL. It has no cash value.</p>
+    {!wallet ? <Notice>Connect a Devnet wallet to check its balance.</Notice> : wallet.cluster !== 'devnet' ? <Notice>Connect a Devnet wallet.</Notice> :
+      solReadiness ? <div className="finance-facts"><Fact label="Devnet SOL balance">{solAmount(solReadiness.balanceLamports)} SOL</Fact><Fact label="Fee readiness">{solReadiness.needsSol ? 'Needs SOL' : 'Ready'}</Fact></div> : !solError ? <p className="tiny muted">Checking Devnet SOL balance…</p> : null}
+    {solError && <Notice error>{solError}</Notice>}
+    {solClaim && <Notice error={solClaim.state === 'LIMIT_REACHED'}>{solClaim.state === 'FINALIZED' ? 'Devnet SOL received.' : solClaim.state === 'ENOUGH_SOL' ? 'This wallet has enough SOL.' : solClaim.state === 'LIMIT_REACHED' ? 'The in-app SOL limit has been reached. Use the Devnet faucet below.' : solClaim.state === 'DISABLED' ? 'In-app SOL is unavailable. Use the Devnet faucet below.' : 'SOL request pending. Check its status before trying another.'}{transactionHref(solClaim.signature, 'devnet') && <p><a href={transactionHref(solClaim.signature, 'devnet')!} target="_blank" rel="noopener noreferrer">View transfer ↗</a></p>}</Notice>}
+    {wallet?.cluster === 'devnet' && <div className="finance-buttons"><button className="button button-dark" disabled={solBusy} onClick={() => setSolRefresh(value => value + 1)}>Refresh SOL balance</button>
+      {solPending && <button className="button button-dark" disabled={solBusy} onClick={() => void recheckSol()}>Check existing SOL request</button>}
+      {solReadiness?.needsSol && solReadiness.serverGrantEnabled && <button className="button button-blue" disabled={solBusy} onClick={() => void requestSol()}>{solPending ? 'Retry same SOL request' : 'Get Devnet SOL'}</button>}</div>}
+    <p className="tiny muted">{wallet ? <>You can also use the <a href="https://faucet.solana.com/" target="_blank" rel="noopener noreferrer">Solana Devnet faucet ↗</a> for {wallet.address}. Copy your wallet address in your wallet before opening it.</> : <>Or use the <a href="https://faucet.solana.com/" target="_blank" rel="noopener noreferrer">Solana Devnet faucet ↗</a> after connecting a wallet.</>}</p>
+  </section><section className="detail-panel finance-panel"><h2>2 · Request tUSD</h2><p>Review the amount, then confirm in your wallet.</p><details className="au-evidence-details"><summary>Asset details</summary><p>Network: Devnet · tUSD is a test asset. Devnet SOL covers network fees. Your balance updates after confirmation; request limits and retry times apply.</p></details>
     {isFixture || !liveFinancialFlow ? <Notice>tUSD is unavailable.</Notice> : !wallet ? <Notice>Connect a Solana wallet.</Notice> : wallet.cluster !== walletCluster ? <Notice>Wallet network does not match.</Notice> : null}
     {pending && <Notice>Unresolved request ID: {pending.requestId}{pending.signature && ` · Signature: ${pending.signature}`}</Notice>}
     {error && <Notice error>{error}</Notice>}
     {outcome && <Notice error={outcome.state === 'FAILED'}>{outcome.reason ? displayConsumerError(outcome.reason) : outcome.state} · Request ID: {outcome.requestId}</Notice>}
     {pending && <button className="button button-dark full" disabled={busy} onClick={() => void recheck()}>Check existing request</button>}
-    {!quote && <button className="button button-blue full" disabled={busy || !wallet || !!pending || !liveFinancialFlow} onClick={() => void getQuote()}>{busy ? 'Checking…' : 'Check eligibility and quote'}</button>}
+    {!quote && <button className="button button-blue full" disabled={busy || !wallet || !!pending || !liveFinancialFlow || !!solReadiness?.needsSol} onClick={() => void getQuote()}>{busy ? 'Checking…' : 'Check eligibility and quote'}</button>}
     {quote && <div className="finance-quote">{!busy && <QuoteExpiry remaining={quoteRemaining} />}<h3>Review payout terms</h3><div className="finance-facts"><Fact label="Expected receipt">{amount(quote.minReceiveAtoms)} tUSD</Fact><Fact label="Quote expiry">{date(quote.expiresAt)}</Fact></div>{!liveFinancialFlow?.canExecute('faucet') && <Notice>Signing is currently unavailable.</Notice>}<div className="finance-buttons"><button className="button button-dark" onClick={() => setQuote(null)}>Cancel</button><button className="button button-blue" disabled={busy || !liveFinancialFlow?.canExecute('faucet') || quoteRemaining === 0} onClick={() => void execute()}>Sign in wallet</button></div></div>}
   </section></div>;
 }

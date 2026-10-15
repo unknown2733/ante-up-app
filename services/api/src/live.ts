@@ -17,6 +17,7 @@ import type { ConsumerReadApi } from '../../../contracts/consumer.ts';
 import { combinePriceObservationReaders, createFinalizedConsumerHistory, projectConsumerMarket, SqliteFinalizedQuoteHistory } from './consumer-history.ts';
 import { openPriceHistoryReadStore } from './consumer-price-sampler.ts';
 import { ConsumerNoteService, createConsumerSocialProjection, createFinalizedFreeActionLookup, SqliteNotePersistence } from './consumer-social.ts';
+import type { VisitorSolFaucet } from './visitor-faucet.ts';
 
 /** Explicit live construction; passing deterministic readers/providers performs no network calls. */
 export function createLiveApp(config: {
@@ -28,6 +29,7 @@ export function createLiveApp(config: {
   financial?:FinancialReader;
   financialTransactions?:FinancialTransactionAdapter;
   financialClock?:FinancialClock;
+  visitorSol?:VisitorSolFaucet;
 }) {
   const now=config.now??(()=>Math.floor(Date.now()/1000));
   const accounts=config.accounts??new KitFinalizedAccountReader(config.rpcUrl);
@@ -75,7 +77,8 @@ export function createLiveApp(config: {
   const app=createApp({mode:config.mode,programId:config.programId,read,transactions,liveStore,
     chain:config.chain??new KitOperationChain(config.rpcUrl),verifier:config.verifier,financial:config.financial??firstSlice,
     financialTransactions:config.financialTransactions??new KitFirstSliceFinancialTransactionAdapter({state:financialState,reader:firstSlice,blockhashes,now}),
-    finalizeRegistration:async requestId=>{await registrations.verifyAndFinalize(requestId,financialState);},now,consumer});
+    finalizeRegistration:async requestId=>{await registrations.verifyAndFinalize(requestId,financialState);},now,consumer,
+    visitorSol:config.visitorSol});
   return {app,projection,repositories,liveStore,registrations,close() {
     social?.samples?.close();social?.quotes.close();social?.notes.close();
     registrations.close();liveStore.close();repositories.close();projection.close();

@@ -9,6 +9,7 @@ import { createKitChainTransport } from '@ante-up/chain-client';
 import { canSignAuthMessage, currentWalletContext, signAuthMessage, walletClient } from './walletSdk';
 import { createApiClock } from './apiClock';
 import { createLiveConsumerHttp } from './consumerHttp';
+import { createVisitorSolFlow } from './visitorSol';
 
 const baseUrl = import.meta.env.VITE_API_BASE_URL;
 export const liveConsumerHttp = baseUrl ? createLiveConsumerHttp(baseUrl) : null;
@@ -20,6 +21,7 @@ const clockOptions = {nowSeconds:apiClock.nowSeconds,onServerTime:apiClock.obser
 export const liveFreeFlow = baseUrl ? createLiveFreeFlow({ baseUrl, ...clockOptions, getWallet: currentWalletContext, canSignMessage: canSignAuthMessage, signMessage: signAuthMessage }) : null;
 const rpcUrl = import.meta.env.VITE_SOLANA_RPC_URL;
 export const liveFinancialFlow = baseUrl && liveFreeFlow ? createLiveFinancialFlow({ baseUrl, ...clockOptions, getWallet: currentWalletContext, authorize: liveFreeFlow.authorize, verifyInstruction: rpcUrl ? createFinancialInstructionVerifier(createKitChainTransport(rpcUrl), apiClock.nowSeconds) : undefined }) : null;
+export const visitorSolFlow = baseUrl && liveFreeFlow ? createVisitorSolFlow({baseUrl, getWallet: currentWalletContext, authorize: liveFreeFlow.authorize}) : null;
 if (liveFreeFlow) {
   let connected = walletClient.wallet.getState().connected;
   walletClient.wallet.subscribe(() => {

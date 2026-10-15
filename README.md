@@ -13,7 +13,7 @@ All financial flows use test assets. This is an experimental implementation, not
 1. Open **Explore** to browse charts and subjects without a wallet. The catalog combines observed Devnet markets with read-only **Preview** subjects backed by fetched public reference data or official metadata and artwork.
 2. Check each item's source, metric, capture date, and action state. Previously verified collection covered one approved keyword: `solana`. Public snapshots show actual YouTube video views, X post likes, and Spotify track streams reported by Kworb with its report date. These snapshots are not live feeds or settlement prices. Profiles, activity, and rankings use actual Devnet records.
 3. Connect a Devnet wallet. Desktop Phantom, Android Phantom's in-app browser, and Seeker Chrome with Seed Vault Wallet have completed real-device flows on an earlier UI release.
-4. Use the in-app **Faucet** for tUSD. Devnet SOL for transaction fees is separate. Faucet and new-entry availability depend on operator limits and data readiness.
+4. Open the in-app **Faucet** to check Devnet SOL for network fees, then request tUSD. If a capped visitor SOL funder is enabled, eligible wallets can request test SOL there; otherwise the page links to the official Devnet faucet. Faucet and new-entry availability depend on operator limits and data readiness.
 5. **Place chip** on an eligible Devnet market, watch its attention reference, then **Take back chip** to finalize the result. A wallet can hold up to three active chips, with one per market. Attention change is not a cash return.
 
 This source revision replaces synthetic catalog histories and fictional profiles with public reference data and actual Devnet records. Reference subjects have no token quotes, chips, trades, PnL, or attestations. Deployment of this correction is tracked separately from the earlier R2 release. The latest consumer UI still needs another real-wallet regression pass. A closed chip record and its completed evidence/SAS attestation are separate states; archival and attestation may finish later. Read the [in-app Docs](https://ante-up.fun/docs) or the [source articles](docs/product/README.md).
@@ -104,6 +104,7 @@ The local preview needs no API keys. Live operation additionally needs:
 
 - X API access for the configured Counts queries and budget.
 - Solana Devnet RPC access and separately provisioned operator signing keys.
+- An optional separately funded visitor SOL keypair and explicit caps to enable in-app network-fee grants; this feature stays disabled by default. See `deploy/compose.visitor-sol.yml`.
 - An Arweave/Turbo upload wallet and credits where required.
 - SAS configuration, persistent storage, and an HTTPS endpoint for mobile wallets.
 

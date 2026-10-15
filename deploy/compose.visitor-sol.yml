@@ -1,0 +1,13 @@
+# Optional Devnet visitor fee support. Add this override only after creating and
+# funding a dedicated capped test wallet. Never use publisher, keeper or SAS keys.
+services:
+  api:
+    environment:
+      ANTE_UP_VISITOR_SOL_ENABLED: "true"
+      ANTE_UP_VISITOR_SOL_KEYPAIR_FILE: /run/secrets/visitor-sol.json
+      ANTE_UP_VISITOR_SOL_FUNDER_ADDRESS: "${ANTE_UP_VISITOR_SOL_FUNDER_ADDRESS:?set dedicated public address}"
+      ANTE_UP_VISITOR_SOL_GRANT_LAMPORTS: "${ANTE_UP_VISITOR_SOL_GRANT_LAMPORTS:?set grant cap}"
+      ANTE_UP_VISITOR_SOL_DAILY_CAP_LAMPORTS: "${ANTE_UP_VISITOR_SOL_DAILY_CAP_LAMPORTS:?set daily cap}"
+      ANTE_UP_VISITOR_SOL_TOTAL_CAP_LAMPORTS: "${ANTE_UP_VISITOR_SOL_TOTAL_CAP_LAMPORTS:?set total cap}"
+    volumes:
+      - ${ANTE_UP_SECRET_DIR}/visitor-sol.json:/run/secrets/visitor-sol.json:ro

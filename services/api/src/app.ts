@@ -13,6 +13,7 @@ import type { FinancialPrepareRequest } from '../../../contracts/financial.ts';
 import { ExistingMarket } from './registration.ts';
 import { createConsumerApiRoutes, type ConsumerApiBindings } from './consumer-api.ts';
 import { consumerLiveNamespace } from '../../../contracts/consumer-identity.ts';
+import type { VisitorSolFaucet } from './visitor-faucet.ts';
 
 export interface ReadAdapter {
   mode?: Mode;
@@ -67,6 +68,7 @@ export function createApp(options: {
   liveStore?: LiveStore; chain?: OperationChain; programId?: string; financial?: FinancialReader; financialTransactions?: FinancialTransactionAdapter;
   finalizeRegistration?: (requestId:string)=>Promise<void>;
   consumer?: ConsumerApiBindings;
+  visitorSol?: VisitorSolFaucet;
 } = {}) {
   const now = options.now ?? (() => Math.floor(Date.now() / 1000));
   const mode = options.mode ?? 'fixture';
@@ -101,6 +103,27 @@ export function createApp(options: {
     try {
       const consumerResponse = await consumerRoutes?.(request, asOf, signed);
       if (consumerResponse) return consumerResponse;
+      if (parts[1] === 'visitor-sol') {
+        if (mode !== 'devnet' || !options.visitorSol) return fail('DATA_NOT_READY', 'Devnet SOL balance service is unavailable');
+        if (request.method === 'GET' && parts.length === 3 && parts[2] === 'readiness') {
+          const wallet = url.searchParams.get('wallet');
+          if (!wallet || decodeBase58(wallet).length !== 32) throw new InputError('wallet must be a Solana address');
+          return json(envelope(await options.visitorSol.readiness(wallet), asOf));
+        }
+        if (request.method === 'POST' && parts.length === 3 && parts[2] === 'claims') {
+          const body = await parseBody(request) as Record<string, unknown> | null;
+          if (!body || typeof body.wallet !== 'string' || typeof body.requestId !== 'string' ||
+              decodeBase58(body.wallet).length !== 32) throw new InputError('wallet and requestId required');
+          if (!(await signed(request, body.wallet))) return fail('UNAUTHORIZED', 'wallet signature required', body.requestId);
+          return json(envelope(await options.visitorSol.claim({wallet:body.wallet,authenticatedWallet:body.wallet,requestId:body.requestId}), asOf));
+        }
+        if (request.method === 'GET' && parts.length === 4 && parts[2] === 'claims') {
+          const wallet = url.searchParams.get('wallet');
+          if (!wallet || decodeBase58(wallet).length !== 32 || !(await signed(request, wallet)))
+            return fail('UNAUTHORIZED', 'wallet signature required', parts[3]);
+          return json(envelope(await options.visitorSol.reconcile(parts[3], wallet), asOf));
+        }
+      }
       if (parts[1] === 'financial') {
         if (request.method === 'GET' && parts.length === 3 && parts[2] === 'portfolio') {
           const wallet = url.searchParams.get('wallet');

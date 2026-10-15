@@ -250,6 +250,7 @@ function MarketPage({ id, refresh, changed, mode, section = 'call', compact = fa
       {m.dataStatus === 'LOW_ACTIVITY' && <Notice tone="orange">Activity is low. Chips remain available; new paid trades are paused.</Notice>}
       {m.dataStatus === 'OUTAGE' && <Notice tone="red">You can still place or take back a chip while data is unavailable. Taking it back now may record N/A.</Notice>}
       {m.dataStatus === 'PREPARING' && <Notice tone="orange">The index is preparing. A missing entry reference will not be backfilled.</Notice>}
+      {!isFixture && <p className="tiny muted">New wallet? <Link to="/faucet">Check Devnet SOL for network fees ↗</Link></p>}
       {message && <Notice tone="blue">{message}</Notice>}
       {!isFixture && profile.error && <Notice tone="red">Could not verify your active chips, so another action is blocked. {profile.error}</Notice>}
       {isFixture ? <button className="button button-chip full" disabled={busy || refreshBlocked || profile.loading || !!profile.error || freeAllowed?.allowed === false || (!!ownLimit && !open) || !!duplicate} onClick={mutate}>{busy ? 'Processing…' : open ? 'Take back chip' : 'Place chip'} <span>↗</span></button> : <LiveFreeAction key={`${mode}:${id}:${walletAddress ?? 'disconnected'}`} market={m} recordId={open?.id ?? null} mode={mode} profileLoading={refreshBlocked || profile.loading || !!profile.error} limitReached={ownLimit} projectionWaiting={!!projectionWait} changed={changed} />}
@@ -257,7 +258,7 @@ function MarketPage({ id, refresh, changed, mode, section = 'call', compact = fa
       <p className="tiny muted">{isFixture ? 'This changes a browser-only sample record. It does not submit a transaction or issue proof.' : 'Your wallet confirms each chip action.'}</p>
       {open && <RecordCard record={open} compact />}
     </section>}
-    {section !== 'call' && <><Link to="/faucet" className="text-link">Get tUSD ↗</Link><FinancialMarket key={`${m.id}:${section}`} market={m} refreshBlocked={refreshBlocked} section={section === 'trade' ? 'money' : section === 'liquidity' ? 'lp' : 'pro'} onFinalized={changed} /></>}
+    {section !== 'call' && <><Link to="/faucet" className="text-link">Check SOL &amp; get tUSD ↗</Link><FinancialMarket key={`${m.id}:${section}`} market={m} refreshBlocked={refreshBlocked} section={section === 'trade' ? 'money' : section === 'liquidity' ? 'lp' : 'pro'} onFinalized={changed} /></>}
     {m.snapshot && <details className="au-evidence-details"><summary>Data and market details</summary><div className="snapshot-strip"><span>Observed {date(m.snapshot.payload.dataThrough)}</span><span>Formula {m.snapshot.payload.formulaVersion}</span><span>Query {m.snapshot.payload.queryHash.slice(0, 8)}…</span><Tag tone={m.snapshot.payload.admission.state === 'OPEN' ? 'green' : 'orange'}>{m.snapshot.payload.admission.state === 'OPEN' ? 'New entries open' : m.snapshot.payload.admission.state === 'RECOVERING' ? `Recovery checks ${m.snapshot.payload.admission.recoveryCount}/2` : 'New entries paused'}</Tag></div></details>}
   </div>;
 }

@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { createApp } from './app.ts';
 import { createLiveApp } from './live.ts';
 import type { MarketRegistryEntry } from './live-read.ts';
+import { createVisitorSolRuntime } from './visitor-sol-runtime.ts';
 
 const MAX_BODY_BYTES = 32_768;
 type App = ReturnType<typeof createApp>;
@@ -65,10 +66,13 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const markets=JSON.parse(await readFile(resolve(registryPath),'utf8')) as MarketRegistryEntry[];
     if (!Array.isArray(markets)) throw new Error('INVALID_MARKET_REGISTRY');
     const priceDbPath=process.env.ANTE_UP_PRICE_DB;
+    const visitorSol = mode === 'devnet' ? await createVisitorSolRuntime({endpoint:rpcUrl,
+      dbPath:resolve(`${dbPath}.visitor-sol.sqlite`),env:process.env}) : null;
     const live=createLiveApp({mode,programId,rpcUrl,dbPath:resolve(dbPath),markets,
-      priceDbPath:priceDbPath ? resolve(priceDbPath) : undefined});
+      priceDbPath:priceDbPath ? resolve(priceDbPath) : undefined,
+      visitorSol:visitorSol?.faucet});
     const server=createApiServer(live.app);
-    server.on('close',()=>live.close());
+    server.on('close',()=>{live.close();visitorSol?.close();});
     const host=process.env.HOST??'127.0.0.1';
     server.listen(port,host,()=>console.log(`Ante Up ${mode} API listening on port ${port}`));
     const close=()=>{server.close();server.closeIdleConnections();};
