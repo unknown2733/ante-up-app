@@ -4,7 +4,7 @@
 
 Ante Up is a mobile-first app for taking a view on internet attention. Place a no-money chip, follow how attention changes, and take back the chip to record the result. Optional Devnet trading connects eligible markets to keyword tokens, leveraged positions and liquidity vaults.
 
-**[Open the app](https://ante-up.fun)** · **Solana Devnet MVP** · **Updated October 13, 2026**
+**[Open the app](https://ante-up.fun)** · **Solana Devnet MVP** · **Updated October 15, 2026**
 
 All financial flows use test assets. This is an experimental implementation, not a mainnet product or a claim of proven economic safety.
 
@@ -13,10 +13,10 @@ All financial flows use test assets. This is an experimental implementation, not
 1. Open **Explore** to browse charts and subjects without a wallet. The catalog combines observed Devnet markets with read-only **Preview** subjects backed by fetched public reference data or official metadata and artwork.
 2. Check each item's source, metric, capture date, and action state. Previously verified collection covered one approved keyword: `solana`. Public snapshots show actual YouTube video views, X post likes, and Spotify track streams reported by Kworb with its report date. These snapshots are not live feeds or settlement prices. Profiles, activity, and rankings use actual Devnet records.
 3. Connect a Devnet wallet. Desktop Phantom, Android Phantom's in-app browser, and Seeker Chrome with Seed Vault Wallet have completed real-device flows on an earlier UI release.
-4. Open the in-app **Faucet** to check Devnet SOL for network fees, then request tUSD. If a capped visitor SOL funder is enabled, eligible wallets can request test SOL there; otherwise the page links to the official Devnet faucet. Faucet and new-entry availability depend on operator limits and data readiness.
+4. Open the in-app **Faucet** to check Devnet SOL for network fees, then request tUSD. A dedicated capped Devnet funder currently offers eligible wallets 0.02 test SOL once per 24 hours, with a 0.2 SOL daily and 0.8 SOL cumulative service limit. The page also links to the official Devnet faucet. Availability depends on the funder balance and operator limits.
 5. **Place chip** on an eligible Devnet market, watch its attention reference, then **Take back chip** to finalize the result. A wallet can hold up to three active chips, with one per market. Attention change is not a cash return.
 
-This source revision replaces synthetic catalog histories and fictional profiles with public reference data and actual Devnet records. Reference subjects have no token quotes, chips, trades, PnL, or attestations. Deployment of this correction is tracked separately from the earlier R2 release. The latest consumer UI still needs another real-wallet regression pass. A closed chip record and its completed evidence/SAS attestation are separate states; archival and attestation may finish later. Read the [in-app Docs](https://ante-up.fun/docs) or the [source articles](docs/product/README.md).
+This source revision replaces synthetic catalog histories and fictional profiles with public reference data and actual Devnet records. Reference subjects have no token quotes, chips, trades, PnL, or attestations. The visitor SOL path was deployed and verified with a fresh Devnet wallet, including finalization and duplicate-request handling. The latest consumer UI still needs another physical-wallet regression pass. A closed chip record and its completed evidence/SAS attestation are separate states; archival and attestation may finish later. Read the [in-app Docs](https://ante-up.fun/docs) or the [source articles](docs/product/README.md).
 
 ## What is implemented
 
