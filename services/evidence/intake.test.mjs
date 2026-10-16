@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {reconcileIntake,admissionBudget} from './intake.mjs';
+import {reconcileIntake,admissionBudget,fundedCapBudget} from './intake.mjs';
 
 test('intake keeps old and newly closed obligations across retries and proof linkage',()=>{
  const closed=id=>({id,finality:'finalized',status:'CLOSED_RESULT',exit:{executedAt:1},proofId:null});
@@ -13,6 +13,17 @@ test('intake keeps old and newly closed obligations across retries and proof lin
  assert.equal(second.obligations.old.state,'LINKED');
  assert.equal(second.obligations.old.firstSeenAt,100);
  assert.equal(second.obligations.new.state,'WAITING');
+});
+
+test('a funded cap reserves every unspent lifetime admission, including concurrent opens',()=>{
+ const ledger={version:1,reservations:{}};
+ const base={ledger,totalLimit:'30000000000',dailyLimit:'30000000000',perRecordLimit:'15000000000',
+  balanceWinc:'30000000000',now:Date.parse('2026-10-16T01:00:00Z')};
+ assert.equal(fundedCapBudget({...base,fundedOpenCount:0,cap:2,outstanding:0}).admit,true);
+ assert.equal(fundedCapBudget({...base,fundedOpenCount:0,cap:3,outstanding:0}).reason,'TOTAL_BUDGET');
+ assert.equal(fundedCapBudget({...base,fundedOpenCount:1,cap:2,outstanding:1}).admit,true);
+ assert.equal(fundedCapBudget({...base,fundedOpenCount:1,cap:2,outstanding:0}).admit,true);
+ assert.throws(()=>fundedCapBudget({...base,fundedOpenCount:2,cap:2,outstanding:0}),/EVIDENCE_CAP_INVALID/);
 });
 
 test('budget reserves accepted outstanding duties plus one new record without changing caps',()=>{

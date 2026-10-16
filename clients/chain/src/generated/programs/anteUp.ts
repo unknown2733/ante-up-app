@@ -94,6 +94,7 @@ import {
   getOpenFreeInstructionAsync,
   getOpenProInstructionAsync,
   getPublishSnapshotInstructionAsync,
+  getRaiseFundedOpenCapInstructionAsync,
   getRegisterFinancialMarketInstructionAsync,
   getRegisterMarketInstructionAsync,
   getSetAdmissionGateInstructionAsync,
@@ -118,6 +119,7 @@ import {
   parseOpenFreeInstruction,
   parseOpenProInstruction,
   parsePublishSnapshotInstruction,
+  parseRaiseFundedOpenCapInstruction,
   parseRegisterFinancialMarketInstruction,
   parseRegisterMarketInstruction,
   parseSetAdmissionGateInstruction,
@@ -157,6 +159,7 @@ import {
   type ParsedOpenFreeInstruction,
   type ParsedOpenProInstruction,
   type ParsedPublishSnapshotInstruction,
+  type ParsedRaiseFundedOpenCapInstruction,
   type ParsedRegisterFinancialMarketInstruction,
   type ParsedRegisterMarketInstruction,
   type ParsedSetAdmissionGateInstruction,
@@ -166,6 +169,7 @@ import {
   type ParsedStartLpWindowInstruction,
   type ParsedWithdrawLpInstruction,
   type PublishSnapshotAsyncInput,
+  type RaiseFundedOpenCapAsyncInput,
   type RegisterFinancialMarketAsyncInput,
   type RegisterMarketAsyncInput,
   type SetAdmissionGateAsyncInput,
@@ -552,6 +556,7 @@ export enum AnteUpInstruction {
   OpenFree,
   OpenPro,
   PublishSnapshot,
+  RaiseFundedOpenCap,
   RegisterFinancialMarket,
   RegisterMarket,
   SetAdmissionGate,
@@ -746,6 +751,17 @@ export function identifyAnteUpInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([142, 173, 212, 202, 200, 192, 157, 175]),
+      ),
+      0,
+    )
+  ) {
+    return AnteUpInstruction.RaiseFundedOpenCap;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([136, 72, 198, 28, 178, 209, 167, 129]),
       ),
       0,
@@ -888,6 +904,9 @@ export type ParsedAnteUpInstruction<
       instructionType: AnteUpInstruction.PublishSnapshot;
     } & ParsedPublishSnapshotInstruction<TProgram>)
   | ({
+      instructionType: AnteUpInstruction.RaiseFundedOpenCap;
+    } & ParsedRaiseFundedOpenCapInstruction<TProgram>)
+  | ({
       instructionType: AnteUpInstruction.RegisterFinancialMarket;
     } & ParsedRegisterFinancialMarketInstruction<TProgram>)
   | ({
@@ -1027,6 +1046,13 @@ export function parseAnteUpInstruction<TProgram extends string>(
       return {
         instructionType: AnteUpInstruction.PublishSnapshot,
         ...parsePublishSnapshotInstruction(instruction),
+      };
+    }
+    case AnteUpInstruction.RaiseFundedOpenCap: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: AnteUpInstruction.RaiseFundedOpenCap,
+        ...parseRaiseFundedOpenCapInstruction(instruction),
       };
     }
     case AnteUpInstruction.RegisterFinancialMarket: {
@@ -1197,6 +1223,10 @@ export type AnteUpPluginInstructions = {
     input: PublishSnapshotAsyncInput,
   ) => ReturnType<typeof getPublishSnapshotInstructionAsync> &
     SelfPlanAndSendFunctions;
+  raiseFundedOpenCap: (
+    input: RaiseFundedOpenCapAsyncInput,
+  ) => ReturnType<typeof getRaiseFundedOpenCapInstructionAsync> &
+    SelfPlanAndSendFunctions;
   registerFinancialMarket: (
     input: RegisterFinancialMarketAsyncInput,
   ) => ReturnType<typeof getRegisterFinancialMarketInstructionAsync> &
@@ -1361,6 +1391,11 @@ export function anteUpProgram() {
             addSelfPlanAndSendFunctions(
               client,
               getPublishSnapshotInstructionAsync(input),
+            ),
+          raiseFundedOpenCap: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getRaiseFundedOpenCapInstructionAsync(input),
             ),
           registerFinancialMarket: (input) =>
             addSelfPlanAndSendFunctions(

@@ -70,8 +70,9 @@ export function validateMarket(v: unknown): MarketView {
     const c = object(value);
     if (typeof c.allowed !== 'boolean' || (c.reason !== null && typeof c.reason !== 'string')) throw new InputError(`capability ${name} invalid`);
     if (c.detail !== undefined) {
-      oneOf(c.detail,['GLOBAL_OUTSTANDING_LIMIT','GLOBAL_DAILY_LIMIT'] as const,`capability ${name}.detail`);
-      if (c.allowed || c.reason!=='LIMIT_REACHED') throw new InputError(`capability ${name} limit detail mismatch`);
+      oneOf(c.detail,['GLOBAL_OUTSTANDING_LIMIT','GLOBAL_DAILY_LIMIT','FUNDED_PROOF_CAP'] as const,`capability ${name}.detail`);
+      if (c.allowed || (c.detail==='FUNDED_PROOF_CAP' ? c.reason!=='BUDGET_EXHAUSTED' : c.reason!=='LIMIT_REACHED'))
+        throw new InputError(`capability ${name} limit detail mismatch`);
     }
   }
   return v as MarketView;

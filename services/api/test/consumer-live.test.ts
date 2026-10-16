@@ -19,7 +19,7 @@ test('createLiveApp boots with no sampler DB, then reads persisted price only af
   const marketId = String(marketAddress), now = 1_800_000_000;
   const accounts = { async get(id: string) {
     if (id === String(admissionAddress)) return { ownerProgramId: programId,
-      data: getAdmissionEncoder().encode({ admin: address(programId), open: true, outstanding: 0, recent: Array(100).fill(0n) }) };
+      data: getAdmissionEncoder().encode({ admin: address(programId), open: true, outstanding: 0, recent: Array(100).fill(0n), fundedOpenCap: 1n, fundedOpenCount: 0n }) };
     if (id === marketId) return { ownerProgramId: programId, data: getMarketEncoder().encode({
       id: seed, admin: address(programId), queryHash: new Uint8Array(32), queryVersion: 0n,
       phase: MarketPhase.Curve, dataStatus: DataStatus.Preparing,

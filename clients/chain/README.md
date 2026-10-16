@@ -125,13 +125,14 @@ essential. Trading admission is separate from the free-chip admission gate.
 2. `register_market` once per market ID; a duplicate PDA init fails atomically.
 3. `publish_snapshot` with the next sequence and the current query/config
    version. The account is immutable after creation; `Market` points to it.
-4. An operator opens the free admission gate only after external budget and storage
-   checks. `open_free` writes a global and per-wallet 24-hour ring, open count,
-   per-market slot, and outstanding proof duty in one transaction. Direct
-   program calls face the same counters.
+4. An operator raises `funded_open_cap` only after reserving the proof budget
+   for every unused lifetime admission, then opens the free admission gate.
+   `open_free` atomically increments `funded_open_count` in addition to the
+   global and per-wallet 24-hour rings, concurrent counts, per-market slot,
+   and outstanding proof duty. Direct program calls face the same cap.
 5. `close_free` is owner-signed and permitted regardless of the gate or data
    outage. It releases the concurrent slot and stores an immutable numeric or
-   N/A result. It does not release the proof duty.
+   N/A result. It does not restore a spent funded admission or release the proof duty.
 6. `complete_proof` is proof-authority-signed after the external verifier has
    checked storage contents, 20 confirmations, and SAS issuance. It releases
    the outstanding duty exactly once. This first slice does not implement that

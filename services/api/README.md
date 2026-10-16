@@ -30,3 +30,10 @@ The shared wire DTO is `contracts/financial.ts`. The `/v1/financial/*` routes re
 Financial preparations are stored separately from Free records, with an explicit discovery address for bounded lost-response recovery. A financial prepared DTO has no Free `recordId`. Submission and reconciliation compare the signed transaction's exact message bytes and verify the wallet signature; an RPC miss remains `UNKNOWN`. The SQLite schema adds `operation_kind` and `discovery_address` to existing stores on startup.
 
 The API stores quote/operation metadata, never asset balances as spendable truth. The financial adapter must enforce chain account ownership, token mints, u64 amounts, reservations, faucet allowance, LP window, claim owner/status, settlement input, and quote version at execution. No financial transaction is broadcast by this service.
+# Funded free-chip admission — 2026-10-16
+
+The live reader decodes the finalized Admission PDA's cumulative
+`fundedOpenCap` and `fundedOpenCount`. When the count reaches the cap,
+`openFree` returns `BUDGET_EXHAUSTED / FUNDED_PROOF_CAP`; `closeFree`
+remains available. This is a user-facing hint only: the upgraded program
+performs the atomic cap check for direct calls and concurrent wallets.

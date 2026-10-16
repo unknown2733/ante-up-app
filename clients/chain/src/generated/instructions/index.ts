@@ -22,6 +22,7 @@ export * from "./initializeFinance.js";
 export * from "./openFree.js";
 export * from "./openPro.js";
 export * from "./publishSnapshot.js";
+export * from "./raiseFundedOpenCap.js";
 export * from "./registerFinancialMarket.js";
 export * from "./registerMarket.js";
 export * from "./setAdmissionGate.js";

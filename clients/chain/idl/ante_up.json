@@ -2334,6 +2334,75 @@
       ]
     },
     {
+      "name": "raise_funded_open_cap",
+      "discriminator": [
+        142,
+        173,
+        212,
+        202,
+        200,
+        192,
+        157,
+        175
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admission",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  100,
+                  109,
+                  105,
+                  115,
+                  115,
+                  105,
+                  111,
+                  110
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "cap",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "register_financial_market",
       "discriminator": [
         136,
@@ -3943,6 +4012,11 @@
       "code": 6012,
       "name": "InsufficientCapital",
       "msg": "Insufficient reserved capital"
+    },
+    {
+      "code": 6013,
+      "name": "BudgetExhausted",
+      "msg": "Funded proof admission cap exhausted"
     }
   ],
   "types": [
@@ -3971,6 +4045,14 @@
                 100
               ]
             }
+          },
+          {
+            "name": "funded_open_cap",
+            "type": "u64"
+          },
+          {
+            "name": "funded_open_count",
+            "type": "u64"
           }
         ]
       }

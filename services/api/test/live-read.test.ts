@@ -6,15 +6,16 @@ import { ANTE_UP_PROGRAM_ADDRESS, AdmissionReason, AdmissionState, DataStatus, M
 import { SqliteProjectionStore } from '../../indexer/src/sqlite.ts';
 import { SqliteEventRepositories } from '../../indexer/src/repositories.ts';
 import { SqliteFinalizedReadAdapter, mergeMarketRegistry, indexedCapabilities } from '../src/live-read.ts';
+import { validateMarket } from '../src/validate.ts';
 import type { FinalizedFinancialAccounts } from '../src/financial-chain.ts';
 
 test('finalized market and global admission permit free entry before numeric data, but gate closure preserves exit',async()=>{
   const programId=String(ANTE_UP_PROGRAM_ADDRESS),seed=new Uint8Array(32).fill(3);
   const [marketAddress]=await findMarketPda({marketId:seed},{programAddress:address(programId)});
   const [admissionAddress]=await findAdmissionPda({programAddress:address(programId)});
-  let open=true,outstanding=0,recent=Array(100).fill(0n);
+  let open=true,outstanding=0,recent=Array(100).fill(0n),fundedOpenCap=1n,fundedOpenCount=0n;
   const accountReader={async get(id:string){
-    if (id===String(admissionAddress)) return {ownerProgramId:programId,data:getAdmissionEncoder().encode({admin:address(programId),open,outstanding,recent})};
+    if (id===String(admissionAddress)) return {ownerProgramId:programId,data:getAdmissionEncoder().encode({admin:address(programId),open,outstanding,recent,fundedOpenCap,fundedOpenCount})};
     if (id===String(marketAddress)) return {ownerProgramId:programId,data:getMarketEncoder().encode({id:seed,admin:address(programId),
       queryHash:new Uint8Array(32),queryVersion:0n,phase:MarketPhase.Curve,dataStatus:DataStatus.Preparing,
       admission:{state:AdmissionState.Blocked,recoveryCount:0,reason:AdmissionReason.DataNotReady},
@@ -28,6 +29,11 @@ test('finalized market and global admission permit free entry before numeric dat
   assert.equal(market.snapshot,null);
   assert.equal(market.dataStatus,'PREPARING');
   assert.equal(market.capabilities.openFree?.allowed,true);
+  fundedOpenCount=1n;
+  const exhausted=(await read.markets())[0];
+  assert.deepEqual(exhausted.capabilities.openFree,{allowed:false,reason:'BUDGET_EXHAUSTED',detail:'FUNDED_PROOF_CAP'});
+  assert.equal(validateMarket(exhausted),exhausted);
+  fundedOpenCount=0n;
   open=false;
   const [closedGate]=await read.markets();
   assert.equal(closedGate.capabilities.openFree?.allowed,false);
@@ -49,7 +55,7 @@ test('indexed market price requires matching fresh finalized snapshot and blocks
   const now=1_800_000_000,hash=new Uint8Array(32).fill(7);
   let status=DataStatus.Valid,through=now-100;
   const accountReader={async get(id:string){
-    if (id===String(admissionAddress)) return {ownerProgramId:programId,data:getAdmissionEncoder().encode({admin:address(programId),open:true,outstanding:0,recent:Array(100).fill(0n)})};
+    if (id===String(admissionAddress)) return {ownerProgramId:programId,data:getAdmissionEncoder().encode({admin:address(programId),open:true,outstanding:0,recent:Array(100).fill(0n),fundedOpenCap:1n,fundedOpenCount:0n})};
     if (id===String(marketAddress)) return {ownerProgramId:programId,data:getMarketEncoder().encode({id:seed,admin:address(programId),
       queryHash:new Uint8Array(32),queryVersion:1n,phase:MarketPhase.Indexed,dataStatus:status,
       admission:{state:AdmissionState.Open,recoveryCount:0,reason:null},latestSequence:3n,latestHash:hash,

@@ -29,6 +29,8 @@ import {
   getStructEncoder,
   getU16Decoder,
   getU16Encoder,
+  getU64Decoder,
+  getU64Encoder,
   transformEncoder,
   type Account,
   type Address,
@@ -57,6 +59,8 @@ export type Admission = {
   open: boolean;
   outstanding: number;
   recent: Array<bigint>;
+  fundedOpenCap: bigint;
+  fundedOpenCount: bigint;
 };
 
 export type AdmissionArgs = {
@@ -64,6 +68,8 @@ export type AdmissionArgs = {
   open: boolean;
   outstanding: number;
   recent: Array<number | bigint>;
+  fundedOpenCap: number | bigint;
+  fundedOpenCount: number | bigint;
 };
 
 /** Gets the encoder for {@link AdmissionArgs} account data. */
@@ -75,6 +81,8 @@ export function getAdmissionEncoder(): FixedSizeEncoder<AdmissionArgs> {
       ["open", getBooleanEncoder()],
       ["outstanding", getU16Encoder()],
       ["recent", getArrayEncoder(getI64Encoder(), { size: 100 })],
+      ["fundedOpenCap", getU64Encoder()],
+      ["fundedOpenCount", getU64Encoder()],
     ]),
     (value) => ({ ...value, discriminator: ADMISSION_DISCRIMINATOR }),
   );
@@ -88,6 +96,8 @@ export function getAdmissionDecoder(): FixedSizeDecoder<Admission> {
     ["open", getBooleanDecoder()],
     ["outstanding", getU16Decoder()],
     ["recent", getArrayDecoder(getI64Decoder(), { size: 100 })],
+    ["fundedOpenCap", getU64Decoder()],
+    ["fundedOpenCount", getU64Decoder()],
   ]);
 }
 
@@ -150,5 +160,5 @@ export async function fetchAllMaybeAdmission(
 }
 
 export function getAdmissionSize(): number {
-  return 843;
+  return 859;
 }

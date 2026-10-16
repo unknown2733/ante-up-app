@@ -36,7 +36,7 @@ export interface PublishedSnapshot {
   // Only accepted chain snapshots can drive executable quotes.
 }
 export interface PriceAnchor { graduationPriceAtoms: UInt; graduationNowQ12: UInt; graduation7dQ12: UInt; maxPriceAtoms: UInt }
-export interface Capability { allowed: boolean; reason: ErrorCode | null; detail?: 'GLOBAL_OUTSTANDING_LIMIT' | 'GLOBAL_DAILY_LIMIT' }
+export interface Capability { allowed: boolean; reason: ErrorCode | null; detail?: 'GLOBAL_OUTSTANDING_LIMIT' | 'GLOBAL_DAILY_LIMIT' | 'FUNDED_PROOF_CAP' }
 export interface MarketView {
   /** Operator-declared deterministic QA feed; never measured real-world attention. */
   dataProvenance?: 'SYNTHETIC_QA';

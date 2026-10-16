@@ -40,9 +40,12 @@ export const ANTE_UP_ERROR__SLIPPAGE = 0x177a; // 6010
 export const ANTE_UP_ERROR__DATA_UNAVAILABLE = 0x177b; // 6011
 /** InsufficientCapital: Insufficient reserved capital */
 export const ANTE_UP_ERROR__INSUFFICIENT_CAPITAL = 0x177c; // 6012
+/** BudgetExhausted: Funded proof admission cap exhausted */
+export const ANTE_UP_ERROR__BUDGET_EXHAUSTED = 0x177d; // 6013
 
 export type AnteUpError =
   | typeof ANTE_UP_ERROR__ALREADY_EXECUTED
+  | typeof ANTE_UP_ERROR__BUDGET_EXHAUSTED
   | typeof ANTE_UP_ERROR__DATA_UNAVAILABLE
   | typeof ANTE_UP_ERROR__INSUFFICIENT_CAPITAL
   | typeof ANTE_UP_ERROR__INVALID_DENOMINATOR
@@ -60,6 +63,7 @@ let anteUpErrorMessages: Record<AnteUpError, string> | undefined;
 if (process.env["NODE_ENV"] !== "production") {
   anteUpErrorMessages = {
     [ANTE_UP_ERROR__ALREADY_EXECUTED]: `Action already executed`,
+    [ANTE_UP_ERROR__BUDGET_EXHAUSTED]: `Funded proof admission cap exhausted`,
     [ANTE_UP_ERROR__DATA_UNAVAILABLE]: `Price data unavailable or stale`,
     [ANTE_UP_ERROR__INSUFFICIENT_CAPITAL]: `Insufficient reserved capital`,
     [ANTE_UP_ERROR__INVALID_DENOMINATOR]: `Invalid denominator`,

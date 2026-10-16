@@ -99,11 +99,21 @@ pub mod ante_up {
         g.open = false; // The operator must establish budget/storage gates before enabling intake.
         g.outstanding = 0;
         g.recent = [0; GLOBAL_LIMIT];
+        g.funded_open_cap = 0;
+        g.funded_open_count = 0;
         Ok(())
     }
 
     pub fn set_admission_gate(ctx: Context<SetAdmissionGate>, open: bool) -> Result<()> {
         ctx.accounts.admission.open = open;
+        ctx.accounts.config.config_version = ctx.accounts.config.config_version.checked_add(1).ok_or(ErrorCode::Overflow)?;
+        Ok(())
+    }
+
+    pub fn raise_funded_open_cap(ctx: Context<SetAdmissionGate>, cap: u64) -> Result<()> {
+        let g = &mut ctx.accounts.admission;
+        require!(cap > g.funded_open_cap && cap >= g.funded_open_count, ErrorCode::InvalidInput);
+        g.funded_open_cap = cap;
         ctx.accounts.config.config_version = ctx.accounts.config.config_version.checked_add(1).ok_or(ErrorCode::Overflow)?;
         Ok(())
     }
@@ -187,6 +197,7 @@ pub mod ante_up {
         require!(now > 0, ErrorCode::InvalidInput);
         let g = &mut ctx.accounts.admission;
         require!(g.open, ErrorCode::LimitReached);
+        require!(g.funded_open_count < g.funded_open_cap, ErrorCode::BudgetExhausted);
         require!(g.outstanding < OUTSTANDING_LIMIT, ErrorCode::LimitReached);
         require!(recent_count(&g.recent, now) < GLOBAL_LIMIT, ErrorCode::LimitReached);
         let w = &mut ctx.accounts.wallet_stats;
@@ -204,6 +215,7 @@ pub mod ante_up {
         insert_recent(&mut g.recent, now)?;
         insert_recent(&mut w.recent, now)?;
         g.outstanding = g.outstanding.checked_add(1).ok_or(ErrorCode::Overflow)?;
+        g.funded_open_count = g.funded_open_count.checked_add(1).ok_or(ErrorCode::Overflow)?;
         w.open_count = w.open_count.checked_add(1).ok_or(ErrorCode::Overflow)?;
         slot.active = true;
         let r = &mut ctx.accounts.record;
@@ -376,7 +388,12 @@ pub struct CompleteProof<'info> {
 }
 
 #[account] pub struct Config { pub admin: Pubkey, pub publisher: Pubkey, pub proof_authority: Pubkey, pub formula_version: [u8; 16], pub config_version: u64 }
-#[account] pub struct Admission { pub admin: Pubkey, pub open: bool, pub outstanding: u16, pub recent: [i64; GLOBAL_LIMIT] }
+#[account] pub struct Admission {
+    pub admin: Pubkey, pub open: bool, pub outstanding: u16, pub recent: [i64; GLOBAL_LIMIT],
+    // The initialized account has 189 spare bytes, so an existing PDA can read
+    // these zero-filled trailing fields after a program upgrade without realloc.
+    pub funded_open_cap: u64, pub funded_open_count: u64,
+}
 #[account] pub struct WalletStats { pub wallet: Pubkey, pub open_count: u8, pub recent: [i64; WALLET_LIMIT] }
 #[account] pub struct WalletMarket { pub wallet: Pubkey, pub market: Pubkey, pub active: bool }
 #[account] pub struct Market {
@@ -453,4 +470,5 @@ pub enum ErrorCode {
     #[msg("Slippage bound was not met")] Slippage,
     #[msg("Price data unavailable or stale")] DataUnavailable,
     #[msg("Insufficient reserved capital")] InsufficientCapital,
+    #[msg("Funded proof admission cap exhausted")] BudgetExhausted,
 }

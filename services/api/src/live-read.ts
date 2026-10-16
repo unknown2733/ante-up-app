@@ -61,6 +61,7 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
     const admission=getAdmissionDecoder().decode(admissionRaw.data);
     const recent=admission.recent.filter((at:bigint)=>at>0n && BigInt(this.now())-at<86_400n).length;
     const freeEntry:Capability=!admission.open ? {allowed:false,reason:'ENTRY_PAUSED'}
+      : admission.fundedOpenCount>=admission.fundedOpenCap ? {allowed:false,reason:'BUDGET_EXHAUSTED',detail:'FUNDED_PROOF_CAP'}
       : admission.outstanding>=200 ? {allowed:false,reason:'LIMIT_REACHED',detail:'GLOBAL_OUTSTANDING_LIMIT'}
       : recent>=100 ? {allowed:false,reason:'LIMIT_REACHED',detail:'GLOBAL_DAILY_LIMIT'}
       : {allowed:true,reason:null};

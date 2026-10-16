@@ -5,6 +5,7 @@ import {
   ANTE_UP_PROGRAM_ADDRESS, FreeState, NaReason, decodeAnteUpEvent,
   getFreeOpenedEventEncoder, getFreeClosedEventEncoder,
   getFreeRecordEncoder, getFreeRecordDecoder,
+  getAdmissionEncoder, getAdmissionDecoder,
   getOpenFreeInstructionAsync, findMarketPda,
 } from '../../clients/chain/dist/index.js';
 const requireChain = createRequire(new URL('../../clients/chain/package.json', import.meta.url));
@@ -14,6 +15,19 @@ const address = ANTE_UP_PROGRAM_ADDRESS;
 const hash = new Uint8Array(32).fill(7);
 const point = {sequence: 1n, payloadHash: hash, executedAt: 1_800_000_000n,
   slot: 42n, hNum: 125n, hDen: 100n, usable: true, reason: NaReason.None};
+
+test('old padded Admission PDA decodes new lifetime counters as zero',()=>{
+  const encoded=getAdmissionEncoder().encode({admin:address,open:true,outstanding:0,
+    recent:Array(100).fill(0n),fundedOpenCap:0n,fundedOpenCount:0n});
+  const oldLength=8+32+1+2+100*8;
+  assert.equal(encoded.length,oldLength+16);
+  const oldAccount=new Uint8Array(8+1024);
+  oldAccount.set(encoded.subarray(0,oldLength));
+  const decoded=getAdmissionDecoder().decode(oldAccount);
+  assert.equal(decoded.open,true);
+  assert.equal(decoded.fundedOpenCap,0n);
+  assert.equal(decoded.fundedOpenCount,0n);
+});
 
 test('compiled-IDL event bytes decode to historical open and terminal state', () => {
   const opened = decodeAnteUpEvent(getFreeOpenedEventEncoder().encode({

@@ -33,3 +33,13 @@ A finalized `CLOSED_NA` record may have no entry or exit snapshot. For that case
 `runtime.example.mjs` shows the ignored worker module shape. `ANTE_UP_INDEXER_MODULE` points to D's `src/sqlite.ts` under Node 24, `ANTE_UP_INDEX_DB` to its persistent SQLite file, and `ANTE_UP_SIGNER_MODULE` to an ignored module exporting the authorized signers and receipt verifier. `services/data/publisher.runtime.example.mjs` uses the same projection and `ANTE_UP_RPC_URL` for snapshot publication. Both examples fail immediately without their explicit environment and signer inputs.
 
 `FileJobRepository` stores `{[proofId]: job}`. The job contains frozen `record`, `versions`, artifact UTF-8 content/hash/ref/receipt, `payload`, `payloadHash`, `manifestRef`, SAS submission journal, and `{completion:{state,signature}}`. D should use `getProofStatus(repo,proofId)` and `fetchManifest(storage,status)` for public proof reads. `ISSUED` means finalized SAS; `completion.state === "FINALIZED"` means B's proof hash also matches on chain. The two states must not be conflated.
+# Automatic proof intake and funded admission — 2026-10-16
+
+Live Devnet intake can discover every finalized closed result after the
+existing backlog is reconciled. The program's cumulative cap permits only
+proof obligations covered by the operator's reserved Turbo/storage budget.
+`scripts/raise-funded-admission.mjs <cap>` is read-only by default; its
+`--execute` path requires automatic intake, budget headroom, the protocol
+admin signer and a durable transaction journal. A completed chip never
+restores a spent admission. Existing accepted records remain proof duties
+even when the admission gate or funded cap blocks new entries.

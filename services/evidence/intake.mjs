@@ -43,3 +43,15 @@ export function admissionBudget({ledger,totalLimit,dailyLimit,perRecordLimit,bal
  return {admit:reason===null,reason,day,totalReservedWinc:total.toString(),dailyReservedWinc:today.toString(),
   acceptedObligationReserveWinc:(BigInt(outstanding)*perRecord).toString(),nextRecordReserveWinc:perRecord.toString()};
 }
+
+// Reserve the full unused on-chain cap, not just the next request. The count
+// never decreases when a chip closes, so this upper-bounds all future opens
+// until the operator deliberately raises the cap again.
+export function fundedCapBudget({fundedOpenCount,cap,outstanding,...budget}){
+ check(Number.isSafeInteger(fundedOpenCount)&&fundedOpenCount>=0,'EVIDENCE_CAP_INVALID');
+ check(Number.isSafeInteger(cap)&&cap>fundedOpenCount,'EVIDENCE_CAP_INVALID');
+ const remaining=cap-fundedOpenCount;
+ check(Number.isSafeInteger(outstanding)&&outstanding>=0&&outstanding+remaining<=200,'EVIDENCE_CAP_INVALID');
+ return {...admissionBudget({...budget,outstanding:outstanding+remaining-1}),
+  reservedFutureOpens:remaining};
+}

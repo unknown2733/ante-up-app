@@ -6,9 +6,10 @@ import {resolve} from 'node:path';
 import {
   ANTE_UP_PROGRAM_ADDRESS, AdmissionState, DataStatus, FreeState,
   findMarketPda, findRecordPda, getCloseFreeInstructionAsync,
-  getFreeRecordDecoder, getInitializeInstructionAsync,
+  getAdmissionDecoder, getFreeRecordDecoder, getInitializeInstructionAsync,
   getOpenFreeInstructionAsync, getPublishSnapshotInstructionAsync,
-  getRegisterMarketInstructionAsync, getSetAdmissionGateInstructionAsync,
+  getRaiseFundedOpenCapInstructionAsync, getRegisterMarketInstructionAsync, getSetAdmissionGateInstructionAsync,
+  findAdmissionPda,
 } from '../../clients/chain/dist/index.js';
 import {formulaVersionBytes} from '../../clients/chain/encoding.mjs';
 
@@ -54,6 +55,7 @@ test('LiteSVM: publish, open, close while new admission is blocked',
     const marketId = new Uint8Array(32).fill(1);
     const queryHash = new Uint8Array(32).fill(2);
     const [market] = await findMarketPda({marketId});
+    const [admission] = await findAdmissionPda();
     const [record] = await findRecordPda({market, owner: admin.address, recordId: 1n});
     await send(await getInitializeInstructionAsync({
       admin, publisher: admin.address, proofAuthority: admin.address,
@@ -74,13 +76,21 @@ test('LiteSVM: publish, open, close while new admission is blocked',
       });
     await send(await snapshot(1n, 1n, 1_250_000_000_000n));
     await send(await getSetAdmissionGateInstructionAsync({admin, open: true}));
+    await send(await getOpenFreeInstructionAsync({market, owner: admin, recordId: 0n}), true);
+    await send(await getRaiseFundedOpenCapInstructionAsync({admin, cap: 1n}));
     await send(await getOpenFreeInstructionAsync({market, owner: admin, recordId: 1n}));
+    let gate=getAdmissionDecoder().decode(svm.getAccount(admission).data);
+    assert.equal(gate.fundedOpenCap,1n);
+    assert.equal(gate.fundedOpenCount,1n);
     assert.equal(getFreeRecordDecoder().decode(svm.getAccount(record).data).state, FreeState.Open);
 
-    await send(await snapshot(2n, 2n, 1_500_000_000_000n));
+    await send(await snapshot(2n, 3n, 1_500_000_000_000n));
+    await send(await getOpenFreeInstructionAsync({market, owner: admin, recordId: 2n}), true);
     await send(await getSetAdmissionGateInstructionAsync({admin, open: false}));
     await send(await getOpenFreeInstructionAsync({market, owner: admin, recordId: 2n}), true);
     await send(await getCloseFreeInstructionAsync({market, record, owner: admin}));
+    gate=getAdmissionDecoder().decode(svm.getAccount(admission).data);
+    assert.equal(gate.fundedOpenCount,1n,'closing does not refund a proof obligation');
     const closed = getFreeRecordDecoder().decode(svm.getAccount(record).data);
     assert.equal(closed.state, FreeState.ClosedResult);
     assert.ok(closed.resultNum > 0n);
