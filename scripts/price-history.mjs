@@ -25,9 +25,14 @@ const heartbeat = async (value) => {
 async function main() {
   if (mode === '--health') {
     const state = JSON.parse(await readFile(healthPath(), 'utf8'));
-    if (state.status !== 'OK' || !Number.isSafeInteger(state.atMs) || Date.now() - state.atMs >= intervalMs * 3)
+    // Reference markets without a current index price remain visible but must
+    // not make a successfully sampled live market look like a dead worker.
+    const active = state.status === 'OK' ||
+      state.status === 'PARTIAL' && state.valid > 0 && state.readErrors === 0;
+    if (!active || !Number.isSafeInteger(state.atMs) || Date.now() - state.atMs >= intervalMs * 3)
       throw new Error('PRICE_HISTORY_UNHEALTHY');
-    console.log(JSON.stringify({ status: 'OK', atMs: state.atMs, valid: state.valid, stored: state.stored }));
+    console.log(JSON.stringify({ status: state.status, atMs: state.atMs, valid: state.valid,
+      stored: state.stored, noData: state.noData }));
     return;
   }
   const programId = required('ANTE_UP_PROGRAM_ID');
