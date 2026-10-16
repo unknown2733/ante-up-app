@@ -1,0 +1,96 @@
+# Explicit opt-in overlay. Does not alter/start any application writer.
+services:
+  ops-monitor:
+    profiles: [ops]
+    image: ante-up-ops:${ANTE_UP_OPS_RELEASE:?Set reviewed ops release}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.ops
+    user: "${ANTE_UP_UID:-1000}:${ANTE_UP_GID:-1000}"
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 0.5
+    command: [flock, -n, -F, /ops-state/monitor.lock, node, scripts/ops/monitor.mjs, --config, /ops-config/monitor.json, --follow]
+    volumes:
+      - type: bind
+        source: ${ANTE_UP_STATE_DIR:?Set state directory}
+        target: /state
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${ANTE_UP_OPS_RUNTIME_DIR:?Set separate observer runtime directory}
+        target: /ops-state
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${ANTE_UP_OPS_CONFIG_DIR:?Set reviewed ops config directory}
+        target: /ops-config
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${ANTE_UP_OPS_REPORTS_DIR:?Set backup reports directory}
+        target: /backup-reports
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${ANTE_UP_SECRET_DIR}/devnet-rpc.url
+        target: /run/secrets/rpc.url
+        read_only: true
+        bind: {create_host_path: false}
+    healthcheck:
+      test: [CMD, node, scripts/ops/monitor.mjs, --config, /ops-config/monitor.json, --health]
+      interval: 60s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
+  ops-backup:
+    profiles: [maintenance]
+    image: ante-up-ops:${ANTE_UP_OPS_RELEASE:?Set reviewed ops release}
+    user: "${ANTE_UP_UID:-1000}:${ANTE_UP_GID:-1000}"
+    restart: "no"
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1536m
+    cpus: 1.0
+    # No default command can claim writers are stopped or select a target.
+    entrypoint: [node, scripts/ops/backup.mjs]
+    volumes:
+      - type: bind
+        source: ${ANTE_UP_STATE_DIR}
+        target: /state
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${ANTE_UP_SECRET_DIR}
+        target: /operator-secrets
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${ANTE_UP_RECOVERY_CONFIG_DIR:?Set private recovery config directory}
+        target: /recovery-config
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${ANTE_UP_OPS_CONFIG_DIR}
+        target: /ops-config
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${ANTE_UP_BACKUP_DIR:?Set new encrypted backup output directory}
+        target: /backup-output
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${ANTE_UP_BACKUP_KEY_FILE:?Set independently escrowed 32-byte key}
+        target: /run/secrets/backup.key
+        read_only: true
+        bind: {create_host_path: false}

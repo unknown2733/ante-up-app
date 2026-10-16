@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "release": "REPLACE_WITH_REVIEWED_IMAGE_DIGEST_AND_COMMIT",
+  "roots": {
+    "state": "/state",
+    "secrets": "/operator-secrets",
+    "deployment": "/recovery-config"
+  },
+  "required": [
+    "state/live-smoke/index.sqlite",
+    "state/live-smoke/price-history.sqlite",
+    "state/live-smoke/index.sqlite.visitor-sol.sqlite",
+    "state/live-smoke/collection-config.json",
+    "state/live-smoke/collection.json",
+    "state/live-smoke/candidates.json",
+    "state/live-smoke/evidence/jobs.json",
+    "state/live-smoke/evidence/budget.json",
+    "state/markets.json",
+    "secrets/devnet-rpc.url",
+    "secrets/devnet-publisher.json",
+    "secrets/devnet-deployer.json",
+    "secrets/devnet-issuer.json",
+    "secrets/turbo-upload-key.json",
+    "secrets/x-bearer.token",
+    "secrets/visitor-sol.json",
+    "deployment/release.env",
+    "deployment/compose.resolved.yml",
+    "deployment/image-inventory.json"
+  ]
+}

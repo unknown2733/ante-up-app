@@ -112,6 +112,8 @@ Use module `.env.example` files as templates. Keep actual credentials, wallet ke
 
 `node scripts/serve-web.mjs` serves the built app on loopback port 8080 and proxies `/api/` to `API_ORIGIN` (default `http://127.0.0.1:8787`). Run the API separately. The clean container build is `deploy/Dockerfile`; optional release overlays can depend on pre-existing operator images.
 
+Operational tools and opt-in Compose profiles are documented in [backup, isolated recovery drills and alerts](docs/implementation/OPERATIONS.md). They support encrypted whole-state snapshots, destination readback, offline restore verification and read-only progress/budget/wallet monitoring. Actual off-host storage, key escrow and notification receivers still require operator configuration and a first live drill.
+
 ## Verification status
 
 Earlier baseline checks completed on October 13, 2026. These do not verify this source revision or provide continuous service guarantees:

@@ -9,3 +9,6 @@
 **/*private*.json
 **/.history
 docs/implementation/evidence
+.codex-tmp
+**/*.aub
+**/*.aub.receipt.json

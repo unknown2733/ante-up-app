@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "monitorId": "ante-up-devnet",
+  "stateDirectory": "/state",
+  "runtimeDirectory": "/ops-state",
+  "liveDirectory": "live-smoke",
+  "programId": "FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr",
+  "markets": [
+    {"id": "REPLACE_WITH_APPROVED_COLLECTED_MARKET_PDA", "collectionMaxAgeSeconds": 900, "snapshotMaxAgeSeconds": 900}
+  ],
+  "services": [
+    {"name": "collector", "path": "health/collector.json", "maxAgeSeconds": 180},
+    {"name": "indexer", "path": "health/indexer.json", "maxAgeSeconds": 90},
+    {"name": "evidence", "path": "health/evidence.json", "maxAgeSeconds": 180},
+    {"name": "price-history", "path": "health/price-history.json", "maxAgeSeconds": 900}
+  ],
+  "httpChecks": [
+    {"name": "api", "url": "http://api:8787/v1/markets", "expectMode": "devnet"},
+    {"name": "web", "url": "http://web:8080/"}
+  ],
+  "intervalSeconds": 60,
+  "repeatSeconds": 3600,
+  "pendingPublishMaxAgeSeconds": 900,
+  "proofMaxAgeSeconds": 86400,
+  "maxProofBacklog": 10,
+  "minFreeBytes": 10737418240,
+  "budgetWarningPercent": 80,
+  "xBudget": {"dailyMicros": 10000000, "totalMicros": 100000000, "estimatedRequestMicros": 1000},
+  "proofBudget": {"dailyWinc": "60000000000", "totalWinc": "100000000000"},
+  "rpcUrlFile": "/run/secrets/rpc.url",
+  "wallets": [
+    {"role": "publisher", "address": "8qfbLii5YBfJiHoLGBNozyJnLFA4knBymTCtK9pP4mHH", "minLamports": "10000000"},
+    {"role": "proof-payer", "address": "REPLACE_WITH_PUBLIC_PROOF_PAYER", "minLamports": "10000000"},
+    {"role": "visitor-sol", "address": "7QDMuRP88NeZFL8mjoX71jDmDU3oWEzLdUKpwtdveqDv", "minLamports": "120000000"}
+  ],
+  "webhookUrlFile": "/run/secrets/ops-webhook.url",
+  "deadmanUrlFile": "/run/secrets/ops-deadman.url",
+  "backup": {
+    "copyReceipt": "/backup-reports/latest-copy.json",
+    "drillReport": "/backup-reports/latest-drill.json",
+    "destinationId": "REPLACE_WITH_OFF_HOST_DESTINATION_ID",
+    "maxAgeSeconds": 172800
+  }
+}
