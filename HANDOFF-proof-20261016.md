@@ -48,14 +48,23 @@ Turbo's actual signed item byte count is now reported in preflight; transport qu
 
 ## Verification and remaining gates
 
-Live readiness follow-up: the October 16 server readback found four records with
+Live readiness follow-up: the October 16 server readback found eight records with
 public `proofId` and `ISSUED` SAS status while their durable completion journals
 still said `SUBMITTED`. The worker now schedules a linked original proof again
 until its completion journal reaches `FINALIZED`; the existing runtime first
 reads the finalized on-chain proof hash and updates the journal without sending
-another completion transaction. Verify all four with
+another completion transaction. Verify all eight with
 `scripts/verify-devnet-proof.mjs` after deploying the reviewed worker, before
 enabling automatic intake.
+
+The read-only admission check found 80,823,248,142 winc already reserved against
+the 100,000,000,000 total cap. Only one additional 15,000,000,000-winc record
+fits the worst-case reservation. The on-chain gate was open with zero outstanding,
+but permits up to 100 opens per day; a periodic worker check cannot atomically
+reserve funds for every new open. Keep the auto-intake overlay disabled until
+on-chain admission and funded proof capacity are bounded together. The existing
+allowlist is the reviewed default. This is a live-release blocker for unrestricted
+new records, even though current receipts and all eight source replays passed.
 
 - Evidence module: `npm test` **37/37 passed** on Node 24 after the deployment-safety follow-up in the original worktree; the linked-journal integration follow-up passed **38/38** in the merged checkout. The copied local dependencies matched direct module versions; no manifest/lockfile changed. Tests cover default allowlist, opt-in auto scope, conflict rejection, Compose overlay values and linked-journal reconciliation. The live Compose merge still needs server readback before activation.
 - `node --check` for the worker, gate, proof scripts and `git diff --check`: passed. The gate executable without runtime inputs failed closed at `MISSING_ANTE_UP_LIVE_DIRECTORY`.
