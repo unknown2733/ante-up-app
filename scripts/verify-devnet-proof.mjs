@@ -3,11 +3,10 @@
 import {readFile,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {createRequire} from 'node:module';
-import {once} from 'node:events';
 import * as chain from '../clients/chain/dist/index.js';
 import {canonical,payloadHash} from '../services/evidence/index.mjs';
 import {decodeAnteUpClaims,nonceForProofJob,projectionReaders} from '../services/evidence/runtime.mjs';
-import {SqliteProjectionStore} from '../services/indexer/src/sqlite.ts';
+import {ReadOnlyProjection} from '../services/evidence/worker-support.mjs';
 const require=createRequire(new URL('../services/evidence/package.json',import.meta.url));
 const kit=require('@solana/kit'),sas=require('sas-lib');
 const check=(ok,code)=>{if(!ok)throw Error(code);};
@@ -53,28 +52,21 @@ try{
   report={...report,state:'SAS_FINALIZED',claims,issuer:account.data.signer,expiry:account.data.expiry.toString()};
   if(record.data.proofComplete){
    check(hash===job.payloadHash,'PROTOCOL_HASH_MISMATCH');
-   projection=new SqliteProjectionStore(join(directory,'index.sqlite'));
+   projection=new ReadOnlyProjection(join(directory,'index.sqlite'));
    const indexed=await projectionReaders(projection,{cluster:'devnet',programId:chain.ANTE_UP_PROGRAM_ADDRESS}).getFinalizedRecord(recordId);
    check(indexed?.proofId===job.id,'INDEXED_PROOF_MISMATCH');
    check(job.state==='ISSUED'&&job.completion?.state==='FINALIZED','JOURNAL_COMPLETION_MISMATCH');
    report={...report,state:'VERIFIED_FINALIZED',indexedProofId:indexed.proofId,completionSignature:job.completion.signature};
-   // Exercise the actual HTTP boundary and the web client's envelope checks.
-   // The ephemeral listener is confined to this process/container's loopback.
-   const [{createLiveApp},{createApiServer},{createHttpApi}]=await Promise.all([
-    import('../services/api/src/live.ts'),import('../services/api/src/server.ts'),import('../apps/web/src/http.ts')]);
-   const live=createLiveApp({mode:'devnet',programId:chain.ANTE_UP_PROGRAM_ADDRESS,rpcUrl:endpoint,
-    dbPath:join(directory,'index.sqlite'),markets:[]});
-   const server=createApiServer(live.app);
-   try{
-    server.listen(0,'127.0.0.1');await once(server,'listening');
-    const api=createHttpApi(`http://127.0.0.1:${server.address().port}`,{allowFixture:false});
-    const [recordPage,proofPage]=await Promise.all([api.getRecord(recordId),api.getProof(job.id)]);
-    check(recordPage.mode==='devnet'&&recordPage.data?.proofId===job.id,'HTTP_RECORD_MISMATCH');
-    check(proofPage.mode==='devnet'&&proofPage.data?.state==='ISSUED'&&proofPage.data.sasId===address&&
-     proofPage.data.payloadHash===hash&&proofPage.data.manifestRef?.arweaveItemId===claims.manifestItemId,'HTTP_PROOF_MISMATCH');
-    report.http={mode:proofPage.mode,recordLinked:true,state:proofPage.data.state,sasId:proofPage.data.sasId,
-     payloadHash:proofPage.data.payloadHash,confirmations:proofPage.data.confirmations};
-   }finally{await new Promise(resolve=>server.close(resolve));live.close();}
+   // Query the already running public API from this read-only process. Creating
+   // a local live app would open the SQLite projection in write mode.
+   const {createHttpApi}=await import('../apps/web/src/http.ts');
+   const api=createHttpApi(process.env.ANTE_UP_PUBLIC_API_URL??'https://ante-up.fun/api',{allowFixture:false});
+   const [recordPage,proofPage]=await Promise.all([api.getRecord(recordId),api.getProof(job.id)]);
+   check(recordPage.mode==='devnet'&&recordPage.data?.proofId===job.id,'HTTP_RECORD_MISMATCH');
+   check(proofPage.mode==='devnet'&&proofPage.data?.state==='ISSUED'&&proofPage.data.sasId===address&&
+    proofPage.data.payloadHash===hash&&proofPage.data.manifestRef?.arweaveItemId===claims.manifestItemId,'HTTP_PROOF_MISMATCH');
+   report.http={mode:proofPage.mode,recordLinked:true,state:proofPage.data.state,sasId:proofPage.data.sasId,
+    payloadHash:proofPage.data.payloadHash,confirmations:proofPage.data.confirmations};
   }
  }else check(!record.data.proofComplete,'SAS_MISSING_FOR_COMPLETE_RECORD');
  console.log(JSON.stringify(report));

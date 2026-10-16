@@ -10,6 +10,10 @@ export function encodeStorageContent(content){
     {bytes:compressed,type:'application/gzip',encoding:'gzip'} :
     {bytes:original,type:'application/json',encoding:'identity'};
 }
+export const storageTags=(stored,contentHash)=>[
+ {name:'Content-Type',value:stored.type},{name:'App-Name',value:'Ante-Up-Evidence'},
+ {name:'Ante-Up-Content-Hash',value:contentHash},{name:'Ante-Up-Encoding',value:stored.encoding},
+ {name:'Ante-Up-Stored-Hash',value:sha256(stored.bytes)}];
 
 // Dynamic import makes SDK construction explicit. Never call from a read API.
 export async function createTurboClient({privateKey}) {
@@ -38,11 +42,7 @@ export function createTurboStorageAdapter({turbo,fetcher=globalThis.fetch,
     async upload(key,content,contentHash) {
       check(typeof key === 'string' && typeof content === 'string' && sha256(Buffer.from(content,'utf8')) === contentHash);
       const stored=encodeStorageContent(content);
-      const receipt = await turbo.upload({data:stored.bytes,dataItemOpts:{tags:[
-        {name:'Content-Type',value:stored.type}, {name:'App-Name',value:'Ante-Up-Evidence'},
-        {name:'Ante-Up-Content-Hash',value:contentHash},
-        {name:'Ante-Up-Encoding',value:stored.encoding},
-        {name:'Ante-Up-Stored-Hash',value:sha256(stored.bytes)}]}});
+      const receipt = await turbo.upload({data:stored.bytes,dataItemOpts:{tags:storageTags(stored,contentHash)}});
       check(itemId(receipt?.id),'INVALID_RECEIPT');
       // Upload receipt is acceptance, not Arweave inclusion.
       // SDK responses can add optional undefined/helper fields that never existed
@@ -79,8 +79,14 @@ export function createTurboStorageAdapter({turbo,fetcher=globalThis.fetch,
       const statusUrl=new URL(`/tx/${parent}/status`,arweaveUrl);
       statusUrl.searchParams.set('observedAt',String(Date.now()));
       const status=await fetcher(statusUrl,{headers:{Accept:'application/json','Cache-Control':'no-cache'},cache:'no-store',signal:AbortSignal.timeout(15_000)});
-      if (!status.ok) return {receiptValid:true,itemId:ref.arweaveItemId,parentTransactionId:parent,
+      if (!status.ok||status.status===202) return {receiptValid:true,itemId:ref.arweaveItemId,parentTransactionId:parent,
         itemIncluded:false,content:response.bytes.toString('utf8'),confirmations:0};
+      const type=status.headers?.get('content-type');
+      if(type&&!type.toLowerCase().includes('json')){
+        if((await status.text()).trim()==='Accepted')return {receiptValid:true,itemId:ref.arweaveItemId,parentTransactionId:parent,
+          itemIncluded:false,content:response.bytes.toString('utf8'),confirmations:0};
+        throw Error('INVALID_ARWEAVE_STATUS');
+      }
       const json=await status.json();
       check(Number.isSafeInteger(json.number_of_confirmations) && json.number_of_confirmations>=0,'INVALID_CONFIRMATIONS');
       return {receiptValid:true,itemId:ref.arweaveItemId,parentTransactionId:parent,itemIncluded:true,

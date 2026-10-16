@@ -7,6 +7,13 @@ const require=createRequire(import.meta.url);
 const {DataItem,createData}=require('@dha-team/arbundles');
 const check=(ok,code)=>{if(!ok)throw Error(code);};
 
+// Preflight measures the exact signed bytes charged by Turbo without sending
+// them. No item is persisted here; actual transport still journals its item.
+export async function signedItemSize({data,tags,signer}){
+ const item=createData(data,signer,{tags});await item.sign(signer);
+ return item.getRaw().length;
+}
+
 async function persistOnce(path,bytes){
  const handle=await open(path,'wx',0o600);
  try{await handle.writeFile(bytes);await handle.sync();}finally{await handle.close();}

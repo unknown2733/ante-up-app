@@ -1,0 +1,8 @@
+# Explicit opt-in after live admin, budget, storage and RPC guard verification.
+# List this file after compose.evidence.yml; the empty value overrides its
+# allowlist, so only auto-discovery can select records.
+services:
+  evidence:
+    environment:
+      ANTE_UP_EVIDENCE_RECORD_IDS: ""
+      ANTE_UP_EVIDENCE_AUTO_DISCOVER: "yes"

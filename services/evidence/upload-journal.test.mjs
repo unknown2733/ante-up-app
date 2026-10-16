@@ -5,7 +5,7 @@ import {mkdtemp,rm,rmdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createRequire} from 'node:module';
-import {createJournaledUpload} from './upload-journal.mjs';
+import {createJournaledUpload,signedItemSize} from './upload-journal.mjs';
 const require=createRequire(import.meta.url),{ArweaveSigner,DataItem}=require('@dha-team/arbundles');
 
 test('lost upload response resumes identical signed bytes after restart and caches its receipt',async()=>{
@@ -13,6 +13,7 @@ test('lost upload response resumes identical signed bytes after restart and cach
  try{
   const signer=new ArweaveSigner(generateKeyPairSync('rsa',{modulusLength:4096}).privateKey.export({format:'jwk'}));
   const input={data:Buffer.from('source'),dataItemOpts:{tags:[{name:'Ante-Up-Content-Hash',value:'a'.repeat(64)}]}};
+  const estimated=await signedItemSize({data:input.data,tags:input.dataItemOpts.tags,signer});
   const sent=[];
   const uploadSignedDataItem=async args=>{
    const chunks=[];for await(const chunk of args.dataItemStreamFactory())chunks.push(chunk);
@@ -25,6 +26,7 @@ test('lost upload response resumes identical signed bytes after restart and cach
   assert.equal(sent.length,1);
   const receipt=await createJournaledUpload({directory,signer,uploadSignedDataItem})(input);
   assert.deepEqual(sent[0],sent[1]);assert.equal(receipt.id,new DataItem(sent[0]).id);
+  assert.equal(estimated,sent[0].length);
   assert.deepEqual(await createJournaledUpload({directory,signer,uploadSignedDataItem})(input),receipt);
   assert.equal(sent.length,2);
  }finally{

@@ -5,7 +5,26 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {Readable} from 'node:stream';
 import {DatabaseSync} from 'node:sqlite';
-import {budgetedTransport,journalTransport,pendingRecords,ReadOnlyProjection} from './worker-support.mjs';
+import {budgetedTransport,journalTransport,pendingRecords,ReadOnlyProjection,evidenceScope} from './worker-support.mjs';
+
+test('evidence scope keeps approved allowlist by default and rejects mixed auto scope',()=>{
+ const id='11111111111111111111111111111111';
+ assert.deepEqual(evidenceScope({ANTE_UP_EVIDENCE_RECORD_IDS:id}),{autoDiscover:false,allowlist:[id]});
+ assert.deepEqual(evidenceScope({ANTE_UP_EVIDENCE_RECORD_IDS:'',ANTE_UP_EVIDENCE_AUTO_DISCOVER:'yes'}),
+  {autoDiscover:true,allowlist:null});
+ assert.throws(()=>evidenceScope({ANTE_UP_EVIDENCE_RECORD_IDS:id,ANTE_UP_EVIDENCE_AUTO_DISCOVER:'yes'}),
+  /EVIDENCE_SCOPE_CONFLICT/);
+ assert.throws(()=>evidenceScope({}),/EVIDENCE_SCOPE_REQUIRED/);
+});
+
+test('Compose auto overlay explicitly clears the default allowlist',async()=>{
+ const base=await readFile(new URL('../../deploy/compose.evidence.yml',import.meta.url),'utf8');
+ const overlay=await readFile(new URL('../../deploy/compose.evidence-auto.yml',import.meta.url),'utf8');
+ assert.match(base,/^\s+ANTE_UP_EVIDENCE_RECORD_IDS: \$\{ANTE_UP_EVIDENCE_RECORD_IDS:\?Set approved record allowlist\}$/m);
+ assert.doesNotMatch(base,/^\s+ANTE_UP_EVIDENCE_AUTO_DISCOVER:/m);
+ assert.match(overlay,/^\s+ANTE_UP_EVIDENCE_RECORD_IDS: ""$/m);
+ assert.match(overlay,/^\s+ANTE_UP_EVIDENCE_AUTO_DISCOVER: "yes"$/m);
+});
 
 test('signed-item reservation survives response loss, restart and day boundary; cap blocks fresh items',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'ante-proof-budget-'));
@@ -32,6 +51,21 @@ test('chain signed wire is fsynced before transport and retained on unknown outc
    assert.equal(saved.wire,wire);assert.equal(saved.state,'REQUESTING');throw Error('lost');}},dir);
   await assert.rejects(()=>wrapped.sendTransaction('signed-base64'),/lost/);
   assert.equal((await readdir(dir)).length,1);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test('record cap uses exact signed-item quotes across restart without charging a shared retry twice',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'ante-proof-record-cap-'));
+ try{
+  const path=join(dir,'budget.json');let calls=0;
+  const config={path,totalLimit:'100',dailyLimit:'100',perRecordLimit:'15',recordId:'record-A',
+   quote:async bytes=>bytes,balance:async()=>100,send:async()=>{calls++;return {id:'item'};}};
+  const item=text=>({dataItemStreamFactory:()=>Readable.from([Buffer.from(text)])});
+  await budgetedTransport(config)(item('1234567890'));
+  await budgetedTransport(config)(item('1234567890')); // same signed bytes and reservation
+  assert.equal(JSON.parse(await readFile(path,'utf8')).byRecord['record-A'],'10');
+  await assert.rejects(()=>budgetedTransport(config)(item('123456')),/UPLOAD_RECORD_BUDGET_EXCEEDED/);
+  assert.equal(calls,2);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
 
