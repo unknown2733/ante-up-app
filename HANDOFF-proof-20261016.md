@@ -48,6 +48,15 @@ Turbo's actual signed item byte count is now reported in preflight; transport qu
 
 ## Verification and remaining gates
 
-- Evidence module: `npm test` **37/37 passed** on Node 24 after the deployment-safety follow-up, with test temp inside the worktree. The copied local dependencies matched direct module versions; no manifest/lockfile changed. The follow-up tests default allowlist, opt-in auto scope, conflict rejection and Compose overlay values. Docker Compose was unavailable in this workspace, so the live Compose merge still needs server readback before activation.
+Live readiness follow-up: the October 16 server readback found four records with
+public `proofId` and `ISSUED` SAS status while their durable completion journals
+still said `SUBMITTED`. The worker now schedules a linked original proof again
+until its completion journal reaches `FINALIZED`; the existing runtime first
+reads the finalized on-chain proof hash and updates the journal without sending
+another completion transaction. Verify all four with
+`scripts/verify-devnet-proof.mjs` after deploying the reviewed worker, before
+enabling automatic intake.
+
+- Evidence module: `npm test` **37/37 passed** on Node 24 after the deployment-safety follow-up in the original worktree; the linked-journal integration follow-up passed **38/38** in the merged checkout. The copied local dependencies matched direct module versions; no manifest/lockfile changed. Tests cover default allowlist, opt-in auto scope, conflict rejection, Compose overlay values and linked-journal reconciliation. The live Compose merge still needs server readback before activation.
 - `node --check` for the worker, gate, proof scripts and `git diff --check`: passed. The gate executable without runtime inputs failed closed at `MISSING_ANTE_UP_LIVE_DIRECTORY`.
 - No live server state, Linux image build, on-chain gate transaction, actual new close, upload, 20-confirmation result, SAS issue or public link was tested here. Root must check admin-key identity, Compose env caps and one-worker lock before deployment. A gate transaction with ambiguous send remains operator reconciliation work. Storage or host exhaustion beyond the hard limit can still stop accepted work until capacity is restored.

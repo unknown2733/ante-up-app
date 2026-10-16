@@ -33,7 +33,13 @@ export class ReadOnlyProjection {
 
 export function pendingRecords(records,jobs,now,{limit=3,allowlist=null}={}){
  return records.filter(r=>r.finality==='finalized'&&['CLOSED_RESULT','CLOSED_NA'].includes(r.status)&&r.exit&&(!allowlist||allowlist.includes(r.id)))
- .filter(r=>{const j=jobs[`proof:${r.id}:original`];return !r.proofId&&!['INVALID','REPLACED'].includes(j?.state)&&(!j?.retryAt||j.retryAt<=now);})
+ .filter(r=>{
+  const id=`proof:${r.id}:original`,j=jobs[id];
+  // A linked proof may still have an uncertain completion journal. Revisit it
+  // until finalized chain readback reconciles the journal, without reissuing SAS.
+  const needsCompletion=r.proofId===id&&j?.state==='ISSUED'&&j.completion?.state!=='FINALIZED';
+  return (!r.proofId||needsCompletion)&&!['INVALID','REPLACED'].includes(j?.state)&&(!j?.retryAt||j.retryAt<=now);
+ })
  .sort((a,b)=>a.exit.executedAt-b.exit.executedAt||a.id.localeCompare(b.id)).slice(0,limit);
 }
 

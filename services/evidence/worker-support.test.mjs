@@ -77,6 +77,19 @@ test('scheduler processes final closed records fairly without blocking on confir
  assert.deepEqual(pendingRecords(records,{},100,{allowlist:['3']}).map(r=>r.id),['3']);
 });
 
+test('scheduler reconciles a linked proof until its completion journal is finalized',()=>{
+ const record=(id,proofId)=>({id,finality:'finalized',status:'CLOSED_RESULT',exit:{executedAt:1},proofId});
+ const jobs={
+  'proof:pending:original':{state:'ISSUED',completion:{state:'SUBMITTED'}},
+  'proof:done:original':{state:'ISSUED',completion:{state:'FINALIZED'}},
+  'proof:retry:original':{state:'ISSUED',completion:{state:'SUBMITTED'},retryAt:200},
+ };
+ const records=[record('pending','proof:pending:original'),record('done','proof:done:original'),
+  record('retry','proof:retry:original'),record('other','proof:another:original')];
+ assert.deepEqual(pendingRecords(records,jobs,100).map(r=>r.id),['pending']);
+ assert.deepEqual(pendingRecords(records,jobs,201).map(r=>r.id),['pending','retry']);
+});
+
 test('proof projection connection cannot mutate SQLite',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'ante-proof-read-'));let reader;
  try{
