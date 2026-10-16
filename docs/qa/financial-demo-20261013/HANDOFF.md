@@ -1,5 +1,17 @@
 # Demo execution readiness — 2026-10-13
 
+## 2026-10-16 controlled Devnet finance retest
+
+The owner chose the separately labelled synthetic Devnet market for controlled finance verification. It remains `SYNTHETIC_QA` in the public registry; its operator-generated observations are not X Counts. Real `solana` remains on its organic curve.
+
+- Market `CFAAiVZD1PGcRrPEikjAZjtmnc2tNnp1g7Jk5RdpK2SG` was already graduated. A new synthetic observation was finalized without creating another market or adding graduation capital.
+- A read-only Keeper pass returned `RECOVER_LP_WINDOW ready` for the empty cycle. The one-pass recovery was submitted as `5SH28o9Dx8Mrdv5BrPWR8tUVVGeRyvjZhWSvoJoCnm8721ePgVKLNpydMDWjRF4Uc8kmZEcJUUKcgxFZy7kr7Ri3` and the API reported `INITIAL_LP`.
+- The operator trial wallet deposited and withdrew 10 tUSD. Both transactions finalized: `8Q33j8vA1jsgEsBB6YkGyWWS4hBopmUMcMkqu8bcQSZwXr4XnmnjdVYQpixUsJMWMPt6xQKdKqEczQdS293SGr6` and `2pQzgLB3EEadpfWj6aFbGiaxNZTMcnSKRpd9ZUaVitXw5s8zgCYuQpkxZf8PRb3TWWRopAfJxu4cMHmGBP3spxYD`. Trial wallet LP shares returned to zero.
+- The same wallet bought and sold one keyword token. Both transactions finalized: `5bytEBpioMRtanUingMRFBiYZnsKCF5qQjP1svW6crryEX5Rc9TzwXr4XnmnjdVYQpixUsJMWMPt6xQKdKqEczQdS293SGr6` and `34PxJKscLUJaNSnDjWXj813MJY72XtxHG7Zq4PndeZJpsBGGj6c2ci6CDr1NAzZv8G7fPQjBmB5PRiymhxcHx28`. Trial wallet token balance returned to the prior quantity.
+- `scripts/qa-finance-devnet.mjs` now has bounded `trial-spot`, `trial-lp`, and `trial-pro` stages, available only with the explicit demo profile. Each transaction retains its signed signature in the durable journal before submission; unknown outcomes stop rather than retry.
+
+The new Pro stage must wait for the actual 900-second LP window to end. The normal weekly maturity remains a separate verification; an early-close trial does not demonstrate automatic settlement at maturity.
+
 ## Completed now
 
 - Actual Free gate: operator paused, outstanding 3/200, recent24h 5/100 at the read. Prior closure was the end of a bounded Android QA window, not a recorded incident. API now distinguishes ENTRY_PAUSED from LIMIT_REACHED and data readiness. Exit is unaffected.

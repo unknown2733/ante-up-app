@@ -1,4 +1,4 @@
-// Explicit synthetic Devnet financial QA. Never added to the public keyword registry.
+// Explicit synthetic Devnet financial QA. Trial markets are visibly labelled in the registry.
 // No deployment, X request, admission change, private key output or automatic resend.
 import assert from 'node:assert/strict';
 import {createHash,generateKeyPairSync} from 'node:crypto';
@@ -50,9 +50,11 @@ export function auditFinance({finance:f,assets,price}) {
 async function run(argv,env) {
   const stage=argv[0]??'preflight';
   const {demo,label,maxContribution}=runProfile(env);
-  assert.ok(['preflight','setup','prepare-demo','graduate-demo','refresh','pro','down','cleanup','status'].includes(stage));
+  assert.ok(['preflight','setup','prepare-demo','graduate-demo','refresh','pro','down','cleanup','status',
+    'trial-spot','trial-lp','trial-pro'].includes(stage));
   if(stage.endsWith('-demo'))assert.ok(demo,'demo stages require ANTE_UP_QA_PROFILE=demo');
-  if(demo)assert.ok(['preflight','prepare-demo','graduate-demo','refresh','status'].includes(stage),'demo does not execute user positions');
+  if(demo)assert.ok(['preflight','prepare-demo','graduate-demo','refresh','status',
+    'trial-spot','trial-lp','trial-pro'].includes(stage),'unsupported trial stage');
   const dir=resolve(env.ANTE_UP_QA_STATE_DIR??'.runtime/financial-qa');
   const endpoint=(await readFile(env.ANTE_UP_QA_RPC_FILE,'utf8')).trim();
   const rpc=kit.createSolanaRpc(endpoint),transport=chain.createKitChainTransport(endpoint);
@@ -215,6 +217,41 @@ async function run(argv,env) {
     const f=await finance();assert.equal(f.totalShares,f.lockedShares);assert.equal(f.externalQ,1000n*UNIT);
     await audit('setup-complete');
     console.log(json({...summary,next:'refresh every < 600 seconds until proReopenAt, then pro',proReopenAt:f.proReopenAt}));
+  } else if(stage==='trial-spot'){
+    assert.ok(demo,'trial trading requires an explicitly labelled market');
+    const m=await marketState(),f=await finance();
+    assert.equal(m.phase,chain.MarketPhase.Indexed);
+    assert.equal(f.openPositions,0);
+    assert.ok(Number(now()-m.latestDataThrough)<600,'fresh trial observation required');
+    const before=await balance(userKeyword);
+    await send('trial-spot-buy-20261016',async()=>[await chain.getSpotBuyInstructionAsync({
+      ...spotAccounts,quantity:UNIT,maxPayment:2n*UNIT,...await quote()})]);
+    assert.equal(await balance(userKeyword),before+UNIT);
+    await send('trial-spot-sell-20261016',async()=>[await chain.getSpotSellInstructionAsync({
+      ...spotAccounts,quantity:UNIT,minReceipt:UNIT,...await quote()})]);
+    assert.equal(await balance(userKeyword),before);
+    await audit('trial-spot-roundtrip-20261016');
+    console.log(json({...summary,complete:['spot-buy','spot-sell'],report:await status()}));
+  } else if(stage==='trial-lp'){
+    assert.ok(demo,'trial LP requires an explicitly labelled market');
+    const m=await marketState(),f=await finance(),clock=Number(now());
+    assert.equal(m.phase,chain.MarketPhase.Indexed);
+    assert.equal(f.openPositions,0);
+    assert.ok(clock>=Number(f.lpWindowStart)&&clock<Number(f.lpWindowEnd),'LP window must be open');
+    assert.ok(clock-Number(m.latestDataThrough)<600,'fresh trial observation required');
+    const [holding]=await chain.findHoldingPda({market,owner:user.address});
+    const prior=await transport.getFinalizedAccount(holding);
+    assert.ok(!prior.exists||chain.decodeLpHolding(prior).data.shares===0n,'trial wallet must start without LP shares');
+    await send('trial-lp-deposit-20261016',async()=>[await chain.getDepositLpInstructionAsync({
+      ...lpAccounts,amount:10n*UNIT,minShares:1n,...await quote()})]);
+    const deposited=chain.decodeLpHolding(await transport.getFinalizedAccount(holding)).data.shares;
+    assert.ok(deposited>0n);
+    await audit('trial-lp-deposited-20261016');
+    await send('trial-lp-withdraw-20261016',async()=>[await chain.getWithdrawLpInstructionAsync({
+      ...lpAccounts,shares:deposited,minReceipt:9n*UNIT,...await quote()})]);
+    assert.equal(chain.decodeLpHolding(await transport.getFinalizedAccount(holding)).data.shares,0n);
+    await audit('trial-lp-withdrawn-20261016');
+    console.log(json({...summary,complete:['lp-deposit','lp-withdraw'],report:await status()}));
   } else if(stage==='cleanup'){
     for(const id of [1,2,3,4])assert.equal(journal.steps[`claim-${id}`]?.state,'FINALIZED','complete both Pro scenarios first');
     await send('cleanup-spot-sell',async()=>{
@@ -235,9 +272,15 @@ async function run(argv,env) {
     assert.ok(['baseline','up','down'].includes(scenario),'unsupported explicit synthetic scenario');
     const activity={baseline:125n,up:150n,down:100n}[scenario];
     await observe(`heartbeat-${scenario}-${Math.floor(Number(now())/240)}`,activity);console.log(json(await status()));
-  } else if(stage==='pro'||stage==='down'){
+  } else if(stage==='pro'||stage==='down'||stage==='trial-pro'){
+    if(stage==='trial-pro')assert.ok(demo,'trial Pro requires an explicitly labelled market');
     const f=await finance();assert.ok(now()>=f.proReopenAt,'wait for the actual 900-second LP window');
-    const firstId=stage==='pro'?1n:3n,entryActivity=stage==='pro'?125n:150n,exitActivity=stage==='pro'?150n:100n;
+    if(stage==='trial-pro'){
+      assert.equal(f.currentMaturity,0n,'trial cycle must not have started');
+      assert.equal(f.openPositions,0,'trial market must have no prior open positions');
+      assert.ok(await balance(userPayment)>=220n*UNIT,'trial wallet must fund both bounded positions');
+    }
+    const firstId=stage==='down'?3n:1n,entryActivity=stage==='down'?150n:125n,exitActivity=stage==='down'?100n:150n;
     await observe(`${stage}-entry-observation`,entryActivity);
     const pAccounts={market,paymentMint:kit.address(MINT),paymentVault,ownerPayment:userPayment,protocolTreasury:fc.protocolTreasury,owner:user};
     for(const [id,direction] of [[firstId,chain.PositionDirection.Long],[firstId+1n,chain.PositionDirection.Short]]) {

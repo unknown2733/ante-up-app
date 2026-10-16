@@ -1,5 +1,5 @@
 // Read-only operational observer. No X requests, transaction sends or private keys.
-import {readFile, mkdir, statfs} from 'node:fs/promises';
+import {readFile, mkdir, readdir, stat, statfs} from 'node:fs/promises';
 import {join, resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
@@ -17,6 +17,7 @@ export function validateConfig(c) {
   check(Array.isArray(c.markets)&&c.markets.length>0&&c.markets.every(m=>address(m.id)&&positive(m.collectionMaxAgeSeconds)&&positive(m.snapshotMaxAgeSeconds)),'MONITOR_MARKETS_INVALID');
   check(Array.isArray(c.services)&&c.services.length>0&&c.services.every(s=>safeRelative(s.path)&&typeof s.name==='string'&&/^[a-z0-9-]+$/.test(s.name)&&positive(s.maxAgeSeconds)),'MONITOR_SERVICES_INVALID');
   check(positive(c.pendingPublishMaxAgeSeconds)&&positive(c.proofMaxAgeSeconds)&&positive(c.maxProofBacklog)&&positive(c.repeatSeconds)&&positive(c.intervalSeconds)&&positive(c.minFreeBytes),'MONITOR_THRESHOLDS_INVALID');
+  if(c.maxStateBytes!==undefined)check(positive(c.maxStateBytes),'MONITOR_STATE_LIMIT_INVALID');
   check(positive(c.xBudget?.dailyMicros)&&positive(c.xBudget?.totalMicros)&&positive(c.xBudget?.estimatedRequestMicros),'MONITOR_X_BUDGET_INVALID');
   check(c.budgetWarningPercent>0&&c.budgetWarningPercent<100&&Number.isInteger(c.budgetWarningPercent),'MONITOR_BUDGET_THRESHOLD_INVALID');
   check(DECIMAL.test(c.proofBudget?.dailyWinc)&&DECIMAL.test(c.proofBudget?.totalWinc)&&BigInt(c.proofBudget.dailyWinc)>0n&&BigInt(c.proofBudget.totalWinc)>0n,'MONITOR_PROOF_BUDGET_INVALID');
@@ -55,6 +56,24 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
     }catch{add('HTTP_UNAVAILABLE',probe.name);}
   }));
   try{const fs=await statfs(c.stateDirectory);metrics.freeBytes=fs.bavail*fs.bsize;if(metrics.freeBytes<c.minFreeBytes)add('DISK_LOW','state','critical',{freeBytes:metrics.freeBytes,minFreeBytes:c.minFreeBytes});}catch{add('INPUT_UNAVAILABLE','disk');}
+  if(c.maxStateBytes!==undefined){
+    try{
+      async function usedBytes(directory){
+        let used=0;
+        for(const entry of await readdir(directory,{withFileTypes:true})){
+          const path=join(directory,entry.name);
+          if(entry.isDirectory())used+=await usedBytes(path);
+          else if(entry.isFile())used+=(await stat(path)).size;
+          else throw Error('UNEXPECTED_STATE_ENTRY');
+        }
+        return used;
+      }
+      metrics.stateBytes=await usedBytes(c.stateDirectory);
+      const ratio=metrics.stateBytes/c.maxStateBytes;
+      if(ratio>=1)add('STATE_LIMIT','state','critical',{usedBytes:metrics.stateBytes,maxStateBytes:c.maxStateBytes});
+      else if(ratio>=0.8)add('STATE_NEAR_LIMIT','state','warning',{usedBytes:metrics.stateBytes,maxStateBytes:c.maxStateBytes});
+    }catch{add('INPUT_UNAVAILABLE','state-usage');}
+  }
   const collection=await load(join(live,'collection.json'),'collection');
   for(const market of c.markets){
     if(collection)age(collection.markets?.[market.id]?.lastPollAt,market.collectionMaxAgeSeconds,'COLLECTION_STALE',market.id);

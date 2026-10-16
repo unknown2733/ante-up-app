@@ -41,6 +41,14 @@ test('healthy observer accepts partial price coverage and makes only Devnet read
   assert.deepEqual(report.alerts,[]);assert.equal(report.status,'OK');
   assert.deepEqual(f.calls.map(c=>c.method),['getGenesisHash','getBalance']);assert.equal(f.calls[1].params[1].commitment,'finalized');
 });
+test('state quota warns before the collector storage gate and fails at the cap',async t=>{
+  const f=await fixture(t),baseline=await collect(f.config,{now,fetcher:f.fetcher});
+  const used=baseline.metrics.stateBytes??(await collect({...f.config,maxStateBytes:1},{now,fetcher:f.fetcher})).metrics.stateBytes;
+  const near=await collect({...f.config,maxStateBytes:Math.ceil(used/0.85)},{now,fetcher:f.fetcher});
+  assert.ok(near.alerts.some(a=>a.code==='STATE_NEAR_LIMIT'));
+  const full=await collect({...f.config,maxStateBytes:used},{now,fetcher:f.fetcher});
+  assert.ok(full.alerts.some(a=>a.code==='STATE_LIMIT'));
+});
 test('detects stalled collection/publication, proof obligations outside allowlist, budgets and wallets',async t=>{
   const f=await fixture(t);
   await f.save(join(f.live,'collection.json'),{markets:{[market]:{lastPollAt:at-80000}},batches:{uncertain:{id:'uncertain',state:'REQUESTING',requestedAt:at-5000}},totalSpentMicros:9995,spentByDay:{'2026-10-16':800}});
