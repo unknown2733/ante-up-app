@@ -13,6 +13,16 @@ export async function durableJson(path,value){
 }
 export async function readJson(path,fallback){try{return JSON.parse(await readFile(path,'utf8'));}catch(e){if(e.code==='ENOENT'&&fallback!==undefined)return fallback;throw e;}}
 
+export function evidenceScope(env,{preflight=false}={}){
+ const autoDiscover=env.ANTE_UP_EVIDENCE_AUTO_DISCOVER==='yes';
+ const configured=env.ANTE_UP_EVIDENCE_RECORD_IDS??'';
+ if(autoDiscover&&configured.trim())throw Error('EVIDENCE_SCOPE_CONFLICT');
+ const allowlist=autoDiscover||!configured?null:configured.split(',');
+ if(!preflight&&!autoDiscover&&!allowlist?.length)throw Error('EVIDENCE_SCOPE_REQUIRED');
+ if(allowlist?.some(id=>! /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(id)))throw Error('INVALID_RECORD_ALLOWLIST');
+ return {autoDiscover,allowlist};
+}
+
 // The evidence process never writes migrations, projections or index cursors.
 export class ReadOnlyProjection {
  constructor(path){this.db=new DatabaseSync(path,{readOnly:true});this.db.exec('PRAGMA busy_timeout=5000;');}

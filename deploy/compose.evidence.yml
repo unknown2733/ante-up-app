@@ -24,7 +24,7 @@ services:
       ANTE_UP_ENABLE_EVIDENCE_LIVE: "yes"
       ANTE_UP_EVIDENCE_LOCKED: "yes"
       ANTE_UP_EVIDENCE_BATCH_SIZE: "4"
-      ANTE_UP_EVIDENCE_AUTO_DISCOVER: "yes"
+      ANTE_UP_EVIDENCE_RECORD_IDS: ${ANTE_UP_EVIDENCE_RECORD_IDS:?Set approved record allowlist}
       ANTE_UP_MAX_UPLOAD_WINC: ${ANTE_UP_MAX_UPLOAD_WINC:?Set verified per-record quote cap}
       ANTE_UP_EVIDENCE_TOTAL_WINC: ${ANTE_UP_EVIDENCE_TOTAL_WINC:?Set bounded total quote budget}
       ANTE_UP_EVIDENCE_DAILY_WINC: ${ANTE_UP_EVIDENCE_DAILY_WINC:?Set bounded daily quote budget}

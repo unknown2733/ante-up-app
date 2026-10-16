@@ -5,7 +5,26 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {Readable} from 'node:stream';
 import {DatabaseSync} from 'node:sqlite';
-import {budgetedTransport,journalTransport,pendingRecords,ReadOnlyProjection} from './worker-support.mjs';
+import {budgetedTransport,journalTransport,pendingRecords,ReadOnlyProjection,evidenceScope} from './worker-support.mjs';
+
+test('evidence scope keeps approved allowlist by default and rejects mixed auto scope',()=>{
+ const id='11111111111111111111111111111111';
+ assert.deepEqual(evidenceScope({ANTE_UP_EVIDENCE_RECORD_IDS:id}),{autoDiscover:false,allowlist:[id]});
+ assert.deepEqual(evidenceScope({ANTE_UP_EVIDENCE_RECORD_IDS:'',ANTE_UP_EVIDENCE_AUTO_DISCOVER:'yes'}),
+  {autoDiscover:true,allowlist:null});
+ assert.throws(()=>evidenceScope({ANTE_UP_EVIDENCE_RECORD_IDS:id,ANTE_UP_EVIDENCE_AUTO_DISCOVER:'yes'}),
+  /EVIDENCE_SCOPE_CONFLICT/);
+ assert.throws(()=>evidenceScope({}),/EVIDENCE_SCOPE_REQUIRED/);
+});
+
+test('Compose auto overlay explicitly clears the default allowlist',async()=>{
+ const base=await readFile(new URL('../../deploy/compose.evidence.yml',import.meta.url),'utf8');
+ const overlay=await readFile(new URL('../../deploy/compose.evidence-auto.yml',import.meta.url),'utf8');
+ assert.match(base,/^\s+ANTE_UP_EVIDENCE_RECORD_IDS: \$\{ANTE_UP_EVIDENCE_RECORD_IDS:\?Set approved record allowlist\}$/m);
+ assert.doesNotMatch(base,/^\s+ANTE_UP_EVIDENCE_AUTO_DISCOVER:/m);
+ assert.match(overlay,/^\s+ANTE_UP_EVIDENCE_RECORD_IDS: ""$/m);
+ assert.match(overlay,/^\s+ANTE_UP_EVIDENCE_AUTO_DISCOVER: "yes"$/m);
+});
 
 test('signed-item reservation survives response loss, restart and day boundary; cap blocks fresh items',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'ante-proof-budget-'));
