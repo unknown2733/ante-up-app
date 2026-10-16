@@ -59,7 +59,7 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
     const admissionRaw=await this.accounts.get(String(admissionAddress));
     if (!admissionRaw || admissionRaw.ownerProgramId!==this.programId || !Buffer.from(admissionRaw.data.subarray(0,8)).equals(Buffer.from(ADMISSION_DISCRIMINATOR))) throw new Error('FINALIZED_ADMISSION_UNAVAILABLE');
     const admission=getAdmissionDecoder().decode(admissionRaw.data);
-    const recent=admission.recent.filter(at=>at>0n && BigInt(this.now())-at<86_400n).length;
+    const recent=admission.recent.filter((at:bigint)=>at>0n && BigInt(this.now())-at<86_400n).length;
     const freeEntry:Capability=!admission.open ? {allowed:false,reason:'ENTRY_PAUSED'}
       : admission.outstanding>=200 ? {allowed:false,reason:'LIMIT_REACHED',detail:'GLOBAL_OUTSTANDING_LIMIT'}
       : recent>=100 ? {allowed:false,reason:'LIMIT_REACHED',detail:'GLOBAL_DAILY_LIMIT'}
@@ -76,8 +76,8 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
       if (!raw || raw.ownerProgramId!==this.programId || !Buffer.from(raw.data.subarray(0,8)).equals(Buffer.from(MARKET_DISCRIMINATOR))) throw new Error('FINALIZED_MARKET_UNAVAILABLE');
       const chain=getMarketDecoder().decode(raw.data);
       if (!Buffer.from(chain.id).equals(Buffer.from(seed))) throw new Error('MARKET_SEED_MISMATCH');
-      const phase=({[MarketPhase.Curve]:'CURVE',[MarketPhase.GraduationWait]:'GRADUATION_WAIT',[MarketPhase.Indexed]:'INDEXED'} as const)[chain.phase];
-      const dataStatus=({[DataStatus.Preparing]:'PREPARING',[DataStatus.Valid]:'VALID',[DataStatus.LowActivity]:'LOW_ACTIVITY',[DataStatus.Outage]:'OUTAGE'} as const)[chain.dataStatus];
+      const phase=({[MarketPhase.Curve]:'CURVE',[MarketPhase.GraduationWait]:'GRADUATION_WAIT',[MarketPhase.Indexed]:'INDEXED'} as const)[chain.phase as MarketPhase];
+      const dataStatus=({[DataStatus.Preparing]:'PREPARING',[DataStatus.Valid]:'VALID',[DataStatus.LowActivity]:'LOW_ACTIVITY',[DataStatus.Outage]:'OUTAGE'} as const)[chain.dataStatus as DataStatus];
       if (!phase || !dataStatus) throw new Error('MARKET_ENUM_INVALID');
       const latest=snapshots.filter(s=>s.payload.marketId===entry.address).sort((a,b)=>BigInt(a.payload.sequence)<BigInt(b.payload.sequence)?1:-1)[0]??null;
       const matched=latest && latest.payload.sequence===chain.latestSequence.toString() && Buffer.from(chain.latestHash).toString('hex')===latest.payloadHash;
