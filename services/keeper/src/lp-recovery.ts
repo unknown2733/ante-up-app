@@ -40,7 +40,7 @@ export async function advanceEmptyLpRecovery(input:{marketId:string;chain:EmptyW
   if (plan.state==='notDue') return {state:'notDue',signature:null};
   for (const prior of input.attempts.unresolved('RECOVER_LP_WINDOW',input.marketId)) {
     const result=await input.attempts.reconcile(prior,a=>input.chain.verifyAttempt(a),input.now);
-    if (result.state==='FINALIZED' || result.state==='UNKNOWN' || result.state==='SUBMITTED')
+    if (result.state==='UNKNOWN' || result.state==='SUBMITTED')
       return {state:'unknown',signature:result.signature};
   }
   const key={action:'RECOVER_LP_WINDOW' as const,marketId:input.marketId,cycle:state.cycle,

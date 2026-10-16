@@ -52,3 +52,15 @@ test('a later generation cannot send while an older recovery signature is unreso
   assert.equal(sends,1);
   attempts.close();
 });
+
+test('a finalized older recovery does not block a later validity generation',async()=>{
+  const attempts=new SqliteKeeperAttempts(resolve(work,`${randomUUID()}.sqlite`));
+  let state=structuredClone(base),sends=0;
+  const chain={async readEmptyWindow(){return state;},async verifyAttempt(){return 'FINALIZED' as const;},
+    async startLpWindow(_marketId:string,onSigned?:(signature:string)=>void){sends++;onSigned?.(`sig-${sends}`);return `sig-${sends}`;}};
+  assert.equal((await advanceEmptyLpRecovery({marketId,chain,attempts,now})).state,'submitted');
+  state={...state,lpGeneration:'2',validityGeneration:'3',lpWindowStart:now,lpWindowEnd:now+900};
+  assert.equal((await advanceEmptyLpRecovery({marketId,chain,attempts,now:now+901})).state,'submitted');
+  assert.equal(sends,2);
+  attempts.close();
+});

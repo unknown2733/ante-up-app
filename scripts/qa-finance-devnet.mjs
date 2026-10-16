@@ -276,22 +276,30 @@ async function run(argv,env) {
     if(stage==='trial-pro')assert.ok(demo,'trial Pro requires an explicitly labelled market');
     const f=await finance();assert.ok(now()>=f.proReopenAt,'wait for the actual 900-second LP window');
     if(stage==='trial-pro'){
+      assert.equal(f.lpGeneration,(await marketState()).validityGeneration,'LP window must match the current data validity generation');
       assert.equal(f.currentMaturity,0n,'trial cycle must not have started');
       assert.equal(f.openPositions,0,'trial market must have no prior open positions');
       assert.ok(await balance(userPayment)>=220n*UNIT,'trial wallet must fund both bounded positions');
     }
     const firstId=stage==='down'?3n:1n,entryActivity=stage==='down'?150n:125n,exitActivity=stage==='down'?100n:150n;
     await observe(`${stage}-entry-observation`,entryActivity);
+    if(stage==='trial-pro'){
+      const latest=await finance();
+      assert.equal(latest.lpGeneration,(await marketState()).validityGeneration,'fresh observation invalidated the LP window');
+      assert.ok(now()>=latest.lpWindowEnd,'trial Pro must wait until the LP window closes');
+    }
     const pAccounts={market,paymentMint:kit.address(MINT),paymentVault,ownerPayment:userPayment,protocolTreasury:fc.protocolTreasury,owner:user};
     for(const [id,direction] of [[firstId,chain.PositionDirection.Long],[firstId+1n,chain.PositionDirection.Short]]) {
-      await send(`open-${id}`,async()=>[await chain.getOpenProInstructionAsync({...pAccounts,positionId:id,collateral:100n*UNIT,
+      const step=stage==='trial-pro'?`trial-open-${id}-20261016`:`open-${id}`;
+      await send(step,async()=>[await chain.getOpenProInstructionAsync({...pAccounts,positionId:id,collateral:100n*UNIT,
         leverageBps:50000n,direction,maxPayment:110n*UNIT,...await quote()})]);}
     await audit(`${stage}-long-short-open`);
     await observe(`${stage}-exit-observation`,exitActivity);
     for(const id of [firstId,firstId+1n]){
       const [position]=await chain.findPositionPda({market,owner:user.address,positionId:id});
       const [claim]=await chain.findClaimPda({position});
-      await send(`close-${id}`,async()=>{const current=await finance();const [settlement]=await chain.findSettlementPda(market,current.currentCycle);
+      const closeStep=stage==='trial-pro'?`trial-close-${id}-20261016`:`close-${id}`;
+      await send(closeStep,async()=>{const current=await finance();const [settlement]=await chain.findSettlementPda(market,current.currentCycle);
         return [await chain.getCloseProInstructionAsync({market,position,settlement,owner:user,minReceipt:0n,...await quote()})];});
       const c=chain.decodeProClaim(await transport.getFinalizedAccount(claim)).data;
       const positionData=chain.decodeProPosition(await transport.getFinalizedAccount(position)).data;
@@ -306,7 +314,8 @@ async function run(argv,env) {
         earnedTimeFee:positionData.prepaidFee-c.refund};await save();
       const before=await balance(userPayment);
       const wasPaid=c.paid;
-      await send(`claim-${id}`,async()=>[await chain.getClaimProInstructionAsync({market,position,paymentMint:kit.address(MINT),paymentVault,ownerPayment:userPayment,owner:user})]);
+      const claimStep=stage==='trial-pro'?`trial-claim-${id}-20261016`:`claim-${id}`;
+      await send(claimStep,async()=>[await chain.getClaimProInstructionAsync({market,position,paymentMint:kit.address(MINT),paymentVault,ownerPayment:userPayment,owner:user})]);
       if(!wasPaid)assert.equal((await balance(userPayment))-before,c.payout+c.refund);
       assert.equal(chain.decodeProClaim(await transport.getFinalizedAccount(claim)).data.paid,true);
       await audit(`claimed-${id}`);
