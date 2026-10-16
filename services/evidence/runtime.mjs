@@ -83,7 +83,7 @@ export function createSemanticReaders({recordReader,snapshotReader,candidateRepo
 
 export async function createEvidenceRuntime({jobRepository,candidateRepository,rawRepository,recordReader,snapshotReader,marketVersionReader,
   turbo,privateKey,receiptVerifier,rpc,credential,schema,payer,authority,sendSasInstruction,
-  proofAuthority,proofChain,programId,attestationExpiry,sdk,storageOptions={}}) {
+  proofAuthority,proofChain,programId,attestationExpiry,sdk,storageOptions={},uploadCheckpointEvery=1}) {
   check(jobRepository && candidateRepository && rawRepository && recordReader && snapshotReader &&
     (turbo || privateKey) && typeof receiptVerifier==='function' && rpc && credential && schema && payer && authority &&
     typeof sendSasInstruction==='function' && proofAuthority && proofChain && programId);
@@ -155,7 +155,7 @@ export async function createEvidenceRuntime({jobRepository,candidateRepository,r
   }
   return {storage,sas,enqueueRecord,complete,
     async run(jobId,now=Math.floor(Date.now()/1000)){
-      const proof=await processJob(jobRepository,jobId,{...storage,...sas},now);
+      const proof=await processJob(jobRepository,jobId,{...storage,...sas},now,{uploadCheckpointEvery});
       return {proof,completion:proof.state==='ISSUED'?await complete(jobId):null};
     }};
 }

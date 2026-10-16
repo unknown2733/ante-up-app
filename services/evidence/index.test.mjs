@@ -113,6 +113,31 @@ test('large proof checks all artifacts without unbounded gateway requests', asyn
   assert.equal(adapter.issueCalls, 0);
 }));
 
+test('journal-backed upload checkpoints bound journal rewrites and replay an ambiguous item', async () => withRepo(async repo => {
+  const artifacts = Array.from({ length: 17 }, (_, i) => ({ key: `raw:${i}`, kind: 'record', content: `source ${i}` }));
+  const job = await enqueue(repo, { record, versions, artifacts });
+  const adapter = fakeAdapter(), accepted = new Map();
+  const ordinaryUpload = adapter.upload.bind(adapter);
+  let failedOnce = false, writes = 0;
+  const ordinaryWrite = repo.write.bind(repo);
+  repo.write = async jobs => { writes++; return ordinaryWrite(jobs); };
+  adapter.upload = async (key, content, hash) => {
+    if (accepted.has(key)) return accepted.get(key);
+    const ref = await ordinaryUpload(key, content, hash);
+    accepted.set(key, ref); // The durable signed-item journal accepted this ID.
+    if (key === 'raw:9' && !failedOnce) { failedOnce = true; throw new Error('fetch failed'); }
+    return ref;
+  };
+  let result = await processJob(repo, job.id, adapter, 1000, { uploadCheckpointEvery: 8 });
+  assert.equal(result.state, 'QUEUED');
+  assert.equal(result.retryAt, 1300);
+  assert.equal(writes, 2); // One eight-item checkpoint and one failure checkpoint.
+  assert.equal(accepted.size, 10);
+  result = await processJob(new FileJobRepository(repo.path), job.id, adapter, 1300, { uploadCheckpointEvery: 8 });
+  assert.equal(result.state, 'CONFIRMING');
+  assert.equal(accepted.size, artifacts.length + 1); // No second signed item for raw:9.
+}));
+
 test('tampered content or incomplete status cannot claim issue readiness', async () => withRepo(async repo => {
   const adapter = fakeAdapter(), job = await enqueue(repo,input);
   adapter.confirmations = 20;

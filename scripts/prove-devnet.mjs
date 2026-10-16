@@ -72,7 +72,10 @@ try{
   rawRepository:new FileRawResponseRepository(join(directory,'raw')),recordReader:readers,snapshotReader:readers,marketVersionReader,
   turbo,storageOptions:{inclusionVerifier:createArweaveInclusionVerifier()},receiptVerifier:createReceiptVerifier({allowedAddresses:['JNC6vBhjHY1EPwV3pEeNmrsgFMxH5d38_LHsZ7jful8']}),
   rpc,credential,schema,payer,authority,sendSasInstruction:async request=>{const result=await send(request);await save(join(reportOut,'sas-submission.json'),{...request,instruction:undefined,...result});return result;},
-  proofAuthority:authority,proofChain,programId,attestationExpiry:metadata.attestationExpiry});
+  proofAuthority:authority,proofChain,programId,attestationExpiry:metadata.attestationExpiry,
+  // Supervised uploads have a durable signed-item/receipt journal. A crash
+  // between job checkpoints replays those same items without signing anew.
+  uploadCheckpointEvery:supervised?8:1});
  const job=await engine.enqueueRecord(required('ANTE_UP_RECORD_ID'));
  // Replay the actual archived inputs BEFORE spending on permanent storage.
  const semantics=createSemanticReaders({recordReader:readers,snapshotReader:readers,candidateRepository:new FileCandidateRepository(join(directory,'candidates.json')),marketVersionReader});

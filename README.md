@@ -4,7 +4,7 @@
 
 Ante Up is a mobile-first app for taking a view on internet attention. Place a no-money chip, follow how attention changes, and take back the chip to record the result. Optional Devnet trading connects eligible markets to keyword tokens, leveraged positions and liquidity vaults.
 
-**[Open the app](https://ante-up.fun)** · **Solana Devnet MVP** · **Updated October 15, 2026**
+**[Open the app](https://ante-up.fun)** · **Solana Devnet MVP** · **Updated October 16, 2026**
 
 All financial flows use test assets. This is an experimental implementation, not a mainnet product or a claim of proven economic safety.
 
@@ -133,7 +133,9 @@ The latest catalog release `0d6967a` was deployed on October 13, 2026 KST. It re
 ### Remaining work
 
 - Repeat wallet approval, cancellation and response-loss recovery on the latest UI and verify an owning wallet's note write.
-- Integrate remaining proof-worker, keeper and operational follow-up changes from separate development branches.
+- Expand evidence processing beyond the current bounded record allowlist and verify the remaining archive/SAS backlog. The worker reuses signed upload receipts and has a total spend cap; a healthy worker does not mean every record has a proof.
+- Configure and validate the keeper against a reviewed, currently eligible Devnet financial market. The public keyword markets are still in the curve phase or have no fresh indexed trading price.
+- Establish an off-host backup and restore test for the complete service state and private operator keys. The current online SQLite snapshots are per-database and are not a complete recovery copy.
 - Validate broader live source coverage, economic assumptions and production security before considering real assets.
 
 ## Design documentation

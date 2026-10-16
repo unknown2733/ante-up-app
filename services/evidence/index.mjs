@@ -29,7 +29,10 @@ export class FileJobRepository {
     await mkdir(dirname(this.path), { recursive: true });
     const temporary = `${this.path}.${process.pid}.tmp`;
     const file=await open(temporary,'w',0o600);
-    try{await file.writeFile(canonical(jobs),'utf8');await file.sync();}finally{await file.close();}
+    // This is a mutable recovery journal, not a hashed evidence artifact.
+    // Native serialization avoids repeatedly canonicalizing hundreds of MB
+    // of unchanged calculations at every upload checkpoint.
+    try{await file.writeFile(JSON.stringify(jobs),'utf8');await file.sync();}finally{await file.close();}
     await replaceJournal(temporary, this.path);
     if(process.platform!=='win32'){const directory=await open(dirname(this.path),'r');try{await directory.sync();}finally{await directory.close();}}
   }
@@ -96,19 +99,23 @@ async function verifyOne(adapter, ref, receipt) {
   return proof.itemIncluded === true ? proof.confirmations : 0;
 }
 
-export async function processJob(repo, id, adapter, now) {
+export async function processJob(repo, id, adapter, now, { uploadCheckpointEvery = 1 } = {}) {
   check(Number.isSafeInteger(now) && now >= 0);
+  check(Number.isInteger(uploadCheckpointEvery) && uploadCheckpointEvery >= 1 && uploadCheckpointEvery <= 64);
   const jobs = await repo.read(), job = jobs[id]; check(job);
   if (['ISSUED','INVALID','REPLACED'].includes(job.state) || (job.retryAt !== null && now < job.retryAt)) return status(job);
   const save = async () => { jobs[id] = job; await repo.write(jobs); };
   try {
+    let pendingUploads = 0;
     for (const artifact of job.artifacts) {
       if (artifact.ref) continue;
       const uploaded = await adapter.upload(artifact.key, artifact.content, artifact.contentHash);
       const ref = uploaded?.ref ?? uploaded;
       check(validItem(ref, artifact.contentHash), 'INVALID_RECEIPT');
-      artifact.ref = ref; artifact.receipt = uploaded?.receipt ?? null; await save();
+      artifact.ref = ref; artifact.receipt = uploaded?.receipt ?? null;
+      if (++pendingUploads >= uploadCheckpointEvery) { await save(); pendingUploads = 0; }
     }
+    if (pendingUploads) await save();
     for (const artifact of job.artifacts) {
       if (validRef(artifact.ref, artifact.contentHash)) continue;
       check(typeof adapter.resolve === 'function', 'PENDING_CONFIRMATION');

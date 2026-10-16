@@ -1,3 +1,9 @@
 services:
   evidence:
-    image: ante-up:proof-bounded-20261016
+    image: ante-up:proof-fastjournal-20261016
+    # One archived calculation can exceed 30 MB before serialization. The
+    # repository reads all jobs when adding the next record; the prior 1.5 GB
+    # limit could not even complete a read-only preflight for new records.
+    mem_limit: 4g
+    environment:
+      NODE_OPTIONS: --max-old-space-size=3072
