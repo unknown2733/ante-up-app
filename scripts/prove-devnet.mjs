@@ -11,8 +11,8 @@ import {ReadOnlyProjection,durableJson,readJson,budgetedTransport,journalTranspo
 import {checkStorage} from './runtime-status.mjs';
 import {createReceiptVerifier} from '../services/evidence/receipt.mjs';
 import {createArweaveInclusionVerifier} from '../services/evidence/inclusion.mjs';
-import {createJournaledUpload} from '../services/evidence/upload-journal.mjs';
-import {createTurboClient,encodeStorageContent} from '../services/evidence/turbo.mjs';
+import {createJournaledUpload,signedItemSize} from '../services/evidence/upload-journal.mjs';
+import {createTurboClient,encodeStorageContent,storageTags} from '../services/evidence/turbo.mjs';
 import {FileCandidateRepository} from '../services/data/publisher.mjs';
 import {FileRawResponseRepository} from '../services/data/index.mjs';
 import {SqliteProjectionStore} from '../services/indexer/src/sqlite.ts';
@@ -37,7 +37,7 @@ try{
  if(execute&&process.env.ANTE_UP_ENABLE_EVIDENCE_LIVE!=='yes')throw Error('LIVE_EVIDENCE_DISABLED');
  const directory=required('ANTE_UP_LIVE_DIRECTORY'),out=join(directory,'evidence');if(!preflightOnly)await mkdir(out,{recursive:true});
  const reportOut=supervised?join(out,'reports',required('ANTE_UP_RECORD_ID')):out;
- if(!preflightOnly)await checkStorage(directory);
+ if(!preflightOnly)await checkStorage(directory,{existingObligations:supervised&&process.env.ANTE_UP_EVIDENCE_AUTO_DISCOVER==='yes'});
  const endpoint=(await readFile(required('ANTE_UP_RPC_URL_FILE'),'utf8')).trim(),rpc=kit.createSolanaRpc(endpoint);
  if(await rpc.getGenesisHash().send()!=='EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG')throw Error('DEVNET_REQUIRED');
  const payer=await kit.createKeyPairSignerFromBytes(Uint8Array.from(await json(required('ANTE_UP_PAYER_KEYPAIR_FILE'))));
@@ -49,9 +49,11 @@ try{
  let uploadTransport=turbo.uploadSignedDataItem.bind(turbo);
  if(supervised&&!preflightOnly)uploadTransport=budgetedTransport({path:join(out,'budget.json'),
   totalLimit:required('ANTE_UP_EVIDENCE_TOTAL_WINC'),dailyLimit:required('ANTE_UP_EVIDENCE_DAILY_WINC'),
+  perRecordLimit:required('ANTE_UP_MAX_UPLOAD_WINC'),recordId:required('ANTE_UP_RECORD_ID'),
   quote:async bytes=>(await turbo.getUploadCosts({bytes:[bytes]}))[0].winc,
   balance:async()=>(await turbo.getBalance()).winc,send:uploadTransport});
- turbo.upload=createJournaledUpload({directory:receiptDirectory,signer:new ArweaveSigner(uploadKey),uploadSignedDataItem:uploadTransport});
+ const uploadSigner=new ArweaveSigner(uploadKey);
+ turbo.upload=createJournaledUpload({directory:receiptDirectory,signer:uploadSigner,uploadSignedDataItem:uploadTransport});
  const programId=chain.ANTE_UP_PROGRAM_ADDRESS,baseTransport=chain.createKitChainTransport(endpoint);
  const transport=supervised?journalTransport(baseTransport,join(out,'chain-submissions')):baseTransport;
  const marketVersionReader=createKitMarketVersionReader({transport,programId});
@@ -84,12 +86,15 @@ try{
  await verifySemanticPacket(payload,await semantics.semanticPacketProvider(job.id,payload),semantics.chainVerifier,
   {fetch:async ref=>job.artifacts.find(a=>a.contentHash===ref.contentHash).content});
  console.log(JSON.stringify({state:'SOURCE_REPLAY_VERIFIED',recordId:job.recordId}));
- const sizes=job.artifacts.map(a=>encodeStorageContent(a.content).bytes.length);
- const [balance,free,costs]=await Promise.all([turbo.getBalance(),turbo.getFreeStatus(),turbo.getUploadCosts({bytes:[...sizes,16000]})]);
+ const stored=job.artifacts.map(a=>encodeStorageContent(a.content));
+ const sizes=stored.map(s=>s.bytes.length);
+ const signedSizes=await Promise.all(job.artifacts.map((a,i)=>signedItemSize({
+  data:stored[i].bytes,tags:storageTags(stored[i],a.contentHash),signer:uploadSigner})));
+ const [balance,free,costs]=await Promise.all([turbo.getBalance(),turbo.getFreeStatus(),turbo.getUploadCosts({bytes:[...signedSizes,16000]})]);
  const cached=await Promise.all(job.artifacts.map(async a=>Boolean(a.ref||await readJson(join(receiptDirectory,`${a.contentHash}.json`),null))));
  const estimatedNewWinc=costs.reduce((sum,item,i)=>sum+((i<job.artifacts.length?cached[i]:job.manifestRef)?0n:BigInt(item.winc)),0n).toString();
  const preflight={recordId:job.recordId,jobId:job.id,credential,schema,authority:authority.address,estimatedNewWinc,
-  artifacts:job.artifacts.map((a,i)=>({key:a.key,contentHash:a.contentHash,canonicalBytes:Buffer.byteLength(a.content),storedBytes:sizes[i],reused:cached[i]})),balance,free,costs,
+  artifacts:job.artifacts.map((a,i)=>({key:a.key,contentHash:a.contentHash,canonicalBytes:Buffer.byteLength(a.content),storedBytes:sizes[i],signedBytes:signedSizes[i],reused:cached[i]})),balance,free,costs,
   totalBytes:sizes.reduce((a,b)=>a+b,0),attestationExpiry:metadata.attestationExpiry};
  await save(join(reportOut,'preflight.json'),preflight);
  console.log(JSON.stringify({state:'PREFLIGHT',...preflight}));

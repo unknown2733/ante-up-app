@@ -29,8 +29,9 @@ export function pendingRecords(records,jobs,now,{limit=3,allowlist=null}={}){
 
 // Quote reservations survive crashes and UTC day changes. A known signed item
 // retries under its original reservation; no second item is signed on ambiguity.
-export function budgetedTransport({path,totalLimit,dailyLimit,quote,balance,send,now=()=>Date.now()}){
+export function budgetedTransport({path,totalLimit,dailyLimit,perRecordLimit,recordId,quote,balance,send,now=()=>Date.now()}){
  if(!/^\d+$/.test(String(totalLimit))||!/^\d+$/.test(String(dailyLimit)))throw Error('UPLOAD_BUDGET_REQUIRED');
+ if(perRecordLimit!==undefined&&(!/^\d+$/.test(String(perRecordLimit))||!recordId))throw Error('UPLOAD_BUDGET_REQUIRED');
  return async input=>{
   const parts=[];for await(const part of input.dataItemStreamFactory())parts.push(Buffer.from(part));
   const bytes=Buffer.concat(parts),key=createHash('sha256').update(bytes).digest('hex');
@@ -41,9 +42,12 @@ export function budgetedTransport({path,totalLimit,dailyLimit,quote,balance,send
   const total=Object.values(state.reservations).reduce((sum,r)=>sum+BigInt(r.winc),0n);
   const today=Object.values(state.reservations).reduce((sum,r)=>sum+BigInt(r.byDay?.[day]??(r.day===day?r.winc:'0')),0n);
   if(total+extra>BigInt(totalLimit)||today+extra>BigInt(dailyLimit))throw Error('UPLOAD_BUDGET_EXCEEDED');
+  const recordReserved=perRecordLimit===undefined?0n:BigInt(state.byRecord?.[recordId]??'0');
+  if(perRecordLimit!==undefined&&recordReserved+extra>BigInt(perRecordLimit))throw Error('UPLOAD_RECORD_BUDGET_EXCEEDED');
   if(BigInt(await balance())<cost)throw Error('TURBO_BALANCE_REQUIRED');
   state.reservations[key]={...prior,day:prior?.day??day,winc:(reserved+extra).toString(),bytes:bytes.length,
    byDay:{...(prior?.byDay??(prior?{[prior.day]:prior.winc}:{})),[day]:(BigInt(prior?.byDay?.[day]??(prior?.day===day?prior.winc:'0'))+extra).toString()},state:'RESERVED'};
+  if(perRecordLimit!==undefined)state.byRecord={...state.byRecord,[recordId]:(recordReserved+extra).toString()};
   await durableJson(path,state);
   const receipt=await send(input); // Uncertain transport retains reservation.
   state.reservations[key].state='ACCEPTED';state.reservations[key].itemId=receipt.id;

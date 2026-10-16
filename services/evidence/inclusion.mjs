@@ -48,8 +48,13 @@ export function createArweaveInclusionVerifier({fetcher=globalThis.fetch,maxBund
   async resolve(ref){
    check(idPattern.test(ref.arweaveItemId),'INVALID_ITEM_ID');
    const response=await fetcher(`https://upload.ardrive.io/v1/tx/${ref.arweaveItemId}/status`,{signal:AbortSignal.timeout(15000)});
-   if(!response.ok)return null;
-   const status=await response.json();return idPattern.test(status.bundleId??'')?{...ref,parentTransactionId:status.bundleId}:null;
+   if(!response.ok||response.status===202)return null;
+   const type=response.headers?.get('content-type');
+   if(type&&!type.toLowerCase().includes('json')){
+    if((await response.text()).trim()==='Accepted')return null;
+    throw Error('INVALID_UPLOAD_STATUS');
+   }
+   const status=await response.json();return idPattern.test(status?.bundleId??'')?{...ref,parentTransactionId:status.bundleId}:null;
   },
   async verify(ref){
    check(idPattern.test(ref.parentTransactionId),'INVALID_PARENT_ID');

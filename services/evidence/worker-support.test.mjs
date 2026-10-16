@@ -35,6 +35,21 @@ test('chain signed wire is fsynced before transport and retained on unknown outc
  }finally{await rm(dir,{recursive:true,force:true});}
 });
 
+test('record cap uses exact signed-item quotes across restart without charging a shared retry twice',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'ante-proof-record-cap-'));
+ try{
+  const path=join(dir,'budget.json');let calls=0;
+  const config={path,totalLimit:'100',dailyLimit:'100',perRecordLimit:'15',recordId:'record-A',
+   quote:async bytes=>bytes,balance:async()=>100,send:async()=>{calls++;return {id:'item'};}};
+  const item=text=>({dataItemStreamFactory:()=>Readable.from([Buffer.from(text)])});
+  await budgetedTransport(config)(item('1234567890'));
+  await budgetedTransport(config)(item('1234567890')); // same signed bytes and reservation
+  assert.equal(JSON.parse(await readFile(path,'utf8')).byRecord['record-A'],'10');
+  await assert.rejects(()=>budgetedTransport(config)(item('123456')),/UPLOAD_RECORD_BUDGET_EXCEEDED/);
+  assert.equal(calls,2);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+
 test('scheduler processes final closed records fairly without blocking on confirming jobs',()=>{
  const records=[1,2,3,4].map(n=>({id:String(n),finality:'finalized',status:'CLOSED_RESULT',exit:{executedAt:n},proofId:null}));
  records.push({...records[0],id:'open',status:'OPEN'});
