@@ -228,11 +228,12 @@ test('display names preserve original market data and source provenance', async 
   const { MarketDiscovery } = await server.ssrLoadModule('/src/consumer-ui/MarketDiscovery.tsx');
   const item = { ...market, id: 'synthetic-market', title: 'Synthetic finance demo', subtitle: 'Synthetic financial test · not measured attention', source: { mode: 'LIVE', label: 'Synthetic test feed · Devnet', asOfMs: source.asOfMs, observationLabel: 'Operator-generated test inputs; no real-world traffic' } };
   const original = structuredClone(item);
-  assert.equal(marketDisplayTitle(item.title), 'Market index');
+  assert.equal(marketDisplayTitle(item.title), 'Finance trial');
   assert.equal(marketDisplayTitle('solana'), 'solana');
-  assert.equal(marketDisplaySubtitle(item), 'Index market');
+  assert.equal(marketDisplaySubtitle(item), 'Devnet test market · operator-generated inputs');
   const html = render(MarketDiscovery, { markets: [item], onSelectMarket: noAction });
-  assert.match(html, /Market index/);
+  assert.match(html, /Finance trial/);
+  assert.match(html, /Devnet test market/);
   assert.doesNotMatch(html, /Synthetic finance demo|Devnet observed/);
   assert.deepEqual(item, original);
 });

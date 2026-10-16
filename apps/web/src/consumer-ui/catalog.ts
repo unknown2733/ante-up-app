@@ -19,5 +19,5 @@ export function mergeConsumerMarkets(samples: ConsumerMarket[], live: ConsumerMa
 }
 
 /** Display names only: API identity, measurements, and provenance stay unchanged. */
-export const marketDisplayTitle = (title: string) => title === 'Synthetic finance demo' ? 'Market index' : title;
-export const marketDisplaySubtitle = (market: ConsumerMarket) => market.source.observationLabel === 'Operator-generated test inputs; no real-world traffic' ? 'Index market' : market.subtitle;
+export const marketDisplayTitle = (title: string) => title === 'Synthetic finance demo' ? 'Finance trial' : title;
+export const marketDisplaySubtitle = (market: ConsumerMarket) => market.source.observationLabel === 'Operator-generated test inputs; no real-world traffic' ? 'Devnet test market · operator-generated inputs' : market.subtitle;
