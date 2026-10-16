@@ -94,6 +94,25 @@ test('a manifest at 19 confirmations blocks issue even when every artifact has 2
   assert.equal(s.state,'CONFIRMING'); assert.equal(s.confirmations,19); assert.equal(adapter.issueCalls,0);
 }));
 
+test('large proof checks all artifacts without unbounded gateway requests', async () => withRepo(async repo => {
+  const adapter = fakeAdapter();
+  const artifacts = Array.from({ length: 20 }, (_, i) => ({ key: `raw:${i}`, kind: 'record', content: `source ${i}` }));
+  const job = await enqueue(repo, { record, versions, artifacts });
+  let inFlight = 0, maximum = 0, completed = 0;
+  const verify = adapter.verify.bind(adapter);
+  adapter.verify = async (...args) => {
+    inFlight++; maximum = Math.max(maximum, inFlight);
+    await new Promise(resolve => setTimeout(resolve, 2));
+    try { const result = await verify(...args); completed++; return result; }
+    finally { inFlight--; }
+  };
+  const result = await processJob(repo, job.id, adapter, 1000);
+  assert.equal(result.state, 'CONFIRMING');
+  assert.equal(completed, artifacts.length + 1);
+  assert.ok(maximum > 1 && maximum <= 4);
+  assert.equal(adapter.issueCalls, 0);
+}));
+
 test('tampered content or incomplete status cannot claim issue readiness', async () => withRepo(async repo => {
   const adapter = fakeAdapter(), job = await enqueue(repo,input);
   adapter.confirmations = 20;

@@ -1,0 +1,3 @@
+services:
+  price-history:
+    image: ante-up:price-health-c05a8bc

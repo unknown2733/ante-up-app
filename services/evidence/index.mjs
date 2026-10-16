@@ -140,7 +140,14 @@ export async function processJob(repo, id, adapter, now) {
         job.manifestRef = resolved; await save();
       } else { job.retryAt = now + 300; job.error = null; await save(); return status(job); }
     }
-    const confirmations = await Promise.all([...job.artifacts.map(a => [a.ref,a.receipt]), [job.manifestRef,job.manifestReceipt]].map(([ref,receipt]) => verifyOne(adapter,ref,receipt)));
+    // Each check reads the item and its parent status. Unbounded fan-out can
+    // exhaust gateway connections and turn a complete upload into timeouts.
+    const refs = [...job.artifacts.map(a => [a.ref,a.receipt]), [job.manifestRef,job.manifestReceipt]];
+    const confirmations = [];
+    for (let offset = 0; offset < refs.length; offset += 4) {
+      confirmations.push(...await Promise.all(refs.slice(offset, offset + 4)
+        .map(([ref,receipt]) => verifyOne(adapter,ref,receipt))));
+    }
     job.confirmations = Math.min(...confirmations);
     job.error = null;
     if (job.confirmations < 20) {

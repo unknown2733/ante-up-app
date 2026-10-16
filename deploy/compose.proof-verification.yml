@@ -1,0 +1,3 @@
+services:
+  evidence:
+    image: ante-up:proof-bounded-20261016
