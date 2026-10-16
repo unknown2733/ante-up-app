@@ -17,7 +17,7 @@ The owner chose the separately labelled synthetic Devnet market for controlled f
 
 This verifies bounded 5x long/short early-close and claim execution on the labelled Devnet trial. The normal weekly maturity (`1792368000`) remains a separate verification; this early-close trial does not demonstrate automatic settlement at maturity. Physical PC/Seeker wallet UI is also outside this operator harness.
 
-## Completed now
+## Historical 2026-10-13 preparation checkpoint
 
 - Actual Free gate: operator paused, outstanding 3/200, recent24h 5/100 at the read. Prior closure was the end of a bounded Android QA window, not a recorded incident. API now distinguishes ENTRY_PAUSED from LIMIT_REACHED and data readiness. Exit is unaffected.
 - New **synthetic** Devnet financial demo market prepared with 9 finalized transactions; public signatures are in prepare-journal.json. No X query, no observation, no graduation, no LP clock and no public collector entry were created.
@@ -34,7 +34,7 @@ This verifies bounded 5x long/short early-close and claim execution on the label
 - API + price-history use `/state/markets.json`. Deploy provenance-capable API and web before registry activation. Collector keyword configuration stays unchanged.
 - All keys remain server files mounted read-only. No private wallet file belongs in a report, checkout or image.
 
-## Execution order when UI and tester are ready
+## Historical execution plan (graduation completed before the 2026-10-16 retest)
 
 Use the verified new image, from the release root on the home server:
 
@@ -56,7 +56,7 @@ The gate's 1-hour reopening is separate and remains held until root's UI deploym
 ## Remaining verification
 
 1. New live UI: actual PC/Seeker wallet transactions for curve, indexed spot, LP, Pro long/short, early close + claim. Existing financial full-path evidence is historical (old QA market), not proof of these new UI flows.
-2. Graduate this prepared market only at test time; read back reserves/NAV/capabilities after each human action. Do not claim user signature approval through the operator harness.
+2. Graduation and the bounded operator finance roundtrip are complete on this labelled trial market. Do not claim human wallet signature approval through the operator harness; repeat the relevant flows in the current PC/Seeker UI when devices are available.
 3. Actual next-Monday maturity/settlement remains unverified on Devnet. Bounded keeper and empty-cycle recovery have local tests; no clock override or artificial accepted settlement is used. Empty-cycle recovery is available only before any active weekly cycle/positions; it cannot reopen LP on an old active cycle.
 4. Do not keep synthetic Free records in genuine attention leaderboards; API blocks new synthetic Free entries, but a malicious custom chain client is outside that gate. No synthetic Free records were created here.
 
