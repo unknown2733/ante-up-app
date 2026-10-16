@@ -1,0 +1,16 @@
+# Apply only after provisioning and reviewing the actual receiver(s). Generic
+# JSON webhook contract is documented in docs/implementation/OPERATIONS.md.
+services:
+  ops-monitor:
+    command: [flock, -n, -F, /ops-state/monitor.lock, node, scripts/ops/monitor.mjs, --config, /ops-config/monitor.json, --follow, --deliver]
+    volumes:
+      - type: bind
+        source: ${ANTE_UP_OPS_WEBHOOK_FILE:?Set private webhook URL file}
+        target: /run/secrets/ops-webhook.url
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${ANTE_UP_OPS_DEADMAN_FILE:?Set private independent deadman URL file}
+        target: /run/secrets/ops-deadman.url
+        read_only: true
+        bind: {create_host_path: false}

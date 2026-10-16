@@ -34,3 +34,6 @@
 **/*.jwk
 **/dist/
 **/*.tsbuildinfo
+/.codex-tmp/
+*.aub
+*.aub.receipt.json
