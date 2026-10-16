@@ -33,8 +33,10 @@ test('finalized market and global admission permit free entry before numeric dat
   const exhausted=(await read.markets())[0];
   assert.deepEqual(exhausted.capabilities.openFree,{allowed:false,reason:'BUDGET_EXHAUSTED',detail:'FUNDED_PROOF_CAP'});
   assert.equal(validateMarket(exhausted),exhausted);
-  fundedOpenCount=0n;
   open=false;
+  assert.deepEqual((await read.markets())[0].capabilities.openFree,
+    {allowed:false,reason:'BUDGET_EXHAUSTED',detail:'FUNDED_PROOF_CAP'});
+  fundedOpenCount=0n;
   const [closedGate]=await read.markets();
   assert.equal(closedGate.capabilities.openFree?.allowed,false);
   assert.equal(closedGate.capabilities.openFree?.reason,'ENTRY_PAUSED');
