@@ -1,10 +1,11 @@
-import { readFile, stat, mkdir, writeFile, rename } from 'node:fs/promises';
+import { readFile, mkdir, writeFile, rename } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { KitFinalizedAccountReader } from '../services/indexer/src/repositories.ts';
 import { FinalizedFinancialAccounts } from '../services/api/src/financial-chain.ts';
 import { createFinalizedChainPriceReader, createPriceSampler, DEFAULT_PRICE_INTERVAL_MS,
   SqlitePriceHistoryStore, validatePriceSamplerConfig } from '../services/api/src/consumer-price-sampler.ts';
+import { loadPriceMarketRegistry } from './price-market-registry.mjs';
 
 const required = (name) => { const value = process.env[name]; if (!value) throw new Error(`${name}_REQUIRED`); return value; };
 const healthPath = () => resolve(process.env.ANTE_UP_PRICE_HEALTH_PATH ?? '/state/health/price-history.json');
@@ -37,19 +38,23 @@ async function main() {
   }
   const programId = required('ANTE_UP_PROGRAM_ID');
   const registryPath = resolve(required('ANTE_UP_MARKETS_PATH'));
-  if ((await stat(registryPath)).size > 262_144) throw new Error('PRICE_ALLOWLIST_TOO_LARGE');
-  const markets = JSON.parse(await readFile(registryPath, 'utf8'));
-  const config = { programId, markets, intervalMs, timeoutMs: Number(process.env.ANTE_UP_PRICE_TIMEOUT_MS ?? 20_000), isStopping: () => stopping };
-  validatePriceSamplerConfig(config);
+  const registrationDbPath = resolve(required('ANTE_UP_REGISTRATION_DB'));
+  const configFor = async () => {
+    const markets = await loadPriceMarketRegistry(registryPath, registrationDbPath);
+    const config = { programId, markets, intervalMs, timeoutMs: Number(process.env.ANTE_UP_PRICE_TIMEOUT_MS ?? 20_000), isStopping: () => stopping };
+    validatePriceSamplerConfig(config);
+    return config;
+  };
+  await configFor();
   const rpcUrl = (await readFile(resolve(required('ANTE_UP_RPC_URL_FILE')), 'utf8')).trim();
   if (!/^https?:\/\//.test(rpcUrl)) throw new Error('PRICE_RPC_URL_INVALID');
   const accounts = new KitFinalizedAccountReader(rpcUrl);
   const state = new FinalizedFinancialAccounts({ cluster: 'devnet', programId, accounts });
   const reader = createFinalizedChainPriceReader(state);
   const store = mode === '--dry-run' ? undefined : new SqlitePriceHistoryStore(resolve(required('ANTE_UP_PRICE_DB')), programId, intervalMs);
-  const sampler = createPriceSampler(config, reader, store);
   try {
     if (mode !== '--follow') {
+      const sampler = createPriceSampler(await configFor(), reader, store);
       const result = await sampler.runOnce(mode === '--dry-run');
       console.log(JSON.stringify(result));
       if (mode === '--once') await heartbeat(result);
@@ -57,6 +62,7 @@ async function main() {
     }
     while (!stopping) {
       try {
+        const sampler = createPriceSampler(await configFor(), reader, store);
         const result = await sampler.runOnce(false);
         if (!stopping) { await heartbeat(result); console.log(JSON.stringify(result)); }
       } catch {

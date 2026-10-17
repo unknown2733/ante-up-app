@@ -18,6 +18,7 @@ services:
     environment:
       ANTE_UP_PROGRAM_ID: FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr
       ANTE_UP_MARKETS_PATH: /state/markets.json
+      ANTE_UP_REGISTRATION_DB: /state/live-smoke/index.sqlite
       ANTE_UP_RPC_URL_FILE: /run/secrets/rpc.url
       ANTE_UP_PRICE_DB: /state/live-smoke/price-history.sqlite
       ANTE_UP_PRICE_HEALTH_PATH: /state/health/price-history.json
