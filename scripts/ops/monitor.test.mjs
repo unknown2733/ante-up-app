@@ -16,7 +16,7 @@ async function fixture(t){
   const save=async(path,value)=>writeFile(path,JSON.stringify(value));
   await save(join(live,'collection.json'),{totalSpentMicros:100,spentByDay:{'2026-10-16':10},batches:{},markets:{[market]:{lastPollAt:at-100}}});
   await save(join(live,'candidates.json'),{jobs:{}});await save(join(live,'evidence/budget.json'),{version:1,reservations:{}});
-  await save(join(state,'health/collector.json'),{at:now-1000});
+  await save(join(state,'health/collector.json'),{at:now-1000,lastPollAt:at-100});
   await save(join(state,'health/price-history.json'),{atMs:now-1000,status:'PARTIAL',valid:1,noData:2,readErrors:0});
   const dbPath=join(live,'index.sqlite'),db=new DatabaseSync(dbPath);
   db.exec('CREATE TABLE current_snapshots(cluster TEXT,program_id TEXT,market_id TEXT,sequence TEXT,snapshot_json TEXT); CREATE TABLE current_free_records(cluster TEXT,program_id TEXT,record_json TEXT);');
@@ -40,6 +40,29 @@ test('healthy observer accepts partial price coverage and makes only Devnet read
   const f=await fixture(t),report=await collect(f.config,{now,fetcher:f.fetcher});
   assert.deepEqual(report.alerts,[]);assert.equal(report.status,'OK');
   assert.deepEqual(f.calls.map(c=>c.method),['getGenesisHash','getBalance']);assert.equal(f.calls[1].params[1].commitment,'finalized');
+});
+
+test('an additional keyword is monitored from its own collection journal and shared finalized index',async t=>{
+  const f=await fixture(t),extra='33333333333333333333333333333333';
+  await mkdir(join(f.config.stateDirectory,'tariff'));
+  await f.save(join(f.config.stateDirectory,'tariff/collection.json'),
+    {markets:{[extra]:{lastPollAt:at-100}},batches:{},totalSpentMicros:15000,spentByDay:{}});
+  await f.save(join(f.config.stateDirectory,'health/collector-tariff.json'),{at:now-1000,lastPollAt:at-100});
+  const db=new DatabaseSync(f.dbPath);
+  db.prepare('INSERT INTO current_snapshots VALUES(?,?,?,?,?)').run('devnet',program,extra,'1',
+    JSON.stringify({finality:'finalized',payload:{marketId:extra,dataThrough:at-200}}));
+  db.close();
+  f.config.markets.push({id:extra,collectionDirectory:'tariff',collectionMaxAgeSeconds:900,snapshotMaxAgeSeconds:900});
+  f.config.services.push({name:'collector-tariff',path:'health/collector-tariff.json',maxAgeSeconds:180});
+  assert.deepEqual((await collect(f.config,{now,fetcher:f.fetcher})).alerts,[]);
+  await f.save(join(f.config.stateDirectory,'tariff/collection.json'),
+    {markets:{[extra]:{lastPollAt:at-1800}},batches:{},totalSpentMicros:15000,spentByDay:{}});
+  await f.save(join(f.config.stateDirectory,'health/collector-tariff.json'),{at:now-1000,lastPollAt:at-1800});
+  const stale=await collect(f.config,{now,fetcher:f.fetcher});
+  assert.ok(stale.alerts.some(a=>a.id===`COLLECTION_STALE:${extra}`));
+  assert.ok(stale.alerts.some(a=>a.id==='COLLECTION_STALE:collector-tariff'));
+  assert.throws(()=>validateConfig({...f.config,markets:[{...f.config.markets[1],collectionDirectory:'../outside'}]}),
+    /MONITOR_MARKETS_INVALID/);
 });
 test('state quota warns before the collector storage gate and fails at the cap',async t=>{
   const f=await fixture(t),baseline=await collect(f.config,{now,fetcher:f.fetcher});

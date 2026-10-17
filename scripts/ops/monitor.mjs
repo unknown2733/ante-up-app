@@ -14,7 +14,8 @@ export function validateConfig(c) {
   check(c.version===1&&typeof c.monitorId==='string'&&/^[a-z0-9-]{1,64}$/.test(c.monitorId),'MONITOR_CONFIG_INVALID');
   check(typeof c.stateDirectory==='string'&&typeof c.runtimeDirectory==='string'&&!inside(c.stateDirectory,c.runtimeDirectory)&&!inside(c.runtimeDirectory,c.stateDirectory),'MONITOR_DIRECTORIES_REQUIRED');
   check(safeRelative(c.liveDirectory)&&address(c.programId),'MONITOR_SCOPE_INVALID');
-  check(Array.isArray(c.markets)&&c.markets.length>0&&c.markets.every(m=>address(m.id)&&positive(m.collectionMaxAgeSeconds)&&positive(m.snapshotMaxAgeSeconds)),'MONITOR_MARKETS_INVALID');
+  check(Array.isArray(c.markets)&&c.markets.length>0&&c.markets.every(m=>address(m.id)&&positive(m.collectionMaxAgeSeconds)&&positive(m.snapshotMaxAgeSeconds)&&
+    (m.collectionDirectory===undefined||safeRelative(m.collectionDirectory))),'MONITOR_MARKETS_INVALID');
   check(Array.isArray(c.services)&&c.services.length>0&&c.services.every(s=>safeRelative(s.path)&&typeof s.name==='string'&&/^[a-z0-9-]+$/.test(s.name)&&positive(s.maxAgeSeconds)),'MONITOR_SERVICES_INVALID');
   check(positive(c.pendingPublishMaxAgeSeconds)&&positive(c.proofMaxAgeSeconds)&&positive(c.maxProofBacklog)&&positive(c.repeatSeconds)&&positive(c.intervalSeconds)&&positive(c.minFreeBytes),'MONITOR_THRESHOLDS_INVALID');
   if(c.maxStateBytes!==undefined)check(positive(c.maxStateBytes),'MONITOR_STATE_LIMIT_INVALID');
@@ -48,6 +49,8 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
   for(const service of c.services){
     const health=await load(join(c.stateDirectory,service.path),`service-${service.name}`);if(!health)continue;
     age(Math.floor((health.at??health.atMs)/1000),service.maxAgeSeconds,'SERVICE_STALE',service.name);
+    if(service.name==='collector'||service.name.startsWith('collector-'))
+      age(health.lastPollAt,900,'COLLECTION_STALE',service.name);
     if(service.name==='price-history'&&!(health.status==='OK'||health.status==='PARTIAL'&&health.valid>0&&health.readErrors===0))add('SERVICE_ERROR',service.name);
     if(service.name==='evidence'&&health.held>0)add('PROOF_WORKER_HELD','evidence','warning',{held:health.held});
   }
@@ -78,7 +81,10 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
   }
   const collection=await load(join(live,'collection.json'),'collection');
   for(const market of c.markets){
-    if(collection)age(collection.markets?.[market.id]?.lastPollAt,market.collectionMaxAgeSeconds,'COLLECTION_STALE',market.id);
+    const marketCollection=market.collectionDirectory
+      ? await load(join(c.stateDirectory,market.collectionDirectory,'collection.json'),`collection-${market.id}`)
+      : collection;
+    if(marketCollection)age(marketCollection.markets?.[market.id]?.lastPollAt,market.collectionMaxAgeSeconds,'COLLECTION_STALE',market.id);
   }
   const day=new Date(now).toISOString().slice(0,10);
   function budget(value,limit,scope,next=0n){
