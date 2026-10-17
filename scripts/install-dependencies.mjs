@@ -21,7 +21,7 @@ export function npmCli() {
   const paths = [process.env.npm_execpath, join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js'),
     join(dirname(process.execPath), '../lib/node_modules/npm/bin/npm-cli.js')];
   const found = paths.find(p => p && existsSync(p));
-  if (!found) throw new Error('npm CLI not found. Run npm ci in each module listed in docs/implementation/SDK_IMPLEMENTATION.md.');
+  if (!found) throw new Error('npm CLI not found. Run npm ci in each module listed by node scripts/install-dependencies.mjs --plan.');
   return found;
 }
 

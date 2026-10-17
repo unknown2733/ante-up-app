@@ -2,11 +2,12 @@
 
 ## Live validation update — 2026-10-12
 
-The [live Arweave/SAS report](../../docs/implementation/ARWEAVE_SAS_VALIDATION.md) supersedes the older no-live-execution statements below. One actual X-backed free-chip result completed source storage (minimum22 confirmations), finalized Devnet SAS, protocol proof completion, indexer linking and independent HTTP/web-client readback. The separate N/A record and mobile UI remain unverified. `verify-devnet-proof.mjs` rechecks completion without signing/upload keys. `upload-journal.mjs` stages signed items before transport for response-loss recovery.
+An X-backed Devnet free-chip result completed source storage (minimum 22 confirmations), finalized SAS, protocol proof completion, indexer linking, and HTTP readback. This does not verify every queued record. `verify-devnet-proof.mjs` rechecks completion without signing/upload keys. `upload-journal.mjs` stages signed items before transport for response-loss recovery.
 
 `scripts/prove-devnet.mjs` supplies `storageOptions.inclusionVerifier` from `inclusion.mjs`: it verifies parent signatures/data roots, bounded ANS-104 inclusion and item signatures without relying on absent gateway verification headers. `receipt.mjs` checks pinned service/version receipt signatures. `turbo.mjs` compresses large JSON losslessly and hashes the original canonical bytes. Claims use one Borsh string, matching the live `[12]` schema. The generic runtime accepts the same `storageOptions` through the CLI runtime module; a provider-header-only configuration does not gain independent inclusion verification automatically.
 
-Current limitations and the receipt recovery incident are documented in the live report. No source/provider truth claim, local consensus-node verification, mainnet execution or public mobile UI validation is implied.
+This path does not independently establish provider truth, mainnet execution,
+or every mobile-wallet flow.
 
 Run `npm test` from this directory, or `node --test services/evidence/*.test.mjs` from the repository root. Tests use fake transport/SDK injection plus the installed sas-lib encoder; they do not call Arweave or Solana.
 

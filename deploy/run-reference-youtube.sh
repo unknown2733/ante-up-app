@@ -6,8 +6,8 @@ if [[ $# -ne 1 || -z "$1" ]]; then
   exit 2
 fi
 
-state_dir=/srv/ante-up/builds/service-state
-secret_file=/srv/ante-up/secrets/youtube-api.key
+state_dir=${ANTE_UP_HOST_STATE_DIR:?set the host state directory}
+secret_file=${ANTE_UP_YOUTUBE_API_KEY_FILE:?set the private YouTube API key file}
 if [[ ! -s "$secret_file" ]]; then
   echo 'YouTube API key file is missing or empty' >&2
   exit 2

@@ -1,15 +1,14 @@
 # Ante Up contributor instructions
 
-Read README.md for current implementation and verification boundaries. Then read
-docs/implementation/CONTRACT_V02.md and the relevant source/tests. Historical
-design notes preserve earlier decisions; do not treat their old TBDs as current.
+Read README.md and docs/DEVELOPMENT.md before changing the app. Use the relevant
+source, shared contracts, and tests as the implementation reference. Product
+articles in docs/product/ describe the public user experience.
 
-Read docs/implementation/CONSUMER_UNIFIED_R2.md for the current parallel work contract.
-The user approved a unified catalog without a Live/Demo mode switch. Preserve
-observed/sample provenance and execution boundaries, wallet authorization, finalized-chain validation,
-liability reservations and existing user data. Never place private credentials
-in VITE_* inputs, commit operator keys, or claim simulated data is live evidence.
+Preserve observed versus illustrative data provenance, wallet authorization,
+finalized-chain validation, liability reservations, and existing user data.
+Never place private credentials in VITE_* inputs or commit operator keys.
+Never claim simulated data is live evidence.
 
-Use module lockfiles; no root npm workspace is configured. Run relevant tests
-and report skipped native checks separately. Financial semantics require explicit
-review against the shared contracts and program code.
+Use module lockfiles; there is no root npm workspace. Run relevant tests and
+report skipped native checks separately. Review financial changes against the
+shared contracts and program code.

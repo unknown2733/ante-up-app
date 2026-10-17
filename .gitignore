@@ -37,3 +37,20 @@
 /.codex-tmp/
 *.aub
 *.aub.receipt.json
+
+# Local coordination, historical project notes, QA evidence, and operator records.
+# Keep these outside the public source tree; ignoring them does not erase Git history.
+/HANDOFF*.md
+/PUBLICATION.md
+/docs/qa/
+/docs/implementation/
+/docs/START_HERE.md
+/docs/BLOCKCHAIN_BASICS.md
+/docs/CONTEXT.md
+/docs/DECISIONS.md
+/docs/GLOSSARY.md
+/docs/PRD.md
+/docs/PRODUCT_VISION.md
+/scripts/consumer-r2-matrix.md
+/deploy/run-financial-demo.sh
+/work/

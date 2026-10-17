@@ -1,5 +1,5 @@
 # Apply only after provisioning and reviewing the actual receiver(s). Generic
-# JSON webhook contract is documented in docs/implementation/OPERATIONS.md.
+# JSON webhook settings are supplied through private operator config files.
 services:
   ops-monitor:
     command: [flock, -n, -F, /ops-state/monitor.lock, node, scripts/ops/monitor.mjs, --config, /ops-config/monitor.json, --follow, --deliver]

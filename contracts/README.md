@@ -1,6 +1,8 @@
 # Integration contract 0.1
 
-Read `../docs/implementation/A_CONTRACT.md` and `MVP_SPEC.md` before implementing.
+Read the shared types, reference calculations, program code, and tests before
+changing a wire or financial contract. The public setup guide is
+[`docs/DEVELOPMENT.md`](../docs/DEVELOPMENT.md).
 
 - `types.ts`: semantic wire types. Runtime validation and IDL/account layouts remain producers' work.
 - `reference.mjs`: exact integer reference for core equations; not a complete protocol implementation.
@@ -9,6 +11,8 @@ Read `../docs/implementation/A_CONTRACT.md` and `MVP_SPEC.md` before implementin
 
 Run without dependency installation: `node --test contracts/reference.test.mjs`.
 
-Schema changes belong to integration owner A. B/C/D/F must submit compatibility proposals rather than changing this directory independently. Consumer fixtures must label themselves as fixture data; unavailable live APIs must not silently return fixture success.
+Coordinate schema changes across API, web, indexer, and program consumers.
+Consumer fixtures must label themselves as fixture data; unavailable live APIs
+must not silently return fixture success.
 
 EWMA recurrence precision verification, live adapters, runtime schema validation, Anchor execution, Solana account layouts and direct-call quota enforcement are not proven by these reference tests.

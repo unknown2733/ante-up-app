@@ -11,7 +11,7 @@ All financial flows use test assets. This is an experimental implementation, not
 ## Try it
 
 1. Open **Explore** to browse charts and subjects without a wallet. The catalog combines observed Devnet markets with read-only **Preview** subjects backed by fetched public reference data or official metadata and artwork.
-2. Check each item's source, metric, capture date, and action state. Previously verified collection covered one approved keyword: `solana`. Public snapshots show actual YouTube video views, X post likes, and Spotify track streams reported by Kworb with its report date. These snapshots are not live feeds or settlement prices. Profiles, activity, and rankings use actual Devnet records.
+2. Check each item's source, metric, capture date, and action state. The `solana` and `tariff` keyword markets have observed X Counts feeds; other catalog subjects remain references unless marked tradable. Public snapshots show YouTube views, X post likes, and dated third-party Spotify stream reports. Reference subjects do not feed settlement. Profiles, activity, and rankings use Devnet records.
 3. Connect a Devnet wallet. Desktop Phantom, Android Phantom's in-app browser, and Seeker Chrome with Seed Vault Wallet have completed real-device flows on an earlier UI release.
 4. Open the in-app **Faucet** to check Devnet SOL for network fees, then request tUSD. A dedicated capped Devnet funder currently offers eligible wallets 0.02 test SOL once per 24 hours, with a 0.2 SOL daily and 0.8 SOL cumulative service limit. The page also links to the official Devnet faucet. Availability depends on the funder balance and operator limits.
 5. **Place chip** on an eligible Devnet market, watch its attention reference, then **Take back chip** to finalize the result. A wallet can hold up to three active chips, with one per market. Attention change is not a cash return.
@@ -96,7 +96,7 @@ This runs module type checks, reference and integration tests, web tests and the
 
 For the separate native-tooling inventory, run `node scripts/doctor.mjs --require-chain`.
 
-See [local runtime](docs/implementation/LOCAL_RUNTIME.md), [SDK setup](docs/implementation/SDK_IMPLEMENTATION.md) and [financial runtime](docs/implementation/FINANCIAL_RUNTIME.md) for module-specific requirements.
+See [development setup](docs/DEVELOPMENT.md) for local requirements and architecture boundaries.
 
 ## Connect live services
 
@@ -112,46 +112,49 @@ Use module `.env.example` files as templates. Keep actual credentials, wallet ke
 
 `node scripts/serve-web.mjs` serves the built app on loopback port 8080 and proxies `/api/` to `API_ORIGIN` (default `http://127.0.0.1:8787`). Run the API separately. The clean container build is `deploy/Dockerfile`; optional release overlays can depend on pre-existing operator images.
 
-Operational tools and opt-in Compose profiles are documented in [backup, isolated recovery drills and alerts](docs/implementation/OPERATIONS.md). They support encrypted whole-state snapshots, destination readback, offline restore verification and read-only progress/budget/wallet monitoring. Actual off-host storage, key escrow and notification receivers still require operator configuration and a first live drill.
+Opt-in Compose profiles and the scripts under `scripts/ops/` provide backup and monitoring primitives. Operator-specific configuration and run records are kept outside this repository.
 
-## Verification status
+## Devnet status
 
-Earlier baseline checks completed on October 13, 2026. These do not verify this source revision or provide continuous service guarantees:
+As of October 17, 2026, the `solana` market has graduated from its curve on
+Devnet with operator-provided test capital. Small LP deposit/withdrawal, spot
+buy/sell, and 5× Pro long/short open/close/claim transactions were finalized
+against its observed X Counts index. These round trips do not yet establish
+normal weekly maturity settlement, economic safety, or organic user demand.
+The `tariff` market also collects observed X Counts but remains on its curve.
+Reference videos and posts have separate observed metrics; they are not
+keyword-market settlement inputs.
 
-| Check | Result and boundary |
-| --- | --- |
-| Linux integration regression | 210 passed, 2 native checks skipped in that environment |
-| Web regression | 40/40 passed, including HTTP integration |
-| Consumer browser QA | 38 checks at desktop and mobile viewport sizes, using a local mock API |
-| Public deployment | Seven routes and JS/CSS/favicon matched the release; real API cross-view checks passed |
-| Real wallets | Earlier UI completed PC/Android Phantom and Seeker chip flows; Seeker curve buy/sell also finalized |
-| Financial program | Synthetic Devnet market exercised curve, graduation, spot, LP and 5× long/short flows |
-| Evidence | Real Arweave storage and SAS issuance verified for test records; pending records may still be incomplete |
-
-Earlier consumer source: `8023388`. Integrated development baseline: `e66e708`. The subsequent R2 release was `6b7c9d1`. These are historical verification references; they do not establish deployment of the current source revision. Original development hashes may not resolve in this snapshot repository.
-
-The latest catalog release `0d6967a` was deployed on October 13, 2026 KST. It replaces the earlier Wikipedia-based catalog (`e910fad`) with nine captured YouTube/X/Spotify metrics and original media, while preserving actual Devnet wallet rankings. Linux tests passed 50/50 web and 18/18 source/chart/social/Docs checks; responsive browser QA passed 51 views. Public HTTPS verified 11 routes and release asset hashes. Spotify totals are dated Kworb reports; all nine values are snapshots, not automated feeds. See the [release report](docs/implementation/CONSUMER_R2_INTEGRATION.md) for evidence and limits.
+Earlier PC, Android Phantom, and Seeker flows completed with real Devnet
+wallets. The latest UI still needs a full physical-wallet regression pass.
+The Arweave/SAS path has issued proofs for test records, while additional
+records can remain pending. Run the checks above for this checkout; historical
+test totals are not a substitute for a current run.
 
 ### Remaining work
 
 - Repeat wallet approval, cancellation and response-loss recovery on the latest UI and verify an owning wallet's note write.
 - Expand evidence processing beyond the current bounded record allowlist and verify the remaining archive/SAS backlog. The worker reuses signed upload receipts and has a total spend cap; a healthy worker does not mean every record has a proof.
-- Configure and validate the keeper against a reviewed, currently eligible Devnet financial market. The public keyword markets are still in the curve phase or have no fresh indexed trading price.
-- Establish an off-host backup and restore test for the complete service state and private operator keys. The current online SQLite snapshots are per-database and are not a complete recovery copy.
+- Complete a normal weekly maturity using the observed `solana` feed, then verify settlement acceptance and the next LP window.
 - Validate broader live source coverage, economic assumptions and production security before considering real assets.
 
-## Design documentation
+## Documentation
 
-For app guidance, start with [product Docs](docs/product/start.md). For implementation, read the [MVP specification](docs/implementation/MVP_SPEC.md), [contract revision 0.2](docs/implementation/CONTRACT_V02.md) and sources. The older [product vision](docs/PRODUCT_VISION.md), [context](docs/CONTEXT.md), [PRD](docs/PRD.md) and [glossary](docs/GLOSSARY.md) preserve design history; their October 11 technical TBDs are superseded by later implementation decisions. They are not current deployment reports.
+For the user experience, read the [product Docs](docs/product/start.md). For
+setup and code boundaries, read the [development guide](docs/DEVELOPMENT.md).
+Shared DTOs and financial rules are defined by `contracts/`, the program,
+and their tests. Internal decisions, handoffs, deployment journals, and raw
+operator evidence are intentionally outside the public source tree.
 
 ## Publication and license
 
-This public repository began as a snapshot of the development project. Its initial publication commit is not the date all development began. Private operational records and credentials are excluded from the publication package.
+This public repository began as a snapshot of the development project. Its
+initial publication commit is not the date development began. Keep private
+operator state and credentials outside the repository.
 
 Original source code and documentation are licensed under the [MIT License](LICENSE).
 Brand images are excluded; third-party components retain their own licenses. See
 [licensing scope](LICENSING.md).
 
 Public repository: [unknown2733/ante-up-app](https://github.com/unknown2733/ante-up-app),
-owned by the shared GitHub organization. See [publication provenance](PUBLICATION.md)
-for the development baseline and publication scope.
+owned by the shared GitHub organization.

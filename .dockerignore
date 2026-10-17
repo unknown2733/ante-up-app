@@ -8,7 +8,9 @@
 **/*keypair*.json
 **/*private*.json
 **/.history
-docs/implementation/evidence
+docs/implementation
+docs/qa
+deploy/run-financial-demo.sh
 .codex-tmp
 **/*.aub
 **/*.aub.receipt.json
