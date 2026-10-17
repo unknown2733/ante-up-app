@@ -1,0 +1,7 @@
+# Apply after compose.ops-telegram.yml with a reviewed tariff-aware monitor config.
+services:
+  ops-monitor:
+    image: ante-up-ops:${ANTE_UP_OPS_TARIFF_RELEASE:?}
+    command: [flock, -n, -F, /ops-state/monitor.lock, node, scripts/ops/monitor.mjs, --config, /ops-config/monitor.tariff.json, --follow, --deliver]
+    healthcheck:
+      test: [CMD, node, scripts/ops/monitor.mjs, --config, /ops-config/monitor.tariff.json, --health]
