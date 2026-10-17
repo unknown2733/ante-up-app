@@ -41,7 +41,10 @@ export async function runLiveCycle({config,argv,now,store,transport,publisherRun
   }
   const common={store,rawDirectory:join(config.directory,'raw'),transport,
     marketId:config.marketId,expressions:config.expressions,queryVersion:config.queryVersion,
-    estimatedCostMicros:config.estimatedCostMicros};
+    estimatedCostMicros:config.estimatedCostMicros,
+    initialLimitMicros:config.initialLimitMicros,
+    dailyLimitMicros:config.dailyLimitMicros,
+    totalLimitMicros:config.totalLimitMicros};
   const latestComplete=Math.floor(now/300)*300;
   const market=(await store.read()).markets[config.marketId];
   const from=market?.recoveryState?.dataThrough ?? latestComplete-300;

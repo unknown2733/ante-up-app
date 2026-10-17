@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { HISTORY_MINUTES } from './index.mjs';
 import { XCountsHttpAdapter, FileCollectionState, queryHashFor, runInitialArchive, runRegularPoll } from './live.mjs';
+import { runLiveCycle } from './cli.mjs';
 
 const start = Math.floor(1_700_000_000/300)*300;
 const rows = (from,through) => Array.from({length:(through-from)/60},(_,i) => ({
@@ -39,6 +41,22 @@ test('archive pagination reserves budget before each page and stops at the cap',
     assert.equal(result.state,'FAILED');assert.equal(result.error,'BUDGET_EXHAUSTED');
     assert.equal(result.pages.length,1);assert.equal(calls,1);
     assert.equal((await store.read()).totalSpentMicros,1000);
+  } finally {await rm(dir,{recursive:true,force:true});}
+});
+
+test('live cycle forwards a market archive cap before a second paid page',async()=>{
+  const dir=await mkdtemp(join(process.cwd(),'ante-cycle-budget-'));
+  try {
+    let calls=0;
+    const result=await runLiveCycle({config:{directory:dir,marketId:'fixture:budget',
+      expressions:['alpha'],queryVersion:'1',historyStart:start,estimatedCostMicros:1000,
+      initialLimitMicros:1000,totalLimitMicros:1000},argv:['--execute','--initial'],
+      now:start+HISTORY_MINUTES*60,transport:{async count(){calls++;
+        return {data:[],meta:{next_token:'second'}};}}});
+    assert.equal(result.state,'FAILED');
+    assert.equal(result.error,'BUDGET_EXHAUSTED');
+    assert.equal(calls,1);
+    assert.equal((await new FileCollectionState(join(dir,'collection.json')).read()).totalSpentMicros,1000);
   } finally {await rm(dir,{recursive:true,force:true});}
 });
 
@@ -84,7 +102,7 @@ test('failed HTTP attempt remains charged and is not silently retried', async ()
 });
 
 test('delayed live poll catches up actual minute buckets without counting multiple recovery observations', async () => {
-  const dir=await mkdtemp(join(process.cwd(),'.runtime/ante-catchup-'));
+  const dir=await mkdtemp(join(tmpdir(),'ante-catchup-'));
   try {
     const store=new FileCollectionState(join(dir,'state.json')),end=start+HISTORY_MINUTES*60;
     const calls=[];

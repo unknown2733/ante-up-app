@@ -10,6 +10,6 @@ try {
   const s=JSON.parse(await readFile(`${process.env.ANTE_UP_HEALTH_DIRECTORY}/${role}.json`));
   if(Date.now()-s.at>(role==='indexer'?90000:180000))throw Error();
   if(role==='evidence'&&s.admissionGuard==='UNSAFE')throw Error();
-  if(role==='collector'&&(!s.lastPollAt||Date.now()/1000-s.lastPollAt>900))throw Error();
+  if(role.startsWith('collector')&&(!s.lastPollAt||Date.now()/1000-s.lastPollAt>900))throw Error();
  }
 }catch{process.exitCode=1;}

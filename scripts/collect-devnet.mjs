@@ -29,6 +29,11 @@ try{
  if(await rpc.getGenesisHash().send()!=='EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG')throw Error('DEVNET_REQUIRED');
  const config=JSON.parse(await readFile(required('ANTE_UP_COLLECTION_CONFIG'),'utf8'));
  if(typeof config.logicalId!=='string'||!config.logicalId||typeof config.directory!=='string'||!config.directory||!Number.isSafeInteger(config.historyStart)||config.historyStart%300!==0||!Number.isSafeInteger(config.estimatedCostMicros)||config.estimatedCostMicros<=0||!/^[a-f0-9]{64}$/.test(config.seedHex))throw Error('COLLECTION_CONFIG_INVALID');
+ for(const field of ['initialLimitMicros','dailyLimitMicros','totalLimitMicros'])
+  if(config[field]!==undefined&&(!Number.isSafeInteger(config[field])||config[field]<config.estimatedCostMicros))
+   throw Error('COLLECTION_BUDGET_INVALID');
+ const healthName=process.env.ANTE_UP_COLLECTOR_HEALTH_NAME??'collector';
+ if(!/^collector(?:-[a-z0-9]{1,24})?$/.test(healthName))throw Error('COLLECTOR_HEALTH_NAME_INVALID');
  config.directory=resolve(config.directory);await mkdir(config.directory,{recursive:true});
  const [market]=await sdk.findMarketPda({marketId:Uint8Array.from(Buffer.from(config.seedHex,'hex'))});
  if(market!==config.marketId)throw Error('MARKET_PDA_MISMATCH');
@@ -59,7 +64,7 @@ try{
   const state=await store.read(),stored=state.markets[market],now=Math.floor(Date.now()/1000);
   const retryAt=Math.max(0,...Object.values(state.batches).filter(b=>b.state==='FAILED').map(b=>b.retryAt??0));
   const due=Math.max(stored?.lastPollAt?stored.lastPollAt+300:0,retryAt);
-  await heartbeat('collector',{lastPollAt:stored?.lastPollAt??null,totalSpentMicros:state.totalSpentMicros,nextPollAt:due});
+  await heartbeat(healthName,{marketId:market,lastPollAt:stored?.lastPollAt??null,totalSpentMicros:state.totalSpentMicros,nextPollAt:due});
   if(!initial&&now<due){
    if(!args.includes('--follow')){console.log(JSON.stringify({state:'WAITING',nextPollAt:due}));break;}
    await sleep(Math.min(30,due-now)*1000);continue;
