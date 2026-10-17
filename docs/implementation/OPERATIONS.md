@@ -230,7 +230,8 @@ For a dedicated Ante Up Telegram chat, create a separate bot and have the chat
 send `/start` to it. Store its token and numeric chat ID in separate files with
 restricted permissions. Set `telegramTokenFile` to
 `/run/secrets/ops-telegram.token` and `telegramChatIdFile` to
-`/run/secrets/ops-telegram.chat-id` in the private `monitor.json`.
+`/run/secrets/ops-telegram.chat-id` in a private copy of the monitor config
+named `monitor.telegram.json`; preserve the original `monitor.json` for rollback.
 After the user sends `/start`, `node scripts/ops/telegram-chat.mjs
 /private/ops-telegram.token` prints the single private chat ID, without printing
 the token. Fail on zero or multiple private `/start` chats rather than guessing.

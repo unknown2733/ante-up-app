@@ -2,7 +2,9 @@
 # the dedicated bot and private chat have been configured.
 services:
   ops-monitor:
-    command: [flock, -n, -F, /ops-state/monitor.lock, node, scripts/ops/monitor.mjs, --config, /ops-config/monitor.json, --follow, --deliver]
+    command: [flock, -n, -F, /ops-state/monitor.lock, node, scripts/ops/monitor.mjs, --config, /ops-config/monitor.telegram.json, --follow, --deliver]
+    healthcheck:
+      test: [CMD, node, scripts/ops/monitor.mjs, --config, /ops-config/monitor.telegram.json, --health]
     volumes:
       - type: bind
         source: ${ANTE_UP_OPS_TELEGRAM_TOKEN_FILE:?Set the dedicated bot token file}
