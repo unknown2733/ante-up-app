@@ -13,6 +13,7 @@ import {FinalizedPoller} from '../services/indexer/src/poller.ts';
 import {KitFinalizedRpc} from '../services/indexer/src/rpc.ts';
 import {GeneratedProgramEventDecoder} from '../services/indexer/src/generated-decoder.ts';
 import { heartbeat, checkStorage } from './runtime-status.mjs';
+import { collectorProjectionDbPath } from './collector-paths.mjs';
 
 // Explicit paid-data opt-in. Files stay on the execution host; no secrets in argv.
 const required=name=>{if(!process.env[name])throw Error(`MISSING_${name}`);return process.env[name];};
@@ -43,7 +44,11 @@ try{
  const publisher=await kit.createKeyPairSignerFromBytes(Uint8Array.from(JSON.parse(await readFile(required('ANTE_UP_PUBLISHER_KEYPAIR_FILE'),'utf8'))));
  const transport=sdk.createKitChainTransport(endpoint),programId=sdk.ANTE_UP_PROGRAM_ADDRESS;
  const scope={cluster:'devnet',programId,address:programId};
- const db=join(config.directory,'index.sqlite'),candidatePath=join(config.directory,'candidates.json');
+ // A market-specific collector journal is separate from the shared finalized
+ // projection. Reconciliation must read the indexer's database, not an empty
+ // database under this market's collection directory.
+ const db=collectorProjectionDbPath(config.directory,process.env);
+ const candidatePath=join(config.directory,'candidates.json');
  projection=new SqliteProjectionStore(db);repositories=new SqliteEventRepositories(db,new KitFinalizedAccountReader(endpoint));
  const poller=new FinalizedPoller(projection,new KitFinalizedRpc(endpoint),new GeneratedProgramEventDecoder({snapshots:repositories,proofs:repositories}),100,async key=>{
   try{await repositories.importCandidateFile(candidatePath,key);}catch(e){if(e.code!=='ENOENT')throw e;}
