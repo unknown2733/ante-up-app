@@ -84,10 +84,42 @@ test('notifications deduplicate, repeat, resolve and retry failed delivery witho
   await f.save(join(f.live,'collection.json'),{totalSpentMicros:0,spentByDay:{},batches:{},markets:{[market]:{lastPollAt:at}}});
   await runOnce(f.config,{now:now+2000,send:true,fetcher:success});assert.equal(events.length,2);assert.equal(events[1].resolved.length,1);
 });
+test('dedicated Telegram alerts send and resolve without exposing the bot token',async t=>{
+  const f=await fixture(t),token='123456:'+('a'.repeat(24)),sent=[];
+  f.config.telegramTokenFile=join(f.dir,'telegram.token');
+  f.config.telegramChatIdFile=join(f.dir,'telegram.chat-id');
+  await writeFile(f.config.telegramTokenFile,token);
+  await writeFile(f.config.telegramChatIdFile,'-1001234567890');
+  await rm(join(f.live,'collection.json'));
+  const fetcher=async(url,request)=>{
+    if(url.startsWith('https://api.telegram.org/')) {
+      sent.push({url,body:JSON.parse(request.body)});
+      return {ok:true,json:async()=>({ok:true})};
+    }
+    return f.fetcher(url,request);
+  };
+  await runOnce(f.config,{now,send:true,fetcher});
+  assert.equal(sent.length,1);
+  assert.equal(sent[0].body.chat_id,'-1001234567890');
+  assert.match(sent[0].body.text,/ALERT critical: INPUT_UNAVAILABLE \(collection\)/);
+  assert.equal(JSON.stringify(sent[0].body).includes(token),false);
+  await runOnce(f.config,{now:now+1000,send:true,fetcher});
+  assert.equal(sent.length,1);
+  await f.save(join(f.live,'collection.json'),{totalSpentMicros:0,spentByDay:{},batches:{},markets:{[market]:{lastPollAt:at}}});
+  await runOnce(f.config,{now:now+2000,send:true,fetcher});
+  assert.equal(sent.length,2);
+  assert.match(sent[1].body.text,/RESOLVED: INPUT_UNAVAILABLE \(collection\)/);
+  await rm(join(f.live,'collection.json'));
+  const failed=async(url,request)=>url.startsWith('https://api.telegram.org/')?{ok:false,json:async()=>({ok:false,description:'private'})}:f.fetcher(url,request);
+  await assert.rejects(runOnce(f.config,{now:now+3000,send:true,fetcher:failed}),error=>error.message==='ALERT_DELIVERY_FAILED'&&!error.message.includes(token));
+  const ack=JSON.parse(await readFile(join(f.config.runtimeDirectory,'notifications.json'),'utf8'));
+  assert.equal(Object.keys(ack).length,0);
+});
 test('configuration rejects invalid budgets, scope and writable runtime inside state',async t=>{
   const f=await fixture(t);assert.throws(()=>validateConfig({...f.config,xBudget:{...f.config.xBudget,dailyMicros:NaN}}),/MONITOR_X_BUDGET_INVALID/);
   assert.throws(()=>validateConfig({...f.config,runtimeDirectory:join(f.config.stateDirectory,'observer')}),/MONITOR_DIRECTORIES_REQUIRED/);
   assert.throws(()=>validateConfig({...f.config,liveDirectory:'../escape'}),/MONITOR_SCOPE_INVALID/);
+  assert.throws(()=>validateConfig({...f.config,telegramTokenFile:'/private/token'}),/MONITOR_ALERT_CHANNEL_INVALID/);
 });
 test('null or array input does not suppress required-state findings',async t=>{
   const f=await fixture(t);await f.save(join(f.live,'collection.json'),null);await f.save(join(f.live,'candidates.json'),[]);

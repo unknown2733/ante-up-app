@@ -26,6 +26,8 @@ export function validateConfig(c) {
   check(typeof c.rpcUrlFile==='string','MONITOR_RPC_REQUIRED');
   if(c.httpChecks)check(Array.isArray(c.httpChecks)&&c.httpChecks.every(h=>/^[a-z0-9-]+$/.test(h.name)&&/^https?:\/\//.test(h.url)&&(!h.expectMode||h.expectMode==='devnet')),'MONITOR_HTTP_CHECKS_INVALID');
   if(c.backup)check(typeof c.backup.copyReceipt==='string'&&typeof c.backup.drillReport==='string'&&positive(c.backup.maxAgeSeconds)&&typeof c.backup.destinationId==='string','MONITOR_BACKUP_CONFIG_INVALID');
+  if(c.telegramTokenFile!==undefined||c.telegramChatIdFile!==undefined)
+    check(typeof c.telegramTokenFile==='string'&&c.telegramTokenFile.length>0&&typeof c.telegramChatIdFile==='string'&&c.telegramChatIdFile.length>0&&!c.webhookUrlFile,'MONITOR_ALERT_CHANNEL_INVALID');
   return c;
 }
 export async function rpcCall(endpoint, method, params, fetcher=fetch) {
@@ -166,6 +168,25 @@ export async function deliver(urlFile,event,fetcher=fetch) {
   const response=await fetcher(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(event),signal:AbortSignal.timeout(10000),redirect:'error'});
   check(response.ok,'ALERT_DELIVERY_FAILED'); // Provider body can contain private data.
 }
+export async function deliverTelegram(tokenFile,chatIdFile,event,fetcher=fetch) {
+  const [token,chatId]=await Promise.all([readFile(tokenFile,'utf8'),readFile(chatIdFile,'utf8')]).then(values=>values.map(value=>value.trim()));
+  check(/^\d+:[A-Za-z0-9_-]{20,}$/.test(token)&&/^-?\d{1,20}$/.test(chatId),'TELEGRAM_CONFIG_INVALID');
+  const rows=[
+    `Ante Up Devnet operations · ${event.at}`,
+    ...event.firing.map(alert=>`ALERT ${alert.severity}: ${alert.code} (${alert.scope})${Object.keys(alert.metrics??{}).length?` · ${JSON.stringify(alert.metrics).slice(0,180)}`:''}`),
+    ...event.resolved.map(alert=>`RESOLVED: ${alert.code} (${alert.scope})`)
+  ];
+  const message=rows.join('\n').slice(0,4000);
+  // The token stays in a mounted secret file; never include the provider URL or response body in errors.
+  try {
+    const response=await fetcher(`https://api.telegram.org/bot${token}/sendMessage`,{
+      method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({chat_id:chatId,text:message,disable_web_page_preview:true}),
+      signal:AbortSignal.timeout(10000),redirect:'error'
+    });
+    if(!response.ok||(await response.json()).ok!==true)throw Error('ALERT_DELIVERY_FAILED');
+  } catch {throw Error('ALERT_DELIVERY_FAILED');}
+}
 export async function runOnce(c,{send=false,now=Date.now(),fetcher=fetch}={}) {
   validateConfig(c);await mkdir(c.runtimeDirectory,{recursive:true,mode:0o700});
   const report=await collect(c,{now,fetcher});let previous;
@@ -173,9 +194,10 @@ export async function runOnce(c,{send=false,now=Date.now(),fetcher=fetch}={}) {
   const event=notification(report,previous,c.repeatSeconds);report.delivery={enabled:send,pending:event.firing.length+event.resolved.length};
   await atomicJson(join(c.runtimeDirectory,'report.json'),report);
   if(send){
-    check(c.webhookUrlFile,'WEBHOOK_NOT_CONFIGURED');
+    check(c.webhookUrlFile||c.telegramTokenFile,'ALERT_CHANNEL_NOT_CONFIGURED');
     if(event.firing.length||event.resolved.length){
-      await deliver(c.webhookUrlFile,event,fetcher);
+      if(c.telegramTokenFile)await deliverTelegram(c.telegramTokenFile,c.telegramChatIdFile,event,fetcher);
+      else await deliver(c.webhookUrlFile,event,fetcher);
       for(const a of event.firing)previous[a.id]={code:a.code,scope:a.scope,severity:a.severity,sentAt:report.at};
       for(const a of event.resolved)delete previous[a.id];
       await atomicJson(join(c.runtimeDirectory,'notifications.json'),previous);

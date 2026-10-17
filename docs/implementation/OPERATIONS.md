@@ -226,7 +226,26 @@ RPC URL, not publisher, Turbo, issuer or faucet keys. The default command never
 sends alerts. `report.json` and `health.json` are in the separate observer runtime.
 The healthcheck measures observer progress, not whether all services are healthy.
 
-To send notifications, provision a reviewed HTTPS receiver and add
+For a dedicated Ante Up Telegram chat, create a separate bot and have the chat
+send `/start` to it. Store its token and numeric chat ID in separate files with
+restricted permissions. Set `telegramTokenFile` to
+`/run/secrets/ops-telegram.token` and `telegramChatIdFile` to
+`/run/secrets/ops-telegram.chat-id` in the private `monitor.json`.
+After the user sends `/start`, `node scripts/ops/telegram-chat.mjs
+/private/ops-telegram.token` prints the single private chat ID, without printing
+the token. Fail on zero or multiple private `/start` chats rather than guessing.
+Store that ID in the separate chat ID file. Set
+`ANTE_UP_OPS_TELEGRAM_TOKEN_FILE` and `ANTE_UP_OPS_TELEGRAM_CHAT_ID_FILE` to the
+corresponding host file paths, then add `compose.ops-telegram.yml` on top of
+`compose.ops.yml`. Check the merged Compose configuration before starting only
+`ops-monitor` with `--no-deps`. It sends a short alert, repeats unresolved
+findings at `repeatSeconds`, and sends a recovery message. A failed Telegram
+response is retried without advancing acknowledgement. Neither the bot token
+nor Telegram's response body is written to the monitor report or logs. The
+monitor mounts no signing keys. This chat alert does not detect a total host or
+network outage; that requires an independent deadman service.
+
+Alternatively, provision a reviewed HTTPS receiver and add
 `compose.ops-alerts.yml`. It adds `--deliver` and private URL-file mounts. The
 generic receiver accepts JSON:
 
@@ -245,9 +264,9 @@ does not acknowledge: the next cycle retries. A crash after receiver acceptance
 but before local acknowledgement may duplicate delivery; receivers should
 deduplicate on monitorId, at and alert ID. Dry observation never suppresses the
 first real notification. Provider URLs/bodies and exception details are not
-printed. No Slack/Telegram-specific payload adapter is included; connect this
-contract through the chosen receiver rather than assuming a chat webhook accepts
-it. Reports contain public market/record identifiers; scope receiver access.
+printed. The generic JSON webhook and the Telegram adapter are mutually
+exclusive in `monitor.json`. Reports contain public market/record identifiers;
+scope receiver or chat access.
 
 An optional independent deadman receives `{version, monitorId, at, status}` each
 successful `--deliver` cycle. It must alert when updates stop. A local container

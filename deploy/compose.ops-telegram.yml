@@ -1,0 +1,16 @@
+# Opt-in Ante Up Telegram alerts. Apply on top of compose.ops.yml only after
+# the dedicated bot and private chat have been configured.
+services:
+  ops-monitor:
+    command: [flock, -n, -F, /ops-state/monitor.lock, node, scripts/ops/monitor.mjs, --config, /ops-config/monitor.json, --follow, --deliver]
+    volumes:
+      - type: bind
+        source: ${ANTE_UP_OPS_TELEGRAM_TOKEN_FILE:?Set the dedicated bot token file}
+        target: /run/secrets/ops-telegram.token
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${ANTE_UP_OPS_TELEGRAM_CHAT_ID_FILE:?Set the private chat ID file}
+        target: /run/secrets/ops-telegram.chat-id
+        read_only: true
+        bind: {create_host_path: false}
