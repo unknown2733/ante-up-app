@@ -3,7 +3,7 @@
 services:
   indexer:
     environment:
-      ANTE_UP_EXTRA_CANDIDATES_PATHS: ${ANTE_UP_INDEXER_EXTRA_CANDIDATES_JSON:?}
+      ANTE_UP_EXTRA_CANDIDATES_PATHS: '${ANTE_UP_INDEXER_EXTRA_CANDIDATES_JSON:?}'
   collector-tariff:
     image: ante-up:${ANTE_UP_TARIFF_RELEASE:?}
     user: "${ANTE_UP_UID:-1000}:${ANTE_UP_GID:-1000}"
