@@ -26,7 +26,6 @@ test('paid X requests are reserved durably and spaced six hours apart', async ()
     finally { reopened.close(); }
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
-
 test('failed or uncertain X provider call consumes its slot and is not retried automatically', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ante-up-x-budget-'));
   const dbPath = join(dir, 'api.sqlite');
@@ -41,4 +40,3 @@ test('failed or uncertain X provider call consumes its slot and is not retried a
     assert.equal(calls, 1);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
-
