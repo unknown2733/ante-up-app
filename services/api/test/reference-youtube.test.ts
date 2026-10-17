@@ -11,12 +11,14 @@ test('one approved YouTube statistics batch becomes three durable public observa
   const dbPath = join(dir, 'api.sqlite');
   try {
     let calls = 0;
-    const fetcher = async (url: string) => {
+    const fetcher = async (url: string, init?: RequestInit) => {
       calls++;
       const request = new URL(url);
       assert.equal(request.hostname, 'www.googleapis.com');
       assert.equal(request.searchParams.get('part'), 'statistics');
       assert.equal(request.searchParams.get('id')?.split(',').length, 3);
+      assert.equal(request.searchParams.has('key'), false);
+      assert.equal(new Headers(init?.headers).get('x-goog-api-key'), 'test-secret');
       return new Response(JSON.stringify({ items: [
         { id: 'S0Q4gqBUs7c', statistics: { viewCount: '14200001' } },
         { id: 'sTcHbELHYCk', statistics: { viewCount: '2790000' } },

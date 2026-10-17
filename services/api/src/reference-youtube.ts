@@ -15,8 +15,9 @@ export async function collectYouTubeReferenceViews(input: {
   const url = new URL('https://www.googleapis.com/youtube/v3/videos');
   url.searchParams.set('part', 'statistics');
   url.searchParams.set('id', videos.map(item => new URL(item.subjectUrl).searchParams.get('v')).join(','));
-  url.searchParams.set('key', input.apiKey);
-  const response = await (input.fetcher ?? fetch)(url.toString(), { cache: 'no-store' });
+  const response = await (input.fetcher ?? fetch)(url.toString(), {
+    cache: 'no-store', headers: { 'x-goog-api-key': input.apiKey },
+  });
   if (!response.ok) throw new Error(`YOUTUBE_PROVIDER_HTTP_${response.status}`);
   const raw = Buffer.from(await response.arrayBuffer());
   if (raw.byteLength > 2_000_000) throw new Error('YOUTUBE_RESPONSE_TOO_LARGE');
