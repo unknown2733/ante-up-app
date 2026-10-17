@@ -29,8 +29,10 @@ try{
  if(await rpc.getGenesisHash().send()!=='EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG')throw Error('DEVNET_REQUIRED');
  const config=JSON.parse(await readFile(required('ANTE_UP_COLLECTION_CONFIG'),'utf8'));
  if(typeof config.logicalId!=='string'||!config.logicalId||typeof config.directory!=='string'||!config.directory||!Number.isSafeInteger(config.historyStart)||config.historyStart%300!==0||!Number.isSafeInteger(config.estimatedCostMicros)||config.estimatedCostMicros<=0||!/^[a-f0-9]{64}$/.test(config.seedHex))throw Error('COLLECTION_CONFIG_INVALID');
+ if(config.initialEstimatedCostMicros!==undefined&&(!Number.isSafeInteger(config.initialEstimatedCostMicros)||config.initialEstimatedCostMicros<config.estimatedCostMicros))
+  throw Error('COLLECTION_COST_ESTIMATE_INVALID');
  for(const field of ['initialLimitMicros','dailyLimitMicros','totalLimitMicros'])
-  if(config[field]!==undefined&&(!Number.isSafeInteger(config[field])||config[field]<config.estimatedCostMicros))
+  if(config[field]!==undefined&&(!Number.isSafeInteger(config[field])||config[field]<(field==='dailyLimitMicros'?config.estimatedCostMicros:(config.initialEstimatedCostMicros??config.estimatedCostMicros))))
    throw Error('COLLECTION_BUDGET_INVALID');
  const healthName=process.env.ANTE_UP_COLLECTOR_HEALTH_NAME??'collector';
  if(!/^collector(?:-[a-z0-9]{1,24})?$/.test(healthName))throw Error('COLLECTOR_HEALTH_NAME_INVALID');

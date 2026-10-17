@@ -51,7 +51,8 @@ export async function runLiveCycle({config,argv,now,store,transport,publisherRun
   if (!argv.includes('--initial') && latestComplete-from>7*86400) throw new Error('HISTORY_OUT_OF_RECENT_RANGE');
   const hasGap=market && market.observations.some(o=>o.bucketEnd>from);
   const result=argv.includes('--initial') ? await runInitialArchive({...common,start:config.historyStart,
-    through:config.historyStart+28*86400,now}) : hasGap ? await runGapFill({...common,historyStart:config.historyStart,now}) :
+    through:config.historyStart+28*86400,now,
+    estimatedCostMicros:config.initialEstimatedCostMicros??config.estimatedCostMicros}) : hasGap ? await runGapFill({...common,historyStart:config.historyStart,now}) :
     // A delayed worker must catch up to the latest complete boundary. Advancing
     // only five minutes per five-minute poll would preserve an outage forever.
     // This remains ONE recovery observation, regardless of the range fetched.

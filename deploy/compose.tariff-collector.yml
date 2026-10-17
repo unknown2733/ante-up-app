@@ -1,0 +1,49 @@
+# Add after the existing indexer candidate-path overlays. Keep every existing
+# candidate path in ANTE_UP_INDEXER_EXTRA_CANDIDATES_JSON before adding tariff.
+services:
+  indexer:
+    environment:
+      ANTE_UP_EXTRA_CANDIDATES_PATHS: ${ANTE_UP_INDEXER_EXTRA_CANDIDATES_JSON:?}
+  collector-tariff:
+    image: ante-up:${ANTE_UP_TARIFF_RELEASE:?}
+    user: "${ANTE_UP_UID:-1000}:${ANTE_UP_GID:-1000}"
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 60s
+    mem_limit: 1536m
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+    command: [flock, -n, -F, /state/collector-tariff.lock, node, scripts/service-entry.mjs, scripts/collect-devnet.mjs, --execute, --follow]
+    depends_on:
+      indexer: {condition: service_healthy}
+    environment:
+      ANTE_UP_CLUSTER: devnet
+      ANTE_UP_MODE: devnet
+      ANTE_UP_PROGRAM_ID: FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr
+      ANTE_UP_RPC_URL_FILE: /run/secrets/rpc.url
+      ANTE_UP_INDEX_DB: /state/live-smoke/index.sqlite
+      ANTE_UP_HEALTH_DIRECTORY: /state/health
+      ANTE_UP_COLLECTOR_HEALTH_NAME: collector-tariff
+      ANTE_UP_ENABLE_PAID_X: "yes"
+      ANTE_UP_EXTERNAL_INDEXER: "yes"
+      ANTE_UP_COLLECTION_CONFIG: /state/tariff/collection-config.json
+      ANTE_UP_PUBLISHER_KEYPAIR_FILE: /run/secrets/publisher.json
+      X_BEARER_TOKEN_FILE: /run/secrets/x.token
+      ANTE_UP_STATE_LIMIT_BYTES: "5368709120"
+    volumes:
+      - ${ANTE_UP_STATE_DIR}:/state
+      - ${ANTE_UP_SECRET_DIR}/devnet-rpc.url:/run/secrets/rpc.url:ro
+      - ${ANTE_UP_SECRET_DIR}/devnet-publisher.json:/run/secrets/publisher.json:ro
+      - ${ANTE_UP_SECRET_DIR}/x-bearer.token:/run/secrets/x.token:ro
+    healthcheck:
+      test: [CMD, node, scripts/service-health.mjs, collector-tariff]
+      interval: 30s
+      timeout: 15s
+      start_period: 120s
+      retries: 3

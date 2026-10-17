@@ -49,7 +49,8 @@ test('live cycle forwards a market archive cap before a second paid page',async(
   try {
     let calls=0;
     const result=await runLiveCycle({config:{directory:dir,marketId:'fixture:budget',
-      expressions:['alpha'],queryVersion:'1',historyStart:start,estimatedCostMicros:1000,
+      expressions:['alpha'],queryVersion:'1',historyStart:start,estimatedCostMicros:500,
+      initialEstimatedCostMicros:1000,
       initialLimitMicros:1000,totalLimitMicros:1000},argv:['--execute','--initial'],
       now:start+HISTORY_MINUTES*60,transport:{async count(){calls++;
         return {data:[],meta:{next_token:'second'}};}}});
