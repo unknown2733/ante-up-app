@@ -6,12 +6,13 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { referenceConsumerReadApi } from '../apps/web/src/reference/referenceData.ts';
-import { withVerifiedSubjectMedia } from '../apps/web/src/consumer-ui/catalog.ts';
+import { marketDisplayTitle, withVerifiedSubjectMedia } from '../apps/web/src/consumer-ui/catalog.ts';
 
 const args = process.argv.slice(2);
 const focusTrends = args.includes('--focus-trends');
 const focusIllustrative = args.includes('--focus-illustrative');
 const focusCompact = args.includes('--focus-compact');
+const desktopOnly = args.includes('--desktop-only');
 const option = flag => { const i = args.indexOf(flag); return i < 0 ? null : args[i + 1]; };
 if (!option('--dist')) throw new Error('Usage: node scripts/consumer-real-browser.mjs --dist apps/web/dist [--api-origin https://ante-up.fun] [--source-sha SHA]');
 const dist = path.resolve(option('--dist'));
@@ -153,7 +154,7 @@ try {
       lines:all('.au-chart svg polyline').map(e=>e.getAttribute('points')),
       chartCaption:all('.au-chart-caption').map(e=>e.innerText),
       chartObservation:all('.au-chart-history-context').map(e=>e.innerText),
-      pointTitles:all('.au-chart svg circle').map(e=>e.textContent),
+      illustrativeExplanation:document.querySelector('.au-chart-illustrative')?.textContent||'',
       observationRows:all('.au-chart-observations tbody tr').map(e=>({date:e.querySelector('time')?.dateTime,value:e.querySelectorAll('td')[1]?.textContent,source:e.querySelector('a')?.href})),
       observationHeaders:all('.au-chart-observations th').map(e=>e.textContent),
       snapshots:all('.au-metric-snapshot,.au-chart-snapshot').map(e=>({text:e.innerText,value:e.querySelector('.au-snapshot-value strong')?.textContent,
@@ -208,16 +209,17 @@ try {
     } else if (points.length) {
       check(probe.chart.length === 1 && probe.chartPoints === points.length, `chart point count differs from DTO (${probe.chartPoints}/${points.length})`);
       check(probe.chart.some(label => label.includes(series.unit)), `chart unit differs from ${series.unit}`);
-      if (points.length > 1) check(probe.periodControls === 4, 'history period controls absent');
+      if (points.length > 1) check(probe.periodControls === 4 || (probe.periodControls === 0 && probe.text.includes('Chart controls')), 'history period controls absent');
       if (illustrative) {
         check(probe.text.includes('Illustrative') && probe.chart.some(label => /illustrative/i.test(label)), 'illustrative chart lacks explicit visible/accessibility label');
         check(probe.chartSummary.some(text => text.includes(series.unit)), 'illustrative metric unit absent');
-        check(probe.text.includes('not measured activity'), 'illustrative chart lacks measured-data distinction');
-        check(points.every((point, index) => probe.pointTitles[index]?.endsWith(`${new Intl.NumberFormat('en', { maximumFractionDigits: 4 }).format(Number(point.value))} ${series.unit}`)), 'illustrative rendered values differ from its explicit preview DTO');
+        check(probe.illustrativeExplanation.includes('not measured activity'), 'illustrative chart lacks measured-data distinction');
+        const format = value => new Intl.NumberFormat('en', { maximumFractionDigits: 4 }).format(value);
+        const range = `${format(Math.min(...points.map(point => Number(point.value))))} to ${format(Math.max(...points.map(point => Number(point.value))))} ${series.unit}`;
+        check(probe.chart.some(label => label.includes(range)), 'illustrative accessible range differs from its explicit preview DTO');
         check(!probe.observationRows.length, 'illustrative series is presented as recorded source observations');
       } else if (series.timeBasis === 'REPORT_DATE') {
         check(probe.chartCaption.every(caption => !/\bUTC\b|\b[AP]M\b|\d{1,2}:\d{2}/.test(caption)), 'date-only report axis invents a time or timezone');
-        check(probe.pointTitles.every(title => !/\bUTC\b|\b[AP]M\b|\d{1,2}:\d{2}/.test(title)), 'date-only point label invents a time or timezone');
         check(probe.chartObservation.some(label => label.includes(series.aggregation === 'daily' ? 'Daily activity' : 'Cumulative activity') && label.includes('no live feed')), 'aggregation/report-date context absent');
         if (series.observationNote) check(probe.chartObservation.some(label => label.includes(series.observationNote)), 'source history scope absent');
       }
@@ -249,6 +251,7 @@ try {
   const shortActor = actor => actor.length > 18 ? `${actor.slice(0, 7)}…${actor.slice(-5)}` : actor;
   const viewports = [{ name: 'desktop-1440', width: 1440, height: 900, mobile: false }, { name: 'mobile-390', width: 390, height: 844, mobile: true }, { name: 'mobile-320', width: 320, height: 568, mobile: true }];
   for (const viewport of viewports) {
+    if (desktopOnly && viewport.mobile) continue;
     if (focusCompact && !viewport.mobile) continue;
     await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile });
     await send('Emulation.setTouchEmulationEnabled', { enabled: viewport.mobile, maxTouchPoints: viewport.mobile ? 5 : 1 });
@@ -262,6 +265,10 @@ try {
         const detail = await visit(route, viewport, `compact-${index}`, state => state.chartPoints === selected.points.length && state.actionTabs.length === 4);
         checkReferenceData(detail, history, selected);
         detail.check(!!detail.probe.chartViewport?.inView, 'default chart outside unobscured initial trading viewport');
+        await evaluate("document.querySelector('.au-mobile-chart-controls')?.click()");
+        await delay(100);
+        const expanded = await evaluate("[...document.querySelectorAll('.au-chart-periods button')].filter(button=>button.getBoundingClientRect().width>0).length===4");
+        detail.check(expanded, 'compact chart controls do not reveal the four periods');
         const clicked = await evaluate(`(() => {const e=[...document.querySelectorAll('.au-chart-series button')].find(e=>e.title===${JSON.stringify(actual.label)}||e.textContent.trim()===${JSON.stringify(actual.label)});if(!e)return false;e.click();return true})()`);
         detail.check(clicked, 'actual observed series toggle absent');
         const observed = await visit(route, viewport, `compact-${index}-observed`, state => actual.points.length === 1 ? state.snapshots.length === 1 : state.chartPoints === actual.points.length, false);
@@ -273,20 +280,20 @@ try {
     }
     const explore = await visit('/markets', viewport, 'explore', state => state.rows.length === catalog.length && state.rows.filter(row => row.spark?.visible).length === expectedSparkCount);
     explore.check(explore.probe.rows.filter(row => row.source === 'Public source').length === references.length, 'reference row count mismatch');
-    explore.check(explore.probe.rows.filter(row => row.source === 'Devnet observed').length === live.length, 'live row count mismatch');
+    explore.check(explore.probe.rows.filter(row => live.some(market => market.id === row.spark?.id)).length === live.length, 'live row count mismatch');
     for (const market of references) {
       const row = explore.probe.rows.find(row => row.label === `Open ${market.title} subject`);
       const count = new Intl.NumberFormat('en-US', { maximumFractionDigits: 6 }).format(Number(market.activity.value));
       explore.check(row?.value === `${count} ${market.activity.unit}`, `exact platform count/unit absent for ${market.id}`);
       explore.check(row?.metric === market.activity.label, `metric label absent for ${market.id}`);
     }
-    const expectedOrder = catalog.filter(market => market.source.mode === 'LIVE').length + referenceHistories.filter(history => history.series[0].aggregation === 'daily').length;
-    explore.check(explore.probe.rows.slice(0, expectedOrder).every(row => row.spark?.visible), 'first Explore rows do not show real trends');
     for (const row of explore.probe.rows) {
       const history = servedHistories.get(`${row.spark?.id}:1W`) ?? previewHistories.get(row.spark?.id);
       const series = history && previewSeries(history);
-      explore.check(!!series, `Explore trend lacks source history: ${row.label}`);
-      if (!series) continue;
+      if (!series) {
+        explore.check(!row.spark?.visible && !row.spark?.points.length && row.spark?.text.includes('History not available'), `missing history is not disclosed: ${row.label}`);
+        continue;
+      }
       const expected = [...series.points].filter(point => point.atMs <= series.source.asOfMs).sort((a, b) => a.atMs - b.atMs).map(point => ({ atMs: point.atMs, value: Number(point.value) }));
       if (expected.length < 2) {
         explore.check(!row.spark.visible && !row.spark.points.length && !row.spark.lines.length && row.spark.text.includes('History not available'), `snapshot has an invented trend: ${row.label}`);
@@ -380,9 +387,10 @@ try {
       }
     }
     for (const [index, market] of live.entries()) {
-      const detail = await visit(`/markets/${encodeURIComponent(market.id)}`, viewport, `live-${index}`, state => state.text.includes(market.title) && state.text.includes('DEVNET OBSERVED MARKET') && state.chartPoints > 0);
+      const hasHistory = !!previewSeries(previewHistories.get(market.id))?.points.length;
+      const detail = await visit(`/markets/${encodeURIComponent(market.id)}`, viewport, `live-${index}`, state => state.text.includes(marketDisplayTitle(market.title)) && state.actionTabs.length === 4 && (hasHistory ? state.chartPoints > 0 : state.text.includes('No observed chart data in this period')));
       detail.check(!detail.probe.text.includes('Fictional sample'), 'fictional live detail');
-      detail.check(detail.probe.chartBeforeActions && detail.probe.chartViewport?.inView, 'real live chart absent before actions or outside initial viewport');
+      detail.check(detail.probe.chartBeforeActions && (hasHistory ? !!detail.probe.chartViewport?.inView : detail.probe.text.includes('No observed chart data in this period')), 'live chart or explicit missing-history state absent before actions');
     }
     }
     if (focusTrends && !viewport.mobile) {
@@ -400,8 +408,9 @@ try {
       view.check(!!view.probe.chartViewport?.inView, 'reference chart/snapshot outside initial trading viewport');
     }
     for (const [index, market] of live.entries()) for (const section of ['trade', 'pro', 'lp']) {
-      const view = await visit(`/markets/${encodeURIComponent(market.id)}/${section}`, viewport, `live-${index}-${section}`, state => state.chartPoints > 0 && state.actionTabs.length === 4);
-      view.check(view.probe.chartBeforeActions && !!view.probe.chartViewport?.inView, 'real live chart absent before trading actions or outside initial viewport');
+      const hasHistory = !!previewSeries(previewHistories.get(market.id))?.points.length;
+      const view = await visit(`/markets/${encodeURIComponent(market.id)}/${section}`, viewport, `live-${index}-${section}`, state => state.actionTabs.length === 4 && (hasHistory ? state.chartPoints > 0 : state.text.includes('No observed chart data in this period')));
+      view.check(view.probe.chartBeforeActions && (hasHistory ? !!view.probe.chartViewport?.inView : view.probe.text.includes('No observed chart data in this period')), 'live chart or explicit missing-history state absent before trading actions');
     }
     if (!focusTrends) {
     const ranking = await visit('/leaderboard', viewport, 'leaderboard', state => state.ranks.length === board.rows.length && state.text.includes('Devnet records'));

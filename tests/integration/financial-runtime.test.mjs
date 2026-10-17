@@ -39,7 +39,7 @@ test('financial web/API preserves unknown signed faucet across both restarts wit
     const state=new FinalizedFinancialAccounts({cluster:'localnet',programId:ANTE_UP_PROGRAM_ADDRESS,
       accounts:{async get(account){return accounts.get(account)??null}}});
     registrations=new SqliteFinancialRegistrationStore(join(dir,'registration.sqlite'));
-    const financial=new FirstSliceFinancialReader(state,registrations);
+    const financial=new FirstSliceFinancialReader(state,registrations,()=>now);
     const transactions=new KitFirstSliceFinancialTransactionAdapter({state,reader:financial,now:()=>now,
       blockhashes:{async latest(){return {blockhash:'11111111111111111111111111111111',lastValidBlockHeight:999n}}}});
     const transport={async getFinalizedAccount(account){const raw=accounts.get(account);
