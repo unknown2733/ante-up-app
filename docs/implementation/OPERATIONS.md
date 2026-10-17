@@ -93,6 +93,19 @@ row-count summary. File names, keys and state contents remain encrypted. This
 is a local operational format, not a standard archival interchange format;
 retain the reviewed tool source and Node runtime with the recovery instructions.
 
+## Keeper settlement journal before activation
+
+The Keeper's frozen **settlement** journal is distinct from the indexer's
+publication-candidate store (`/state/live-smoke/candidates.json`). Set
+`ANTE_UP_KEEPER_SCOPE_PATH`, `ANTE_UP_KEEPER_JOURNAL_PATH`, and
+`ANTE_UP_KEEPER_ATTEMPTS_PATH` explicitly for the same reviewed market and cycle
+before including `deploy/compose.keeper.yml`. The journal must already contain
+`{"settlements":{}}` or frozen settlement rows. A missing file, a publication
+`candidates.json`, or a file without the `settlements` object fails before the
+Keeper CLI loads signing keys. The separately labelled Devnet trial uses its own
+`/state/financial-demo-20261013/settlements.json`; this does not authorize
+turning on the always-on Keeper or submitting maturity transactions.
+
 ## Backup maintenance window
 
 The JSON journals and databases do not share a transaction. `--quiesced` is an

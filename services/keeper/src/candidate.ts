@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { basename } from 'node:path';
 import { hash } from '../../data/index.mjs';
 import { indexPrice } from '../../../contracts/reference.mjs';
 
@@ -10,6 +11,21 @@ const record=(value:unknown):Record<string,unknown>=>{
   return value as Record<string,unknown>;
 };
 const valid=(ok:unknown)=>{if (!ok) throw new Error('KEEPER_CANDIDATE_INVALID');};
+
+/** Refuse the publication-candidate store before a Keeper CLI loads signing keys. */
+export async function assertSettlementJournalFile(path:string):Promise<void> {
+  if (basename(path).toLowerCase()==='candidates.json') throw new Error('KEEPER_JOURNAL_IS_PUBLICATION_STORE');
+  let raw:string;
+  try {raw=await readFile(path,'utf8');}
+  catch {throw new Error('KEEPER_JOURNAL_UNAVAILABLE');}
+  let value:unknown;
+  try {value=JSON.parse(raw);}
+  catch {throw new Error('KEEPER_JOURNAL_INVALID');}
+  if (!value || typeof value!=='object' || Array.isArray(value) ||
+      !('settlements' in value) || !value.settlements ||
+      typeof value.settlements!=='object' || Array.isArray(value.settlements))
+    throw new Error('KEEPER_JOURNAL_INVALID');
+}
 
 export interface SettlementScope {
   cluster:'localnet'|'devnet';programId:string;marketId:string;epoch:string;epochStartedAt:number;maturityAt:number;

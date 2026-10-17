@@ -18,9 +18,9 @@ services:
     environment:
       ANTE_UP_KEEPER_ENABLED: ${ANTE_UP_KEEPER_ENABLED:?Set yes after preflight}
       ANTE_UP_KEEPER_MAX_PASSES: ${ANTE_UP_KEEPER_MAX_PASSES:-9007199254740991}
-      ANTE_UP_KEEPER_SCOPE: /state/keeper/scope.json
-      ANTE_UP_KEEPER_JOURNAL: /state/live-smoke/candidates.json
-      ANTE_UP_KEEPER_ATTEMPTS: /state/keeper/attempts.sqlite
+      ANTE_UP_KEEPER_SCOPE: ${ANTE_UP_KEEPER_SCOPE_PATH:?Set reviewed cycle scope path under /state}
+      ANTE_UP_KEEPER_JOURNAL: ${ANTE_UP_KEEPER_JOURNAL_PATH:?Set reviewed settlement journal path under /state}
+      ANTE_UP_KEEPER_ATTEMPTS: ${ANTE_UP_KEEPER_ATTEMPTS_PATH:?Set durable attempts path under /state}
       ANTE_UP_KEEPER_GENESIS_HASH: ${ANTE_UP_KEEPER_GENESIS_HASH:?Set verified Devnet genesis hash}
       ANTE_UP_RPC_URL_FILE: /run/secrets/rpc.url
       ANTE_UP_PUBLISHER_KEYPAIR_FILE: /run/secrets/publisher.json

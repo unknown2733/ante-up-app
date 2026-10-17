@@ -5,7 +5,7 @@ import {SqliteKeeperAttempts} from '../../keeper/src/attempts.ts';
 import {advanceFinancialEpoch, planFinancialEpoch} from '../../keeper/src/flow.ts';
 import {advanceEmptyLpRecovery,planEmptyLpRecovery} from '../../keeper/src/lp-recovery.ts';
 import {runKeeperLoop} from '../../keeper/src/runner.ts';
-import type {SettlementScope} from '../../keeper/src/candidate.ts';
+import {assertSettlementJournalFile, type SettlementScope} from '../../keeper/src/candidate.ts';
 import {FinalizedFinancialAccounts, FirstSliceFinancialReader} from './financial-chain.ts';
 import {SqliteFinancialRegistrationStore} from './registration.ts';
 import {KitFinancialEpochChain, type KeeperInstructionTransport} from './keeper-chain.ts';
@@ -40,6 +40,7 @@ function parseArgs(args:string[]):Options {
 }
 async function main() {
   const options=parseArgs(process.argv.slice(2));
+  await assertSettlementJournalFile(options.journal);
   const loadScope=async()=>{
     const scope=JSON.parse(await readFile(options.scope,'utf8')) as SettlementScope;
     if (!scope || (scope.cluster!=='localnet' && scope.cluster!=='devnet') || !scope.programId || !scope.marketId ||

@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { hash } from '../../data/index.mjs';
-import { adaptFrozenSettlement, readFrozenSettlement, type SettlementScope } from '../src/candidate.ts';
+import { adaptFrozenSettlement, assertSettlementJournalFile, readFrozenSettlement, type SettlementScope } from '../src/candidate.ts';
 
 const scope:SettlementScope={cluster:'localnet',programId:'FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr',
   marketId:'11111111111111111111111111111111',epoch:'4',epochStartedAt:1_800_000_000,maturityAt:1_800_057_600,
@@ -60,4 +60,16 @@ test('C settlement journal reader locates only the exact frozen market and epoch
   assert.equal(await readFrozenSettlement(path,{...scope,epoch:'5'}),null);
   writeFileSync(path,JSON.stringify({settlements:{wrong:frozen}}));
   await assert.rejects(()=>readFrozenSettlement(path,scope),/KEEPER_CANDIDATE_INVALID/);
+});
+
+test('Keeper refuses publication journals and missing or malformed settlement journals before execution',async()=>{
+  const work=resolve(import.meta.dirname,'../../../../work/d-keeper-candidates');mkdirSync(work,{recursive:true});
+  const valid=resolve(work,`${randomUUID()}.json`),publication=resolve(work,'candidates.json');
+  writeFileSync(valid,JSON.stringify({settlements:{}}));
+  writeFileSync(publication,JSON.stringify({jobs:{}}));
+  await assert.doesNotReject(()=>assertSettlementJournalFile(valid));
+  await assert.rejects(()=>assertSettlementJournalFile(publication),/KEEPER_JOURNAL_IS_PUBLICATION_STORE/);
+  await assert.rejects(()=>assertSettlementJournalFile(resolve(work,`${randomUUID()}.json`)),/KEEPER_JOURNAL_UNAVAILABLE/);
+  writeFileSync(valid,JSON.stringify({jobs:{}}));
+  await assert.rejects(()=>assertSettlementJournalFile(valid),/KEEPER_JOURNAL_INVALID/);
 });
