@@ -20,6 +20,13 @@ export function requiredLiveConfig(env,argv) {
     historyStart:Number(env.ANTE_UP_HISTORY_START),estimatedCostMicros,token:env.X_BEARER_TOKEN};
 }
 
+// X Counts can reject a bucket at its nominal end while aggregation is settling.
+// Never request that bucket until it has been closed for at least one minute.
+export function latestSettledBucketEnd(now) {
+  if (!Number.isSafeInteger(now) || now < 60) throw new Error('INVALID_COLLECTION_TIME');
+  return Math.floor((now - 60) / 300) * 300;
+}
+
 export async function runLiveCycle({config,argv,now,store,transport,publisherRuntime=null}) {
   store??=new FileCollectionState(join(config.directory,'collection.json'));
   transport??=new XCountsHttpAdapter({bearerToken:config.token});
@@ -45,11 +52,14 @@ export async function runLiveCycle({config,argv,now,store,transport,publisherRun
     initialLimitMicros:config.initialLimitMicros,
     dailyLimitMicros:config.dailyLimitMicros,
     totalLimitMicros:config.totalLimitMicros};
-  const latestComplete=Math.floor(now/300)*300;
+  const latestComplete=latestSettledBucketEnd(now);
   const market=(await store.read()).markets[config.marketId];
   const from=market?.recoveryState?.dataThrough ?? latestComplete-300;
   if (!argv.includes('--initial') && latestComplete-from>7*86400) throw new Error('HISTORY_OUT_OF_RECENT_RANGE');
   const hasGap=market && market.observations.some(o=>o.bucketEnd>from);
+  if (!argv.includes('--initial') && latestComplete<from) throw new Error('COLLECTION_CURSOR_AHEAD');
+  if (!argv.includes('--initial') && latestComplete===from && !hasGap)
+    return {state:'SKIPPED',reason:'WAIT_FOR_SETTLED_BUCKET',publication:null};
   const result=argv.includes('--initial') ? await runInitialArchive({...common,start:config.historyStart,
     through:config.historyStart+28*86400,now,
     estimatedCostMicros:config.initialEstimatedCostMicros??config.estimatedCostMicros}) : hasGap ? await runGapFill({...common,historyStart:config.historyStart,now}) :

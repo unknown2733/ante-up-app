@@ -49,7 +49,7 @@ test('invalid source uses the real publisher path for an OUTAGE with no invented
     const publisherRuntime={repository,market,chain,publisherSigner:signer};
     const transport={async count(){paidCalls++;return {data:[{start:new Date(end*1000).toISOString(),
       end:new Date((end+60)*1000).toISOString(),tweet_count:-1}],meta:{}};}};
-    const first=await runLiveCycle({config,argv:['--execute','--publish'],now:end+300,
+    const first=await runLiveCycle({config,argv:['--execute','--publish'],now:end+360,
       store,transport,publisherRuntime});
     assert.equal(first.state,'FAILED');assert.equal(first.publication.pending,true);
     assert.equal(paidCalls,1);assert.equal(sends,1);
