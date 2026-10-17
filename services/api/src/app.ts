@@ -14,6 +14,7 @@ import { ExistingMarket } from './registration.ts';
 import { createConsumerApiRoutes, type ConsumerApiBindings } from './consumer-api.ts';
 import { consumerLiveNamespace } from '../../../contracts/consumer-identity.ts';
 import type { VisitorSolFaucet } from './visitor-faucet.ts';
+import type { ReferenceObservationStore } from './reference-observations.ts';
 
 export interface ReadAdapter {
   mode?: Mode;
@@ -69,6 +70,7 @@ export function createApp(options: {
   finalizeRegistration?: (requestId:string)=>Promise<void>;
   consumer?: ConsumerApiBindings;
   visitorSol?: VisitorSolFaucet;
+  referenceObservations?: Pick<ReferenceObservationStore, 'latest' | 'history'>;
 } = {}) {
   const now = options.now ?? (() => Math.floor(Date.now() / 1000));
   const mode = options.mode ?? 'fixture';
@@ -103,6 +105,21 @@ export function createApp(options: {
     try {
       const consumerResponse = await consumerRoutes?.(request, asOf, signed);
       if (consumerResponse) return consumerResponse;
+      if (parts[1] === 'reference' && options.referenceObservations) {
+        if (request.method !== 'GET') return fail('INVALID_INPUT', 'Method not allowed.');
+        if (parts.length === 3 && parts[2] === 'latest')
+          return json(envelope(options.referenceObservations.latest(), asOf));
+        if (parts.length === 4 && parts[2] === 'history') {
+          const slug = decodeURIComponent(parts[3]);
+          const since = url.searchParams.get('sinceMs') ?? '0';
+          if (!/^(0|[1-9][0-9]*)$/.test(since) || !Number.isSafeInteger(Number(since)))
+            return fail('INVALID_INPUT', 'Invalid history start.');
+          try { return json(envelope(options.referenceObservations.history(slug, Number(since)), asOf)); }
+          catch (error) { if (error instanceof Error && error.message === 'INVALID_REFERENCE_QUERY')
+            return fail('INVALID_INPUT', 'Invalid reference history query.'); throw error; }
+        }
+        return fail('INVALID_INPUT', 'Unknown reference route.');
+      }
       if (parts[1] === 'visitor-sol') {
         if (mode !== 'devnet' || !options.visitorSol) return fail('DATA_NOT_READY', 'Devnet SOL balance service is unavailable');
         if (request.method === 'GET' && parts.length === 3 && parts[2] === 'readiness') {

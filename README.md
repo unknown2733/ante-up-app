@@ -4,7 +4,7 @@
 
 Ante Up is a mobile-first app for taking a view on internet attention. Place a no-money chip, follow how attention changes, and take back the chip to record the result. Optional Devnet trading connects eligible markets to keyword tokens, leveraged positions and liquidity vaults.
 
-**[Open the app](https://ante-up.fun)** · **Solana Devnet MVP** · **Updated October 16, 2026**
+**[Open the app](https://ante-up.fun)** · **Solana Devnet MVP** · **Updated October 17, 2026**
 
 All financial flows use test assets. This is an experimental implementation, not a mainnet product or a claim of proven economic safety.
 
@@ -27,7 +27,7 @@ This source revision replaces synthetic catalog histories and fictional profiles
 | Test-asset trading | Faucet, registration, bonding-curve buy/sell, graduation, spot exchange, Pro long/short and LP participation |
 | Data | X Counts collector, validation, EWMA calculation and Solana snapshot publishing on a five-minute cycle |
 | Charts | Explore sparklines and market-detail charts show actual price or activity observations, with metric, period and first-to-last change; missing history stays explicit. Finalized-chain price samples every five minutes; visible observed Devnet detail charts refresh every 60 seconds |
-| Reference catalog | Twelve actual subjects: five YouTube videos, three X posts, four Spotify tracks; five dated histories (61 observations), seven single snapshots, original media and source links. Nine insufficient-history subjects also have explicitly labeled display-only illustrative trends; original observations remain separate |
+| Reference catalog | Twelve actual subjects: five YouTube videos, three X posts, four Spotify tracks; five dated histories (61 observations), seven single snapshots, original media and source links. Nine insufficient-history subjects also have explicitly labeled display-only illustrative trends; original observations remain separate. Source implementation now accepts verified append-only observations through a read-only API, pending provider collectors and deployment |
 | Evidence | Raw inputs and calculation evidence archived through Arweave/Turbo; Solana records and SAS attestations link results to evidence |
 | Operations | API, indexer and bounded workers; provider budgets, stale-data handling and restart recovery |
 

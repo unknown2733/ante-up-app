@@ -13,8 +13,8 @@ import { ConsumerShell, MarketDiscovery, ActionTabs, mergeConsumerMarkets } from
 import type { ActionTab, ConsumerRoute } from './consumer-ui';
 import { ConsumerChart } from './charts/ConsumerChart';
 import { SocialLeaderboard, SocialNote, SocialNoteEditor, SocialNoteHistory, SocialProfile } from './social/Social';
-import { liveConsumerHttp } from './api';
-import { referenceConsumerReadApi, isReferenceConsumerId } from './reference/referenceData';
+import { liveConsumerHttp, referenceReadApi } from './api';
+import { isReferenceConsumerId } from './reference/referenceData';
 import { ReferenceMarketActions } from './reference/ReferenceMarketActions';
 import { DocsPage } from './docs';
 import { ChipCompletion } from './consumer-ui/ChipCompletion';
@@ -317,7 +317,7 @@ const marketHref = (id: string) => `/markets/${encodeURIComponent(id)}`;
 const actorHref = (id: string, actionId?: string) => `/u/${encodeURIComponent(id)}${actionId ? `?action=${encodeURIComponent(actionId)}` : ''}`;
 const chartHref = (action: ConsumerAction) => `${marketHref(action.marketId)}?period=ALL&action=${encodeURIComponent(action.id)}`;
 function consumerRead(mode: ConsumerMode) {
-  if (mode === 'REFERENCE') return referenceConsumerReadApi;
+  if (mode === 'REFERENCE') return referenceReadApi;
   if (mode !== 'LIVE') throw new Error('This example is no longer published. Open Explore for current subjects.');
   if (!liveConsumerHttp) throw new Error('Devnet markets are unavailable. Configure the API connection to view them.');
   const read = liveConsumerHttp.read;
@@ -332,14 +332,18 @@ function useUnifiedCatalog(refresh: number): CatalogState {
   useEffect(() => {
     let active = true;
     setState(previous => ({ ...previous, loading: true }));
-    Promise.allSettled([referenceConsumerReadApi.listMarkets(), liveConsumerHttp ? liveConsumerHttp.read.listMarkets() : Promise.reject(new Error('Devnet API is not configured.'))]).then(results => {
+    const load = () => Promise.allSettled([referenceReadApi.listMarkets(), liveConsumerHttp ? liveConsumerHttp.read.listMarkets() : Promise.reject(new Error('Devnet API is not configured.'))]).then(results => {
       if (!active) return;
       const references = results[0].status === 'fulfilled' ? results[0].value : [];
       const live = results[1].status === 'fulfilled' ? results[1].value.map(withVerifiedSubjectMedia) : [];
       const liveError = results[1].status === 'rejected' ? displayConsumerError(results[1].reason instanceof Error ? results[1].reason.message : null, 'Devnet markets are unavailable.') : '';
       setState({ markets: mergeConsumerMarkets(references, live), liveError, loading: false });
     });
-    return () => { active = false; };
+    void load();
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void load(); }, 60_000);
+    const onVisibility = () => { if (document.visibilityState === 'visible') void load(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => { active = false; window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisibility); };
   }, [refresh]);
   return state;
 }
@@ -366,7 +370,7 @@ function useConsumerHistory(mode: ConsumerMode, id: string, period: ConsumerPeri
       controller = nextController;
       setState(previous => ({ ...previous, loading: previous.value === null, refreshing: previous.value !== null }));
       Promise.resolve().then(() => mode === 'REFERENCE'
-        ? referenceConsumerReadApi.getHistory(id, period)
+        ? referenceReadApi.getHistory(id, period)
         : liveConsumerHttp ? liveConsumerHttp.getHistory(id, period, nextController.signal) : Promise.reject(new Error('Live Devnet markets are unavailable.')))
         .then(value => {
           if (value && (value.market.id !== id || value.period !== period || value.source.mode !== mode || value.market.source.mode !== mode || (mode === 'LIVE' && value.market.liveMarketId && value.market.liveMarketId !== id))) throw new Error('Market history identity or mode does not match this route.');
@@ -385,7 +389,7 @@ function useConsumerHistory(mode: ConsumerMode, id: string, period: ConsumerPeri
     }
     manualRefresh.current = () => load(true);
     load();
-    if (mode !== 'LIVE') return () => { active = false; controller?.abort(); manualRefresh.current = null; };
+    if (mode !== 'LIVE' && mode !== 'REFERENCE') return () => { active = false; controller?.abort(); manualRefresh.current = null; };
     const timer = window.setInterval(() => load(), 60_000);
     const onVisibility = () => {
       if (!visible()) { queued = false; controller?.abort(); setState(previous => ({ ...previous, refreshing: false })); }

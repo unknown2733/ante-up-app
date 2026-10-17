@@ -18,6 +18,7 @@ import { combinePriceObservationReaders, createFinalizedConsumerHistory, project
 import { openPriceHistoryReadStore } from './consumer-price-sampler.ts';
 import { ConsumerNoteService, createConsumerSocialProjection, createFinalizedFreeActionLookup, SqliteNotePersistence } from './consumer-social.ts';
 import type { VisitorSolFaucet } from './visitor-faucet.ts';
+import { ReferenceObservationStore } from './reference-observations.ts';
 
 /** Explicit live construction; passing deterministic readers/providers performs no network calls. */
 export function createLiveApp(config: {
@@ -51,6 +52,7 @@ export function createLiveApp(config: {
     samples: ReturnType<typeof openPriceHistoryReadStore> | null;
   } | null = null;
   let consumer: { read: ConsumerReadApi; notes: ConsumerNoteService; namespace: string } | undefined;
+  const referenceObservations = config.mode === 'devnet' ? new ReferenceObservationStore(config.dbPath) : null;
   if (config.mode === 'devnet') {
     const namespace = consumerLiveNamespace('devnet', config.programId);
     const notes = new SqliteNotePersistence(config.dbPath);
@@ -78,9 +80,9 @@ export function createLiveApp(config: {
     chain:config.chain??new KitOperationChain(config.rpcUrl),verifier:config.verifier,financial:config.financial??firstSlice,
     financialTransactions:config.financialTransactions??new KitFirstSliceFinancialTransactionAdapter({state:financialState,reader:firstSlice,blockhashes,now}),
     finalizeRegistration:async requestId=>{await registrations.verifyAndFinalize(requestId,financialState);},now,consumer,
-    visitorSol:config.visitorSol});
+    visitorSol:config.visitorSol,referenceObservations:referenceObservations??undefined});
   return {app,projection,repositories,liveStore,registrations,close() {
-    social?.samples?.close();social?.quotes.close();social?.notes.close();
+    social?.samples?.close();social?.quotes.close();social?.notes.close();referenceObservations?.close();
     registrations.close();liveStore.close();repositories.close();projection.close();
   }};
 }

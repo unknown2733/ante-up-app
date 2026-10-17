@@ -10,9 +10,12 @@ import { canSignAuthMessage, currentWalletContext, signAuthMessage, walletClient
 import { createApiClock } from './apiClock';
 import { createLiveConsumerHttp } from './consumerHttp';
 import { createVisitorSolFlow } from './visitorSol';
+import { referenceConsumerReadApi } from './reference/referenceData';
+import { createObservedReferenceReadApi } from './reference/observedReference';
 
 const baseUrl = import.meta.env.VITE_API_BASE_URL;
 export const liveConsumerHttp = baseUrl ? createLiveConsumerHttp(baseUrl) : null;
+export const referenceReadApi = baseUrl ? createObservedReferenceReadApi(baseUrl) : referenceConsumerReadApi;
 let observedMode: Mode | null = baseUrl ? null : 'fixture';
 export function transportMode() { return observedMode; }
 export const isFixture = !baseUrl;
