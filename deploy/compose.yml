@@ -31,7 +31,7 @@ services:
     environment:
       <<: *env
       ANTE_UP_CANDIDATES_PATH: /state/live-smoke/candidates.json
-      ANTE_UP_PROOFS_PATH: /state/live-smoke/evidence/jobs.json
+      ANTE_UP_PROOFS_PATH: /state/live-smoke/evidence/jobs.json.index.json
       ANTE_UP_POLL_INTERVAL_MS: "10000"
     volumes:
       - ${ANTE_UP_STATE_DIR}:/state
