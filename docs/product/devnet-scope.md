@@ -4,7 +4,7 @@ Ante Up is an experimental **Solana Devnet MVP** using test assets. Mainnet depl
 
 ## What this preview includes
 
-The public code includes a wallet connected chip flow, test-asset financial paths, X Counts processing, API and indexer, evidence modules, and a reference catalog. Previously checked live collection covered the `solana` keyword. Other subjects are read-only previews with captured platform counts where available, or official metadata and artwork. Automatic reference feeds are not established by these snapshots.
+The public code includes a wallet connected chip flow, test-asset financial paths, X Counts processing, API and indexer, evidence modules, and a reference catalog. Live X Counts collection covers the `solana` and `tariff` keywords. Both have graduated Devnet financial markets. The registered `wow` market is still preparing data. Other subjects are read-only previews with captured platform counts where available, or official metadata and artwork. Automatic reference feeds are not established by these snapshots.
 
 ## What may be unavailable
 

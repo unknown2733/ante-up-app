@@ -4,7 +4,7 @@ Explore brings observed Devnet markets and read-only reference subjects into one
 
 ## Reading a market
 
-The collected Devnet `solana` keyword is the previously verified market in this snapshot. Its chip records and market data come from the Devnet services. **Preview** subjects show public reference data or official metadata and artwork. All previews are read-only, with no chips, trades, token quotes, or participation history.
+The collected Devnet `solana` and `tariff` keywords use observed X Counts data and graduated indexed markets. Their chip records and market data come from the Devnet services. The registered `wow` keyword is still preparing data. **Preview** subjects show public reference data or official metadata and artwork. All previews are read-only, with no chips, trades, token quotes, or participation history.
 
 Preview snapshots name the platform metric, such as YouTube views, X post likes, or Spotify track streams. The linked source, UTC capture time, and any provider report date identify the count. Spotify counts reported by a third party retain that attribution and report date. A single count appears as a snapshot; histories and changes need additional observations.
 

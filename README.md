@@ -118,12 +118,14 @@ Opt-in Compose profiles and the scripts under `scripts/ops/` provide backup and 
 
 ## Devnet status
 
-As of October 17, 2026, the `solana` market has graduated from its curve on
-Devnet with operator-provided test capital. Small LP deposit/withdrawal, spot
-buy/sell, and 5× Pro long/short open/close/claim transactions were finalized
-against its observed X Counts index. These round trips do not yet establish
-normal weekly maturity settlement, economic safety, or organic user demand.
-The `tariff` market also collects observed X Counts but remains on its curve.
+As of October 18, 2026, the `solana` and `tariff` markets have graduated from
+their curves on Devnet with operator-provided test capital. On `solana`, small LP
+deposit/withdrawal, spot buy/sell, and 5× Pro long/short open/close/claim
+transactions were finalized against its observed X Counts index. On `tariff`,
+the initial LP window, indexed spot availability, and one 5× Pro long opening
+were verified. That position remains open for the first normal weekly maturity.
+These checks do not yet establish normal maturity settlement, economic safety,
+or organic user demand.
 Reference videos and posts have separate observed metrics; they are not
 keyword-market settlement inputs.
 
