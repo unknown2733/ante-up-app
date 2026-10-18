@@ -22,6 +22,23 @@ export async function createTurboClient({privateKey}) {
   return TurboFactory.authenticated({privateKey});
 }
 
+// Large proof packets can contain hundreds of distinct raw X responses.
+// Quoting all items in one SDK request can fail before any upload begins.
+// Keep the returned order so the budget estimate still maps to artifacts.
+export async function quoteUploadCosts(turbo,bytes,{batchSize=64}={}) {
+  check(turbo && typeof turbo.getUploadCosts==='function' && Array.isArray(bytes) &&
+    bytes.every(value=>Number.isSafeInteger(value)&&value>=0) &&
+    Number.isInteger(batchSize)&&batchSize>=1&&batchSize<=64,'INVALID_COST_INPUT');
+  const costs=[];
+  for(let offset=0;offset<bytes.length;offset+=batchSize){
+    const batch=await turbo.getUploadCosts({bytes:bytes.slice(offset,offset+batchSize)});
+    check(Array.isArray(batch)&&batch.length===Math.min(batchSize,bytes.length-offset)&&
+      batch.every(item=>item&&item.winc!==undefined),'INVALID_COST_QUOTE');
+    costs.push(...batch);
+  }
+  return costs;
+}
+
 // turbo is an authenticated @ardrive/turbo-sdk client. receiptVerifier must
 // implement the allowlisted service key + receipt-version signature rules.
 export function createTurboStorageAdapter({turbo,fetcher=globalThis.fetch,

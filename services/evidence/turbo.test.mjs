@@ -1,11 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { sha256,canonical } from './index.mjs';
-import { createTurboStorageAdapter,encodeStorageContent } from './turbo.mjs';
+import { createTurboStorageAdapter,encodeStorageContent,quoteUploadCosts } from './turbo.mjs';
 import {gunzipSync} from 'node:zlib';
 
 const item='A'.repeat(43), parent='B'.repeat(43), content='{"hello":"world"}';
 const contentHash=sha256(Buffer.from(content));
+test('Turbo cost quote batches a large proof packet without changing item order',async()=>{
+  const calls=[];
+  const costs=await quoteUploadCosts({async getUploadCosts({bytes}){
+    calls.push(bytes);
+    return bytes.map(value=>({winc:String(value+1)}));
+  }},Array.from({length:1337},(_,i)=>i),{batchSize:64});
+  assert.equal(calls.length,21);
+  assert.ok(calls.every(batch=>batch.length<=64));
+  assert.equal(costs.length,1337);
+  assert.equal(costs[0].winc,'1');
+  assert.equal(costs.at(-1).winc,'1337');
+  await assert.rejects(()=>quoteUploadCosts({getUploadCosts:async()=>[]},[1]),/INVALID_COST_QUOTE/);
+});
 test('Turbo SDK receipt is only upload acceptance; gateway parent and 20 confirmations are separate',async()=>{
   let uploads=0,confirmations=19,verified=true;
   const turbo={async upload(input){uploads++;assert.equal(Buffer.from(input.data).toString(),content);return {id:item,signature:'fixture',version:'0.2.0',optional:undefined,helper:()=>true};}};
