@@ -34,6 +34,22 @@ export class FileJobRepository {
     // of unchanged calculations at every upload checkpoint.
     try{await file.writeFile(JSON.stringify(jobs),'utf8');await file.sync();}finally{await file.close();}
     await replaceJournal(temporary, this.path);
+    // Keep the indexer handoff small. The recovery journal includes raw
+    // observations and calculations and can grow to tens of megabytes.
+    const proofLinks = Object.fromEntries(Object.entries(jobs)
+      .filter(([, job]) => typeof job.payloadHash === 'string')
+      .map(([id, job]) => [id, {
+        id:job.id,recordId:job.recordId,payloadHash:job.payloadHash,
+        manifestRef:job.manifestRef,state:job.state,
+        artifacts:job.artifacts.map(({contentHash,ref}) => ({contentHash,ref})),
+        confirmations:job.confirmations,sasId:job.sasId,retryAt:job.retryAt,
+        error:job.error,replacementId:job.replacementId
+      }]));
+    const indexPath = `${this.path}.index.json`;
+    const indexTemporary = `${indexPath}.${process.pid}.tmp`;
+    const indexFile = await open(indexTemporary,'w',0o600);
+    try{await indexFile.writeFile(JSON.stringify(proofLinks),'utf8');await indexFile.sync();}finally{await indexFile.close();}
+    await replaceJournal(indexTemporary,indexPath);
     if(process.platform!=='win32'){const directory=await open(dirname(this.path),'r');try{await directory.sync();}finally{await directory.close();}}
   }
 }

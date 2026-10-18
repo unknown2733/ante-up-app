@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { FileJobRepository, enqueue, processJob, payloadHash, getProofStatus, fetchManifest, status } from './index.mjs';
 
@@ -166,4 +166,20 @@ test('accepted upload receipt persists while parent inclusion is still unresolve
   resolvable=true;
   s=await processJob(new FileJobRepository(repo.path),job.id,adapter,1300);
   assert.equal(s.state,'CONFIRMING');assert.equal(uploads,3);assert.equal(s.confirmations,19);
+}));
+
+
+test('proof index omits raw content while retaining importable link data', async () => withRepo(async repo => {
+  const job = await enqueue(repo, input);
+  assert.deepEqual(JSON.parse(await readFile(`${repo.path}.index.json`, 'utf8')), {});
+  const adapter = fakeAdapter();
+  await processJob(repo, job.id, adapter, 1000);
+  const index = JSON.parse(await readFile(`${repo.path}.index.json`, 'utf8'));
+  const stored = index[job.id];
+  assert.equal(stored.recordId, record.id);
+  assert.equal(stored.state, 'CONFIRMING');
+  assert.equal(status(stored).payloadHash, status((await repo.read())[job.id]).payloadHash);
+  assert.equal(JSON.stringify(index).includes('common counts'), false);
+  assert.equal(JSON.stringify(index).includes('record facts'), false);
+  assert.ok((await readFile(`${repo.path}.index.json`)).length < (await readFile(repo.path)).length);
 }));
