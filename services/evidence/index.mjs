@@ -132,16 +132,29 @@ export async function processJob(repo, id, adapter, now, { uploadCheckpointEvery
       if (++pendingUploads >= uploadCheckpointEvery) { await save(); pendingUploads = 0; }
     }
     if (pendingUploads) await save();
-    for (const artifact of job.artifacts) {
-      if (validRef(artifact.ref, artifact.contentHash)) continue;
+    // Parent lookup is independent per uploaded item. Keep the fan-out
+    // bounded so large proof packets do not spend an hour on serial calls.
+    // Lookup is idempotent; checkpoint each 32 resolved refs to avoid
+    // rewriting a large recovery journal after every small network batch.
+    let resolvedSinceCheckpoint = 0;
+    for (let offset = 0; offset < job.artifacts.length; offset += 4) {
+      const pending = job.artifacts.slice(offset, offset + 4)
+        .filter(artifact => !validRef(artifact.ref, artifact.contentHash));
+      if (!pending.length) continue;
       check(typeof adapter.resolve === 'function', 'PENDING_CONFIRMATION');
-      const resolved = await adapter.resolve(artifact.ref, artifact.receipt);
-      if (resolved && validRef(resolved, artifact.contentHash) && resolved.arweaveItemId === artifact.ref.arweaveItemId) {
-        artifact.ref = resolved; await save();
-      } else {
-        job.retryAt = now + 300; job.error = null; await save(); return status(job);
+      const resolved = await Promise.all(pending.map(artifact => adapter.resolve(artifact.ref, artifact.receipt)));
+      let waiting = false;
+      for (let i = 0; i < pending.length; i++) {
+        const artifact = pending[i], ref = resolved[i];
+        if (ref && validRef(ref, artifact.contentHash) && ref.arweaveItemId === artifact.ref.arweaveItemId) {
+          artifact.ref = ref; resolvedSinceCheckpoint++;
+        } else waiting = true;
       }
+      if (waiting) { job.retryAt = now + 300; job.error = null; }
+      if (waiting || resolvedSinceCheckpoint >= 32) { await save(); resolvedSinceCheckpoint = 0; }
+      if (waiting) return status(job);
     }
+    if (resolvedSinceCheckpoint) await save();
     if (!job.payload) {
       job.payload = { schemaVersion:'0.1', record:job.record, versions:job.versions,
         evidence:job.artifacts.map(a => a.ref), replacesProofId:job.replacesProofId };

@@ -17,6 +17,8 @@ The adapter must implement `upload(key, content, contentHash)`, `resolve(ref)`, 
 
 The supervised worker runs the close-only admission budget guard every minute, including while a large proof is uploading. A failed check marks the worker unhealthy; the guard never reopens admission automatically.
 
+Parent transaction lookup uses at most four concurrent requests and checkpoints every 32 resolved references, so a large evidence packet can resume without repeated single-item journal rewrites.
+
 The file repository writes a compact `jobs.json.index.json` handoff alongside the recovery journal. The indexer reads the compact file, which contains proof references but no raw observation or calculation content. Both files use atomic replacement.
 
 The file repository uses atomic replacement for one local writer. `getProofStatus(repo, proofId)` is D's local read adapter boundary and returns `null` for an unknown ID. It does not infer proofId from recordId. `fetchManifest(adapter, status)` can recover the hashed manifest from `manifestRef` without the job file. Ordinary confirmation polling waits 300 seconds with no error or failure-count increase. Actual failures retry after 5, 15, then 60 minutes. An uncertain SAS submission is journaled before send; restart first reconciles its deterministic PDA and does not automatically send another transaction. Before deployment, add a cross-process lease or transactional DB, authorization for invalid/replaced proof transitions, queue budget limits, and 24-hour storage-pressure admission gating. A receipt alone must never be reported as completed storage or proof.

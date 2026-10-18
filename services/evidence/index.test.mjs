@@ -183,3 +183,27 @@ test('proof index omits raw content while retaining importable link data', async
   assert.equal(JSON.stringify(index).includes('record facts'), false);
   assert.ok((await readFile(`${repo.path}.index.json`)).length < (await readFile(repo.path)).length);
 }));
+
+
+test('parent resolution is bounded to four concurrent calls and resumes from refs', async () => withRepo(async repo => {
+  const many = {...input,artifacts:Array.from({length:9},(_,i)=>({key:`raw:${i}`,kind:'market',content:`count ${i}`}))};
+  const job = await enqueue(repo,many);
+  const adapter = fakeAdapter();
+  const upload = adapter.upload.bind(adapter);
+  adapter.upload = async (...args) => {
+    const ref = await upload(...args);
+    return {...ref,parentTransactionId:undefined};
+  };
+  let active = 0, peak = 0;
+  adapter.resolve = async ref => {
+    active++; peak = Math.max(peak,active);
+    await new Promise(resolve => setTimeout(resolve,5));
+    active--;
+    return {...ref,parentTransactionId:`parent:${ref.arweaveItemId}`};
+  };
+  const result = await processJob(repo,job.id,adapter,1000,{uploadCheckpointEvery:8});
+  assert.equal(result.state,'CONFIRMING');
+  assert.equal(peak,4);
+  assert.equal(result.evidence.length,9);
+  assert.equal((await repo.read())[job.id].artifacts.every(a=>a.ref.parentTransactionId),true);
+}));
