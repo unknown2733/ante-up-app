@@ -19,10 +19,30 @@ if(!Number.isInteger(limit)||limit<1||limit>10)throw Error('INVALID_BATCH_SIZE')
 const jobTimeout=Number(process.env.ANTE_UP_EVIDENCE_JOB_TIMEOUT_MS??900000);
 if(!Number.isInteger(jobTimeout)||jobTimeout<60000||jobTimeout>10800000)throw Error('INVALID_JOB_TIMEOUT');
 const {autoDiscover,allowlist}=evidenceScope(process.env,{preflight});
-let stopping=false,child=null,projection;
-for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>{stopping=true;child?.kill('SIGTERM');});
+let stopping=false,child=null,guardChild=null,guardActive=false,projection;
+for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>{stopping=true;child?.kill('SIGTERM');guardChild?.kill('SIGTERM');});
 const detail={state:'STARTING',activeRecord:null,completed:0,held:0,obligations:0,admissionGuard:'NOT_RUN'};
 const timer=preflight?null:setInterval(()=>{heartbeat('evidence',detail).catch(()=>{});},15000);
+// A long proof upload must not delay budget and storage admission checks for
+// hours. This child is separate from the active proof child and never signs an
+// open-gate transaction.
+async function runAdmissionGuard(){
+ if(guardActive)return detail.admissionGuard==='CHECKED';
+ guardActive=true;
+ try{
+  const result=await new Promise(resolve=>{
+   guardChild=spawn(process.execPath,['scripts/evidence-admission-gate.mjs'],{
+    env:process.env,stdio:['ignore','inherit','inherit'],windowsHide:true});
+   const timeout=setTimeout(()=>guardChild?.kill('SIGTERM'),90000);
+   guardChild.once('error',()=>{clearTimeout(timeout);resolve(1);});
+   guardChild.once('exit',code=>{clearTimeout(timeout);resolve(code??1);});
+  });
+  detail.admissionGuard=result===0?'CHECKED':'UNSAFE';
+  return result===0;
+ }finally{guardChild=null;guardActive=false;}
+}
+const guardTimer=preflight?null:setInterval(()=>{if(!stopping)void runAdmissionGuard().catch(()=>{detail.admissionGuard='UNSAFE';});},60000);
+
 async function run(id,script='scripts/prove-devnet.mjs'){
  return new Promise(resolve=>{
   child=spawn(process.execPath,script==='scripts/prove-devnet.mjs'?
@@ -46,7 +66,7 @@ try{
    detail.obligations=Object.values(inventory.obligations).filter(x=>x.state!=='LINKED').length;
    // The guard can close on-chain admission but never opens it. A failed gate
    // check is visible while accepted proof obligations continue processing.
-   detail.admissionGuard=(await run(null,'scripts/evidence-admission-gate.mjs'))===0?'CHECKED':'UNSAFE';
+   await runAdmissionGuard();
   }
   if(!preflight)await checkStorage(directory,{existingObligations:autoDiscover});
   const due=pendingRecords(records,jobs,now,{limit:200,allowlist})
@@ -70,4 +90,4 @@ try{
   for(let i=0;i<6&&!stopping;i++)await sleep(10000);
  }while(!stopping);
 }catch(error){console.error(/^[A-Z][A-Z0-9_]+$/.test(error.message)?error.message:'EVIDENCE_WORKER_FAILED');process.exitCode=1;}
-finally{if(timer)clearInterval(timer);projection?.close();}
+finally{if(timer)clearInterval(timer);if(guardTimer)clearInterval(guardTimer);guardChild?.kill('SIGTERM');projection?.close();}
