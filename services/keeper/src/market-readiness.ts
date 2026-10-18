@@ -54,7 +54,7 @@ export function evaluateFinanceMarketReadiness(f:FinanceMarketFacts):FinanceMark
   add(graduation,f.phase==='CURVE','NOT_CURVE');
   add(graduation,n(f.finance.curveSold)===1_000n*UNIT,'CURVE_CAP_NOT_REACHED');
   add(graduation,n(f.finance.curveReserve)>=1_100n*UNIT,'CURVE_RESERVE_BELOW_MINIMUM');
-  add(graduation,f.support.supportedMarkets<5,'SUPPORT_SLOTS_EXHAUSTED');
+  add(graduation,f.support.supportedMarkets<10,'SUPPORT_SLOTS_EXHAUSTED');
   add(graduation,n(f.finance.assets)>=n(f.finance.curveReserve)+n(f.finance.marketFees),'CURVE_ASSETS_BELOW_LIABILITIES');
   let targetAssets:string|null=null,requiredContribution:string|null=null;
   if(uint(f.activityNowQ12) && uint(f.activity7dQ12) && n(f.activityNowQ12)>0n && n(f.activity7dQ12)>0n &&
@@ -65,7 +65,7 @@ export function evaluateFinanceMarketReadiness(f:FinanceMarketFacts):FinanceMark
       const target=(1_000n*UNIT*BigInt(pmax)+UNIT-1n)/UNIT+3_500n*UNIT;
       const contribution=target>n(f.finance.assets)?target-n(f.finance.assets):0n;
       targetAssets=target.toString();requiredContribution=contribution.toString();
-      add(graduation,contribution<=10_000n*UNIT && n(f.support.supportSpent)+contribution<=50_000n*UNIT,
+      add(graduation,contribution<=10_000n*UNIT && n(f.support.supportSpent)+contribution<=100_000n*UNIT,
         'SUPPORT_BUDGET_INSUFFICIENT');
       add(graduation,uint(f.support.supportPaymentBalance) &&
         contribution<=n(f.support.supportPaymentBalance),

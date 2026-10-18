@@ -83,7 +83,7 @@ async function run(argv,env) {
   if(stage==='preflight') {
     assert.ok(adminSol>=200_000_000n,'retain minimum admin gas reserve');
     assert.ok(treasury>=maxContribution+500n*UNIT,'max graduation contribution + QA funding');
-    assert.ok(fc.supportedMarkets<5,'QA consumes one global supported-market slot');
+    assert.ok(fc.supportedMarkets<10,'QA consumes one global supported-market slot');
     console.log(json({...summary,adminSol,treasury,supportedMarkets:fc.supportedMarkets,
       maxNewUserSol:60_000_000,maxQaTreasuryFunding:500n*UNIT,maxGraduationContribution:maxContribution,
       registryEntry:{address:market,seedHex:Buffer.from(seed).toString('hex'),keyword:'Synthetic finance demo',aliases:[],dataProvenance:'SYNTHETIC_QA'},

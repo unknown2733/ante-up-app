@@ -95,8 +95,8 @@ test('readiness, identities, quote freshness, support limits and Indexed state f
     [{market:{dataStatus:'OUTAGE'}},/GRADUATE_DATA_NOT_READY/],
     [{market:{latestDataThrough:String(now-600)},snapshot:{dataThrough:String(now-600)}},
       /GRADUATE_SNAPSHOT_STALE/],
-    [{financeConfig:{supportedMarkets:5}},/SUPPORT_MARKET_LIMIT/],
-    [{financeConfig:{supportSpent:'45000000000'}},/GRADUATE_SUPPORT_TOTAL/],
+    [{financeConfig:{supportedMarkets:10}},/SUPPORT_MARKET_LIMIT/],
+    [{financeConfig:{supportSpent:'95000000000'}},/GRADUATE_SUPPORT_TOTAL/],
     [{supportPayment:{amountAtoms:'8399999999'}},/GRADUATE_SUPPORT_BALANCE/],
     [{paymentVault:{owner:config.admin}},/TOKEN_ACCOUNT_IDENTITY_MISMATCH/],
     [{snapshot:{payloadHash:'d'.repeat(64)}},/SNAPSHOT_STATE_MISMATCH/],
@@ -106,6 +106,10 @@ test('readiness, identities, quote freshness, support limits and Indexed state f
     for(const [key,value] of Object.entries(patch))Object.assign(state[key],value);
     await assert.rejects(createGraduatePlan(config,state,{now}),error);
   }
+  const expanded=fixture();
+  expanded.financeConfig.supportedMarkets=5;
+  expanded.financeConfig.supportSpent='45000000000';
+  assert.equal((await createGraduatePlan(config,expanded,{now})).state,'READY');
   await assert.rejects(createGraduatePlan({...config,maxContributionAtoms:'8000000000'},fixture(),
     {now}),/GRADUATE_CONTRIBUTION_CAP/);
   const indexed=fixture();indexed.market.phase='INDEXED';

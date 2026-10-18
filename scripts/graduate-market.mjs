@@ -19,7 +19,7 @@ const decimal=x=>typeof x==='string' && /^(0|[1-9][0-9]*)$/.test(x);
 const u64=x=>decimal(x) && BigInt(x)<=18_446_744_073_709_551_615n;
 const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const CURVE_CAP=1_000n*UNIT,MIN_RESERVE=1_100n*UNIT;
-const PER_MARKET=10_000n*UNIT,TOTAL=50_000n*UNIT;
+const PER_MARKET=10_000n*UNIT,TOTAL=100_000n*UNIT;
 const BUFFER=500n*UNIT,INITIAL_FREE=3_000n*UNIT,PG=1_200_000n;
 const LOADER_PROGRAMS=new Set(['BPFLoaderUpgradeab1e11111111111111111111111',
   'BPFLoader2111111111111111111111111111111111']);
@@ -116,7 +116,7 @@ export async function createGraduatePlan(config,state=null,{now=Math.floor(Date.
     state.financeConfig.supportSpent,state.paymentVault.amountAtoms,
     state.supportPayment.amountAtoms])check(u64(value),'GRADUATE_NUMERIC_STATE_INVALID');
   check(Number.isSafeInteger(state.financeConfig.supportedMarkets) &&
-    state.financeConfig.supportedMarkets>=0 && state.financeConfig.supportedMarkets<5,
+    state.financeConfig.supportedMarkets>=0 && state.financeConfig.supportedMarkets<10,
     'SUPPORT_MARKET_LIMIT');
   check(BigInt(state.financeMarket.curveSold)===CURVE_CAP &&
     BigInt(state.financeMarket.curveReserve)>=MIN_RESERVE,'GRADUATE_QCAP_NOT_READY');

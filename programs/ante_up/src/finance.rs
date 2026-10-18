@@ -8,7 +8,7 @@ const KEYWORD_SUPPLY: u64 = 2_000 * UNIT;
 const CURVE_CAP: u64 = 1_000 * UNIT;
 const REGISTRATION_FEE: u64 = 10 * UNIT;
 const SUPPORT_PER_MARKET: u64 = 10_000 * UNIT;
-const SUPPORT_TOTAL: u64 = 50_000 * UNIT;
+const SUPPORT_TOTAL: u64 = 100_000 * UNIT;
 const BUFFER: u64 = 500 * UNIT;
 const INITIAL_FREE: u64 = 3_000 * UNIT;
 const WEEK: i64 = 604_800;
@@ -637,7 +637,7 @@ pub fn graduate(ctx: Context<Graduate>, expected_sequence: u64, expected_config_
     let f = &mut ctx.accounts.finance_config;
     require!(m.phase == MarketPhase::Curve && fm.curve_sold == CURVE_CAP &&
         fm.curve_reserve >= 1_100 * UNIT, ErrorCode::WrongPhase);
-    require!(f.supported_markets < 5, ErrorCode::LimitReached);
+    require!(f.supported_markets < 10, ErrorCode::LimitReached);
     require!(m.data_status == DataStatus::Valid && m.admission.state == AdmissionState::Open &&
         m.latest_sequence == ctx.accounts.snapshot.sequence &&
         m.latest_hash == ctx.accounts.snapshot.payload_hash, ErrorCode::DataUnavailable);

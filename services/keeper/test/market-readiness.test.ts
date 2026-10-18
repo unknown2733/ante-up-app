@@ -20,6 +20,8 @@ test('graduation needs actual curve cap, observed fresh snapshot and funded supp
   const ready=evaluateFinanceMarketReadiness(facts());
   assert.equal(ready.graduation.eligible,true);assert.equal(ready.status,'READY_FOR_REVIEW');
   assert.equal(ready.graduation.requiredContribution,'7350000000');
+  const expanded=facts();expanded.support.supportedMarkets=5;expanded.support.supportSpent='45000000000';
+  assert.equal(evaluateFinanceMarketReadiness(expanded).graduation.eligible,true);
   for(const [change,code] of [
     [(f:FinanceMarketFacts)=>{f.finance.curveSold='999000000';},'CURVE_CAP_NOT_REACHED'],
     [(f:FinanceMarketFacts)=>{f.latestDataThrough=now-600;},'DATA_STALE_OR_FUTURE'],
@@ -27,7 +29,7 @@ test('graduation needs actual curve cap, observed fresh snapshot and funded supp
     [(f:FinanceMarketFacts)=>{f.provenance='SYNTHETIC';},'SOURCE_NOT_VERIFIED_OBSERVED'],
     [(f:FinanceMarketFacts)=>{f.support.supportPaymentBalance='1';},'ACTUAL_SUPPORT_BALANCE_INSUFFICIENT'],
     [(f:FinanceMarketFacts)=>{f.support.supportPaymentBalance=null;},'ACTUAL_SUPPORT_BALANCE_INSUFFICIENT'],
-    [(f:FinanceMarketFacts)=>{f.support.supportSpent='49000000000';},'SUPPORT_BUDGET_INSUFFICIENT'],
+    [(f:FinanceMarketFacts)=>{f.support.supportSpent='99000000000';},'SUPPORT_BUDGET_INSUFFICIENT'],
     [(f:FinanceMarketFacts)=>{f.finance.assets='1';},'CURVE_ASSETS_BELOW_LIABILITIES']
   ] as const){const f=facts();change(f);assert.ok(evaluateFinanceMarketReadiness(f).graduation.blockers.includes(code),code);}
 });
