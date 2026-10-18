@@ -73,5 +73,12 @@ test('createLiveApp boots with no sampler DB, then reads persisted price only af
     assert.deepEqual(populated.data.series[0].points.map((point: any) => point.value), ['1.100000', '1.250000']);
     assert.equal(populated.data.series[0].points[1].atMs, (now - 300) * 1000);
     assert.equal(populated.data.market.latestPrice, null, 'historical sampler point is not a current executable quote');
+    live.close(); live = null;
+    const trial = createLiveApp({ ...config, markets: [{ ...config.markets[0], dataProvenance: 'SYNTHETIC_QA' as const }] });
+    try {
+      const catalog = await trial.app.handle(new Request('http://local.test/v1/consumer/markets'));
+      assert.equal(catalog.status, 200);
+      assert.deepEqual((await catalog.json() as any).data, [], 'trial feed must stay out of public discovery');
+    } finally { trial.close(); }
   } finally { live?.close(); rmSync(dir, { recursive: true, force: true }); }
 });

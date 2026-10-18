@@ -68,7 +68,9 @@ export function createLiveApp(config: {
     const consumerRead: ConsumerReadApi = {
       listMarkets: async () => {
         const asOfMs = now() * 1000;
-        return (await read.markets()).map(market => projectConsumerMarket(market, asOfMs));
+        return (await read.markets())
+          .filter(market => market.dataProvenance !== 'SYNTHETIC_QA')
+          .map(market => projectConsumerMarket(market, asOfMs));
       },
       getHistory: history.getHistory, getProfile: projected.getProfile, getLeaderboard: projected.getLeaderboard,
     };
