@@ -16,6 +16,8 @@ if(!directory)throw Error('LIVE_DIRECTORY_REQUIRED');
 const evidence=join(directory,'evidence'),statePath=join(evidence,'worker.json');
 const limit=Number(process.env.ANTE_UP_EVIDENCE_BATCH_SIZE??3);
 if(!Number.isInteger(limit)||limit<1||limit>10)throw Error('INVALID_BATCH_SIZE');
+const jobTimeout=Number(process.env.ANTE_UP_EVIDENCE_JOB_TIMEOUT_MS??900000);
+if(!Number.isInteger(jobTimeout)||jobTimeout<60000||jobTimeout>10800000)throw Error('INVALID_JOB_TIMEOUT');
 const {autoDiscover,allowlist}=evidenceScope(process.env,{preflight});
 let stopping=false,child=null,projection;
 for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>{stopping=true;child?.kill('SIGTERM');});
@@ -26,7 +28,7 @@ async function run(id,script='scripts/prove-devnet.mjs'){
   child=spawn(process.execPath,script==='scripts/prove-devnet.mjs'?
    [script,'--supervised',preflight?'--preflight':'--execute']:[script],{
    env:{...process.env,ANTE_UP_RECORD_ID:id},stdio:['ignore','inherit','inherit'],windowsHide:true});
-  const timeout=setTimeout(()=>child?.kill('SIGTERM'),900000);
+  const timeout=setTimeout(()=>child?.kill('SIGTERM'),jobTimeout);
   child.once('error',()=>{clearTimeout(timeout);child=null;resolve(1);});
   child.once('exit',code=>{clearTimeout(timeout);child=null;resolve(code??1);});
  });

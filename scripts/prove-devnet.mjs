@@ -97,7 +97,8 @@ try{
   artifacts:job.artifacts.map((a,i)=>({key:a.key,contentHash:a.contentHash,canonicalBytes:Buffer.byteLength(a.content),storedBytes:sizes[i],signedBytes:signedSizes[i],reused:cached[i]})),balance,free,costs,
   totalBytes:sizes.reduce((a,b)=>a+b,0),attestationExpiry:metadata.attestationExpiry};
  await save(join(reportOut,'preflight.json'),preflight);
- console.log(JSON.stringify({state:'PREFLIGHT',...preflight}));
+ console.log(JSON.stringify({state:'PREFLIGHT',recordId:job.recordId,jobId:job.id,
+  artifactCount:job.artifacts.length,totalBytes:preflight.totalBytes,estimatedNewWinc}));
  if(execute){
   // Maximum spend is an explicit native-unit cap, including the manifest.
   let account=await sas.fetchMaybeCredential(rpc,credential,{commitment:'finalized'});
