@@ -48,6 +48,8 @@ export function createTurboStorageAdapter({turbo,fetcher=globalThis.fetch,
   // Parent confirmation is mutable. Share only short-lived reads across items
   // in one bundle; never persist it with the immutable inclusion cache.
   const parentStatuses=new Map();
+  const verifiedContentCache=new Map();
+  let verifiedContentBytes=0;
   const confirmationTtlMs=30_000;
   async function parentStatus(parent){
     const current=Date.now(),cached=parentStatuses.get(parent);
@@ -102,6 +104,13 @@ export function createTurboStorageAdapter({turbo,fetcher=globalThis.fetch,
       return {...ref,parentTransactionId:parent};
     },
     async fetch(ref) {
+      const cached=verifiedContentCache.get(ref.arweaveItemId);
+      if(cached && cached.contentHash===ref.contentHash)return cached.content;
+      if(inclusionVerifier && typeof inclusionVerifier.readVerified==='function'){
+        const bytes=await inclusionVerifier.readVerified(ref);
+        check(bytes && sha256(bytes)===ref.contentHash,'CONTENT_MISMATCH');
+        return bytes.toString('utf8');
+      }
       const response=await raw(ref.arweaveItemId);
       check(response && sha256(response.bytes)===ref.contentHash,'CONTENT_MISMATCH');
       return response.bytes.toString('utf8');
@@ -123,6 +132,18 @@ export function createTurboStorageAdapter({turbo,fetcher=globalThis.fetch,
       const parent=inclusionVerifier?ref.parentTransactionId:response.headers.get('x-ar-io-root-transaction-id');
       check(parent===ref.parentTransactionId,'PARENT_MISMATCH');
       const content=response.bytes.toString('utf8');
+      if(inclusionVerifier && response.included){
+        const prior=verifiedContentCache.get(ref.arweaveItemId);
+        if(prior)verifiedContentBytes-=prior.bytes;
+        const bytes=Buffer.byteLength(content,'utf8');
+        verifiedContentCache.set(ref.arweaveItemId,{contentHash:ref.contentHash,content,bytes});
+        verifiedContentBytes+=bytes;
+        while(verifiedContentCache.size>2000 || verifiedContentBytes>16*1024*1024){
+          const oldest=verifiedContentCache.keys().next().value;
+          verifiedContentBytes-=verifiedContentCache.get(oldest).bytes;
+          verifiedContentCache.delete(oldest);
+        }
+      }
       if(!response.included)return {receiptValid:true,itemId:ref.arweaveItemId,parentTransactionId:parent,
         itemIncluded:false,content,confirmations:0};
       const confirmations=await parentStatus(parent);

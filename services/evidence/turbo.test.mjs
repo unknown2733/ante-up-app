@@ -85,6 +85,8 @@ test('signed parent bytes avoid per-item raw requests and share short-lived stat
   const results=await Promise.all(Array.from({length:8},()=>adapter.verify(ref,receipt)));
   assert.ok(results.every(result=>result.itemIncluded&&result.confirmations===21));
   assert.equal(reads,0);assert.equal(statusReads,1);
+  assert.equal(await adapter.fetch(ref),content);
+  assert.equal(reads,0);
   now+=30_001;
   assert.equal((await adapter.verify(ref,receipt)).confirmations,21);
   assert.equal(statusReads,2);
