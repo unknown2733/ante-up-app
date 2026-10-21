@@ -11,7 +11,7 @@ const check=(ok,code)=>{if(!ok)throw Error(code);};
 
 // Bounded full-bundle verification for the MVP. Large bundles fail closed;
 // a future range/Merkle-proof reader can remove this bandwidth bound.
-export function createArweaveInclusionVerifier({fetcher=globalThis.fetch,maxBundleBytes=64*1024*1024}={}){
+export function createArweaveInclusionVerifier({fetcher=globalThis.fetch,maxBundleBytes=192*1024*1024}={}){
  const verifiedParents=new Map(),arweave=Arweave.init({host:'arweave.net',protocol:'https',port:443});
  async function parentBytes(id){
   if(verifiedParents.has(id))return verifiedParents.get(id);
@@ -41,7 +41,7 @@ export function createArweaveInclusionVerifier({fetcher=globalThis.fetch,maxBund
   }
   check(offset===bytes.length,'BUNDLE_LENGTH_MISMATCH');
   verifiedParents.set(id,bundle);
-  if(verifiedParents.size>8)verifiedParents.delete(verifiedParents.keys().next().value);
+  if(verifiedParents.size>2)verifiedParents.delete(verifiedParents.keys().next().value);
   return bundle;
  }
  return {
