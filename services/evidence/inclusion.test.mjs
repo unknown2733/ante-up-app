@@ -32,3 +32,12 @@ test('verify real parent signature/root and ANS-104 item; reject altered bundle 
  const timeout=Object.assign(new Error('aborted'),{name:'TimeoutError'});
  await assert.rejects(()=>createArweaveInclusionVerifier({fetcher:async url=>{if(url.includes('/raw/'))throw timeout;return fetcher(url);}}).verify(ref),/PARENT_BUNDLE_FETCH_TIMEOUT/);
 });
+
+test('accepted parent metadata waits for indexing without parsing text as JSON',async()=>{
+ const id='a'.repeat(43);
+ const verifier=createArweaveInclusionVerifier({fetcher:async url=>{
+  if(url.includes('/tx/'))return {ok:true,status:202,json:async()=>{throw Error('SHOULD_NOT_PARSE');}};
+  throw Error('SHOULD_NOT_FETCH_BUNDLE');
+ }});
+ assert.equal(await verifier.verify({arweaveItemId:id,parentTransactionId:id,contentHash:'b'.repeat(64)}),false);
+});

@@ -22,7 +22,8 @@ export function createArweaveInclusionVerifier({fetcher=globalThis.fetch,maxBund
  async function loadParentBytes(id){
   if(verifiedParents.has(id))return verifiedParents.get(id);
   const txResponse=await timeoutStage(()=>fetcher(`https://arweave.net/tx/${id}`,{signal:AbortSignal.timeout(30000)}),'PARENT_METADATA_TIMEOUT');
-  if(!txResponse.ok)return null;
+  // An accepted parent can be known to Turbo before Arweave exposes its JSON.
+  if(!txResponse.ok||txResponse.status===202)return null;
   const raw=await timeoutStage(()=>txResponse.json(),'PARENT_METADATA_TIMEOUT');
   check(raw.id===id && raw.format===2 && /^\d+$/.test(raw.data_size),'PARENT_TRANSACTION_INVALID');
   const size=Number(raw.data_size);check(Number.isSafeInteger(size)&&size>32&&size<=maxBundleBytes,'BUNDLE_SIZE_LIMIT');
