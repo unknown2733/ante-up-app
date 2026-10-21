@@ -159,14 +159,14 @@ export function FinancialMarket({ market, section, onFinalized, refreshBlocked =
     try {
       const result = await liveFinancialFlow.signReviewed(quote, setProgress);
       setOutcome(result); setQuote(null);
-      if (result.state === 'FINALIZED') { onFinalized(); await loadPrivate(); }
+      if (result.state === 'FINALIZED') { onFinalized(); await loadPrivate(); if (quote.intent.action === 'closePro') setAction('claim'); }
     } catch (cause) { setError(textError(cause)); }
     finally { setBusy(false); setProgress(null); }
   }
   async function recheck() {
     if (!liveFinancialFlow || busy) return;
     setBusy(true); setError('');
-    try { const result = await liveFinancialFlow.recheck(); setOutcome(result); if (result.state === 'FINALIZED') { onFinalized(); await loadPrivate(); } }
+    try { const result = await liveFinancialFlow.recheck(); setOutcome(result); if (result.state === 'FINALIZED') { onFinalized(); await loadPrivate(); if (pending?.action === 'closePro') setAction('claim'); } }
     catch (cause) { setError(textError(cause)); }
     finally { setBusy(false); }
   }
