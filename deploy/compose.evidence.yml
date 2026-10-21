@@ -17,6 +17,7 @@ services:
     command: [flock, -n, -F, /state/evidence.lock, node, scripts/evidence-worker.mjs]
     environment:
       ANTE_UP_LIVE_DIRECTORY: /state/live-smoke
+      ANTE_UP_EVIDENCE_EXTRA_SOURCE_DIRECTORIES: /state/tariff
       ANTE_UP_RPC_URL_FILE: /run/secrets/rpc.url
       ANTE_UP_PAYER_KEYPAIR_FILE: /run/secrets/payer.json
       ANTE_UP_ISSUER_KEYPAIR_FILE: /run/secrets/issuer.json

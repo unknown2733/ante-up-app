@@ -70,8 +70,19 @@ try{
  const metadataFile=join(out,'runtime.json');let metadata;
  try{metadata=await json(metadataFile);}catch(e){if(e.code!=='ENOENT')throw e;metadata={credential,schema,authority:authority.address,attestationExpiry:Math.floor(Date.now()/1000)+365*86400};await save(metadataFile,metadata);}
  if(metadata.credential!==credential||metadata.schema!==schema||metadata.authority!==authority.address)throw Error('ISSUER_CONFIG_MISMATCH');
- const engine=await createEvidenceRuntime({jobRepository:repo,candidateRepository:new FileCandidateRepository(join(directory,'candidates.json')),
-  rawRepository:new FileRawResponseRepository(join(directory,'raw')),recordReader:readers,snapshotReader:readers,marketVersionReader,
+ const sourceDirectories=[directory,...(process.env.ANTE_UP_EVIDENCE_EXTRA_SOURCE_DIRECTORIES??'').split(',').filter(Boolean)];
+ const candidates=sourceDirectories.map(path=>new FileCandidateRepository(join(path,'candidates.json')));
+ const rawSources=sourceDirectories.map(path=>new FileRawResponseRepository(join(path,'raw')));
+ const candidateRepository={getPublished:async(marketId,sequence)=>{
+  for(const source of candidates){const value=await source.getPublished(marketId,sequence);if(value)return value;}
+  return null;
+ }};
+ const rawRepository={get:async hash=>{
+  for(const source of rawSources){try{return await source.get(hash);}catch(error){if(error.code!=='ENOENT')throw error;}}
+  throw Error('RAW_EVIDENCE_MISSING');
+ }};
+ const engine=await createEvidenceRuntime({jobRepository:repo,candidateRepository,
+  rawRepository,recordReader:readers,snapshotReader:readers,marketVersionReader,
   turbo,storageOptions:{inclusionVerifier:createArweaveInclusionVerifier()},receiptVerifier:createReceiptVerifier({allowedAddresses:['JNC6vBhjHY1EPwV3pEeNmrsgFMxH5d38_LHsZ7jful8']}),
   rpc,credential,schema,payer,authority,sendSasInstruction:async request=>{const result=await send(request);await save(join(reportOut,'sas-submission.json'),{...request,instruction:undefined,...result});return result;},
   proofAuthority:authority,proofChain,programId,attestationExpiry:metadata.attestationExpiry,
@@ -80,7 +91,7 @@ try{
   uploadCheckpointEvery:supervised?8:1});
  const job=await engine.enqueueRecord(required('ANTE_UP_RECORD_ID'));
  // Replay the actual archived inputs BEFORE spending on permanent storage.
- const semantics=createSemanticReaders({recordReader:readers,snapshotReader:readers,candidateRepository:new FileCandidateRepository(join(directory,'candidates.json')),marketVersionReader});
+ const semantics=createSemanticReaders({recordReader:readers,snapshotReader:readers,candidateRepository,marketVersionReader});
  const payload={schemaVersion:'0.1',record:job.record,versions:job.versions,replacesProofId:null,
   evidence:job.artifacts.map(a=>({contentHash:a.contentHash,arweaveItemId:a.contentHash,parentTransactionId:'preflight-only'}))};
  await verifySemanticPacket(payload,await semantics.semanticPacketProvider(job.id,payload),semantics.chainVerifier,
