@@ -50,6 +50,17 @@ export function createArweaveInclusionVerifier({fetcher=globalThis.fetch,maxBund
   const pending=loadParentBytes(id);loadingParents.set(id,pending);
   try{return await pending;}finally{loadingParents.delete(id);}
  }
+ async function readVerified(ref){
+  check(idPattern.test(ref.parentTransactionId),'INVALID_PARENT_ID');
+  const bundle=await parentBytes(ref.parentTransactionId);if(!bundle)return null;
+  const rawItem=bundle.get(ref.arweaveItemId);check(rawItem,'BUNDLE_ITEM_MISSING');
+  const item=new DataItem(rawItem);
+  check(item.id===ref.arweaveItemId && await item.isValid(),'BUNDLE_ITEM_INVALID');
+  let bytes=item.rawData;
+  if(bytes[0]===0x1f&&bytes[1]===0x8b)bytes=gunzipSync(bytes,{maxOutputLength:128*1024*1024});
+  check(sha256(bytes)===ref.contentHash,'BUNDLE_CONTENT_MISMATCH');
+  return bytes;
+ }
  return {
   async resolve(ref){
    check(idPattern.test(ref.arweaveItemId),'INVALID_ITEM_ID');
@@ -62,16 +73,7 @@ export function createArweaveInclusionVerifier({fetcher=globalThis.fetch,maxBund
    }
    const status=await response.json();return idPattern.test(status?.bundleId??'')?{...ref,parentTransactionId:status.bundleId}:null;
   },
-  async verify(ref){
-   check(idPattern.test(ref.parentTransactionId),'INVALID_PARENT_ID');
-   const bundle=await parentBytes(ref.parentTransactionId);if(!bundle)return false;
-   const rawItem=bundle.get(ref.arweaveItemId);check(rawItem,'BUNDLE_ITEM_MISSING');
-   const item=new DataItem(rawItem);
-   check(item.id===ref.arweaveItemId && await item.isValid(),'BUNDLE_ITEM_INVALID');
-   let bytes=item.rawData;
-   if(bytes[0]===0x1f&&bytes[1]===0x8b)bytes=gunzipSync(bytes,{maxOutputLength:128*1024*1024});
-   check(sha256(bytes)===ref.contentHash,'BUNDLE_CONTENT_MISMATCH');
-   return true;
-  }
+  readVerified,
+  async verify(ref){return (await readVerified(ref))!==null;}
  };
 }

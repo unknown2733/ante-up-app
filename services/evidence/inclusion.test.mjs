@@ -20,6 +20,7 @@ test('verify real parent signature/root and ANS-104 item; reject altered bundle 
   {ok:true,body:(async function*(){const value=Buffer.from(bytes);if(corrupt)value[value.length-1]^=1;yield value;})()};
  const verifier=createArweaveInclusionVerifier({fetcher});
  assert.deepEqual(await verifier.resolve(ref),ref);assert.equal(await verifier.verify(ref),true);
+ assert.deepEqual(await verifier.readVerified(ref),content);
  let parentFetches=0;
  const counted=async url=>{if(url.includes('/tx/'))parentFetches++;return fetcher(url);};
  const concurrent=createArweaveInclusionVerifier({fetcher:counted});

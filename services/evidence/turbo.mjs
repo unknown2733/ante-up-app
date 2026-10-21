@@ -45,6 +45,30 @@ export function createTurboStorageAdapter({turbo,fetcher=globalThis.fetch,
   gatewayUrl='https://turbo-gateway.com',arweaveUrl='https://arweave.net',receiptVerifier,inclusionVerifier}) {
   check(turbo && typeof turbo.upload === 'function');
   check(typeof fetcher === 'function' && typeof receiptVerifier === 'function','RECEIPT_VERIFIER_REQUIRED');
+  // Parent confirmation is mutable. Share only short-lived reads across items
+  // in one bundle; never persist it with the immutable inclusion cache.
+  const parentStatuses=new Map();
+  const confirmationTtlMs=30_000;
+  async function parentStatus(parent){
+    const current=Date.now(),cached=parentStatuses.get(parent);
+    if(inclusionVerifier && cached && current-cached.observedAt<confirmationTtlMs)return cached.pending;
+    const pending=(async()=>{
+      const statusUrl=new URL(`/tx/${parent}/status`,arweaveUrl);
+      statusUrl.searchParams.set('observedAt',String(current));
+      const status=await fetcher(statusUrl,{headers:{Accept:'application/json','Cache-Control':'no-cache'},cache:'no-store',signal:AbortSignal.timeout(30_000)});
+      if(!status.ok||status.status===202)return null;
+      const type=status.headers?.get('content-type');
+      if(type&&!type.toLowerCase().includes('json')){
+        if((await status.text()).trim()==='Accepted')return null;
+        throw Error('INVALID_ARWEAVE_STATUS');
+      }
+      const json=await status.json();
+      check(Number.isSafeInteger(json.number_of_confirmations) && json.number_of_confirmations>=0,'INVALID_CONFIRMATIONS');
+      return json.number_of_confirmations;
+    })();
+    parentStatuses.set(parent,{observedAt:current,pending});
+    try{return await pending;}catch(error){parentStatuses.delete(parent);throw error;}
+  }
   const raw = async id => {
     check(itemId(id));
     const res = await fetcher(new URL(`/raw/${id}`,gatewayUrl),{headers:{Accept:'application/octet-stream'},signal:AbortSignal.timeout(15_000)});
@@ -82,32 +106,26 @@ export function createTurboStorageAdapter({turbo,fetcher=globalThis.fetch,
     },
     async verify(ref,receipt) {
       check(receipt?.id===ref.arweaveItemId && await receiptVerifier(receipt)===true,'INVALID_RECEIPT');
-      const response=await raw(ref.arweaveItemId);
-      check(response && sha256(response.bytes)===ref.contentHash,'CONTENT_MISMATCH');
+      let response=null;
+      // An independently signed parent bundle already contains the canonical
+      // item bytes. Avoid a second gateway request for each included item.
+      if(inclusionVerifier && typeof inclusionVerifier.readVerified==='function'){
+        const bytes=await inclusionVerifier.readVerified(ref);
+        if(bytes)response={bytes,headers:null,included:true};
+      }
+      if(!response){
+        response=await raw(ref.arweaveItemId);
+        check(response && sha256(response.bytes)===ref.contentHash,'CONTENT_MISMATCH');
+        response.included=inclusionVerifier?await inclusionVerifier.verify(ref):response.headers.get('x-ar-io-verified')==='true';
+      }
       const parent=inclusionVerifier?ref.parentTransactionId:response.headers.get('x-ar-io-root-transaction-id');
       check(parent===ref.parentTransactionId,'PARENT_MISMATCH');
-      // Verified is a gateway base-layer verification claim; full independent
-      // ANS-104 inclusion proof remains a separate deployment gate.
-      const included=inclusionVerifier?await inclusionVerifier.verify(ref):response.headers.get('x-ar-io-verified')==='true';
-      if (!included) return {receiptValid:true,itemId:ref.arweaveItemId,parentTransactionId:parent,
-        itemIncluded:false,content:response.bytes.toString('utf8'),confirmations:0};
-      // Inclusion bytes are immutable, confirmation status is not. Avoid a CDN
-      // response from a previous check (including stale pre-reorg status).
-      const statusUrl=new URL(`/tx/${parent}/status`,arweaveUrl);
-      statusUrl.searchParams.set('observedAt',String(Date.now()));
-      const status=await fetcher(statusUrl,{headers:{Accept:'application/json','Cache-Control':'no-cache'},cache:'no-store',signal:AbortSignal.timeout(15_000)});
-      if (!status.ok||status.status===202) return {receiptValid:true,itemId:ref.arweaveItemId,parentTransactionId:parent,
-        itemIncluded:false,content:response.bytes.toString('utf8'),confirmations:0};
-      const type=status.headers?.get('content-type');
-      if(type&&!type.toLowerCase().includes('json')){
-        if((await status.text()).trim()==='Accepted')return {receiptValid:true,itemId:ref.arweaveItemId,parentTransactionId:parent,
-          itemIncluded:false,content:response.bytes.toString('utf8'),confirmations:0};
-        throw Error('INVALID_ARWEAVE_STATUS');
-      }
-      const json=await status.json();
-      check(Number.isSafeInteger(json.number_of_confirmations) && json.number_of_confirmations>=0,'INVALID_CONFIRMATIONS');
-      return {receiptValid:true,itemId:ref.arweaveItemId,parentTransactionId:parent,itemIncluded:true,
-        content:response.bytes.toString('utf8'),confirmations:json.number_of_confirmations};
+      const content=response.bytes.toString('utf8');
+      if(!response.included)return {receiptValid:true,itemId:ref.arweaveItemId,parentTransactionId:parent,
+        itemIncluded:false,content,confirmations:0};
+      const confirmations=await parentStatus(parent);
+      return {receiptValid:true,itemId:ref.arweaveItemId,parentTransactionId:parent,
+        itemIncluded:confirmations!==null,content,confirmations:confirmations??0};
     }
   };
 }

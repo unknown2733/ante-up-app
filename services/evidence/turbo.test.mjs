@@ -65,3 +65,29 @@ test('large canonical artifacts are losslessly compressed and verified after ret
  stored.data=Buffer.from('{"tampered":true}');
  await assert.rejects(()=>adapter.fetch(uploaded.ref),/CONTENT_MISMATCH/);
 });
+
+test('signed parent bytes avoid per-item raw requests and share short-lived status',async()=>{
+ let reads=0,statusReads=0,now=1_000_000;
+ const originalNow=Date.now;
+ Date.now=()=>now;
+ try{
+  const adapter=createTurboStorageAdapter({
+   turbo:{upload:async()=>({id:item})},receiptVerifier:async()=>true,
+   inclusionVerifier:{async readVerified(ref){assert.equal(ref.contentHash,contentHash);return Buffer.from(content);}},
+   fetcher:async url=>{
+    if(url.pathname.startsWith('/raw/')){reads++;throw Error('UNEXPECTED_RAW_FETCH');}
+    assert.equal(url.pathname,`/tx/${parent}/status`);statusReads++;
+    return {ok:true,headers:new Headers({'content-type':'application/json'}),
+      json:async()=>({number_of_confirmations:21})};
+   }
+  });
+  const ref={contentHash,arweaveItemId:item,parentTransactionId:parent},receipt={id:item};
+  const results=await Promise.all(Array.from({length:8},()=>adapter.verify(ref,receipt)));
+  assert.ok(results.every(result=>result.itemIncluded&&result.confirmations===21));
+  assert.equal(reads,0);assert.equal(statusReads,1);
+  now+=30_001;
+  assert.equal((await adapter.verify(ref,receipt)).confirmations,21);
+  assert.equal(statusReads,2);
+  await assert.rejects(()=>adapter.verify(ref,{id:'bad'}),/INVALID_RECEIPT/);
+ }finally{Date.now=originalNow;}
+});
