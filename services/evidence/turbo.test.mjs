@@ -91,3 +91,19 @@ test('signed parent bytes avoid per-item raw requests and share short-lived stat
   await assert.rejects(()=>adapter.verify(ref,{id:'bad'}),/INVALID_RECEIPT/);
  }finally{Date.now=originalNow;}
 });
+
+
+test('parent confirmation timeout has a distinct error and is retried on the next call',async()=>{
+ let calls=0;
+ const adapter=createTurboStorageAdapter({
+  turbo:{upload:async()=>({id:item})},receiptVerifier:async()=>true,
+  inclusionVerifier:{async readVerified(){return Buffer.from(content);}},
+  fetcher:async()=>{calls++;if(calls===1)throw Object.assign(new Error('aborted'),{name:'TimeoutError'});
+   return {ok:true,headers:new Headers({'content-type':'application/json'}),
+    json:async()=>({number_of_confirmations:21})};}
+ });
+ const ref={contentHash,arweaveItemId:item,parentTransactionId:parent},receipt={id:item};
+ await assert.rejects(()=>adapter.verify(ref,receipt),/PARENT_STATUS_TIMEOUT/);
+ assert.equal((await adapter.verify(ref,receipt)).confirmations,21);
+ assert.equal(calls,2);
+});

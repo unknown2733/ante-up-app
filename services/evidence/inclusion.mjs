@@ -8,6 +8,12 @@ const {computeRootHash}=require('arweave/node/lib/merkle.js');
 const {DataItem}=require('@dha-team/arbundles');
 const idPattern=/^[A-Za-z0-9_-]{43}$/;
 const check=(ok,code)=>{if(!ok)throw Error(code);};
+async function timeoutStage(work,code){
+ try{return await work();}catch(error){
+  if(error?.name==='TimeoutError'||error?.name==='AbortError')throw Error(code);
+  throw error;
+ }
+}
 
 // Bounded full-bundle verification for the MVP. Large bundles fail closed;
 // a future range/Merkle-proof reader can remove this bandwidth bound.
@@ -15,17 +21,20 @@ export function createArweaveInclusionVerifier({fetcher=globalThis.fetch,maxBund
  const verifiedParents=new Map(),loadingParents=new Map(),arweave=Arweave.init({host:'arweave.net',protocol:'https',port:443});
  async function loadParentBytes(id){
   if(verifiedParents.has(id))return verifiedParents.get(id);
-  const txResponse=await fetcher(`https://arweave.net/tx/${id}`,{signal:AbortSignal.timeout(20000)});
+  const txResponse=await timeoutStage(()=>fetcher(`https://arweave.net/tx/${id}`,{signal:AbortSignal.timeout(30000)}),'PARENT_METADATA_TIMEOUT');
   if(!txResponse.ok)return null;
-  const raw=await txResponse.json();
+  const raw=await timeoutStage(()=>txResponse.json(),'PARENT_METADATA_TIMEOUT');
   check(raw.id===id && raw.format===2 && /^\d+$/.test(raw.data_size),'PARENT_TRANSACTION_INVALID');
   const size=Number(raw.data_size);check(Number.isSafeInteger(size)&&size>32&&size<=maxBundleBytes,'BUNDLE_SIZE_LIMIT');
   check(await arweave.transactions.verify(new Transaction(raw)),'PARENT_SIGNATURE_INVALID');
-  const response=await fetcher(`https://turbo-gateway.com/raw/${id}`,{signal:AbortSignal.timeout(30000)});
-  if(!response.ok)return null;
-  const chunks=[];let length=0;
-  for await(const chunk of response.body){length+=chunk.length;check(length<=size,'BUNDLE_LENGTH_MISMATCH');chunks.push(Buffer.from(chunk));}
-  const bytes=Buffer.concat(chunks);check(bytes.length===size,'BUNDLE_LENGTH_MISMATCH');
+  const bytes=await timeoutStage(async()=>{
+   const response=await fetcher(`https://turbo-gateway.com/raw/${id}`,{signal:AbortSignal.timeout(120000)});
+   if(!response.ok)return null;
+   const chunks=[];let length=0;
+   for await(const chunk of response.body){length+=chunk.length;check(length<=size,'BUNDLE_LENGTH_MISMATCH');chunks.push(Buffer.from(chunk));}
+   return Buffer.concat(chunks);
+  },'PARENT_BUNDLE_FETCH_TIMEOUT');
+  if(!bytes)return null;check(bytes.length===size,'BUNDLE_LENGTH_MISMATCH');
   check(Buffer.from(await computeRootHash(bytes)).toString('base64url')===raw.data_root,'BUNDLE_ROOT_MISMATCH');
   check(bytes.subarray(8,32).every(b=>b===0),'BUNDLE_HEADER_INVALID');
   const count=Number(bytes.readBigUInt64LE(0));check(count<=100000 && 32+64*count<=bytes.length,'BUNDLE_HEADER_INVALID');

@@ -55,7 +55,9 @@ export function createTurboStorageAdapter({turbo,fetcher=globalThis.fetch,
     const pending=(async()=>{
       const statusUrl=new URL(`/tx/${parent}/status`,arweaveUrl);
       statusUrl.searchParams.set('observedAt',String(current));
-      const status=await fetcher(statusUrl,{headers:{Accept:'application/json','Cache-Control':'no-cache'},cache:'no-store',signal:AbortSignal.timeout(30_000)});
+      let status;
+      try{status=await fetcher(statusUrl,{headers:{Accept:'application/json','Cache-Control':'no-cache'},cache:'no-store',signal:AbortSignal.timeout(45_000)});}
+      catch(error){if(error?.name==='TimeoutError'||error?.name==='AbortError')throw Error('PARENT_STATUS_TIMEOUT');throw error;}
       if(!status.ok||status.status===202)return null;
       const type=status.headers?.get('content-type');
       if(type&&!type.toLowerCase().includes('json')){

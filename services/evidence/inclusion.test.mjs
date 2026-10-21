@@ -29,4 +29,6 @@ test('verify real parent signature/root and ANS-104 item; reject altered bundle 
  corrupt=true;
  await assert.rejects(()=>createArweaveInclusionVerifier({fetcher}).verify(ref),/BUNDLE_ROOT_MISMATCH/);
  await assert.rejects(()=>createArweaveInclusionVerifier({fetcher,maxBundleBytes:32}).verify(ref),/BUNDLE_SIZE_LIMIT/);
+ const timeout=Object.assign(new Error('aborted'),{name:'TimeoutError'});
+ await assert.rejects(()=>createArweaveInclusionVerifier({fetcher:async url=>{if(url.includes('/raw/'))throw timeout;return fetcher(url);}}).verify(ref),/PARENT_BUNDLE_FETCH_TIMEOUT/);
 });
