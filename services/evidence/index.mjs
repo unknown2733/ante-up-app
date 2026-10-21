@@ -179,6 +179,7 @@ export async function processJob(repo, id, adapter, now, { uploadCheckpointEvery
     // Each check reads the item and its parent status. Unbounded fan-out can
     // exhaust gateway connections and turn a complete upload into timeouts.
     const refs = [...job.artifacts.map(a => [a.ref,a.receipt]), [job.manifestRef,job.manifestReceipt]];
+    refs.sort((a,b)=>String(a[0]?.parentTransactionId??'').localeCompare(String(b[0]?.parentTransactionId??'')));
     const confirmations = [];
     for (let offset = 0; offset < refs.length; offset += 4) {
       confirmations.push(...await Promise.all(refs.slice(offset, offset + 4)
