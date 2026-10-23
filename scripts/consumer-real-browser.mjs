@@ -5,34 +5,38 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { referenceConsumerReadApi } from '../apps/web/src/reference/referenceData.ts';
+import { createObservedReferenceReadApi } from '../apps/web/src/reference/observedReference.ts';
 import { marketDisplayTitle, withVerifiedSubjectMedia } from '../apps/web/src/consumer-ui/catalog.ts';
 
 const args = process.argv.slice(2);
 const focusTrends = args.includes('--focus-trends');
 const focusIllustrative = args.includes('--focus-illustrative');
 const focusCompact = args.includes('--focus-compact');
+const focusPages = args.includes('--focus-pages');
 const desktopOnly = args.includes('--desktop-only');
 const option = flag => { const i = args.indexOf(flag); return i < 0 ? null : args[i + 1]; };
 if (!option('--dist')) throw new Error('Usage: node scripts/consumer-real-browser.mjs --dist apps/web/dist [--api-origin https://ante-up.fun] [--source-sha SHA]');
 const dist = path.resolve(option('--dist'));
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const upstream = new URL(option('--api-origin') ?? 'https://ante-up.fun');
-if (upstream.origin !== 'https://ante-up.fun' || upstream.pathname !== '/' || upstream.username || upstream.password || upstream.search || upstream.hash)
-  throw new Error('Only the public https://ante-up.fun API origin is allowed.');
+const referenceReadApi = createObservedReferenceReadApi(new URL('/api', upstream).href);
+const localReadOnlyProxy = upstream.protocol === 'http:' && upstream.hostname === '127.0.0.1' && upstream.port;
+if ((!localReadOnlyProxy && upstream.origin !== 'https://ante-up.fun') || upstream.pathname !== '/' ||
+    upstream.username || upstream.password || upstream.search || upstream.hash)
+  throw new Error('Only the public https://ante-up.fun origin or an explicit local read-only QA proxy is allowed.');
 const getPublic = async pathname => {
   const response = await fetch(new URL(pathname, upstream), { redirect: 'error', signal: AbortSignal.timeout(20_000) });
   if (!response.ok) throw new Error(`Public GET ${pathname}: ${response.status}`);
   return response.json();
 };
 const [references, publicMarkets, publicBoard] = await Promise.all([
-  referenceConsumerReadApi.listMarkets(), getPublic('/api/v1/consumer/markets'), getPublic('/api/v1/consumer/leaderboard?period=7D'),
+  referenceReadApi.listMarkets(), getPublic('/api/v1/consumer/markets'), getPublic('/api/v1/consumer/leaderboard?period=7D'),
 ]);
 const live = Array.isArray(publicMarkets.data) ? publicMarkets.data.map(withVerifiedSubjectMedia) : publicMarkets.data;
 const board = publicBoard.data;
 if (!Array.isArray(live) || !Array.isArray(board?.rows)) throw new Error('Unexpected public API response.');
 const catalog = [...live, ...references];
-const referenceHistories = await Promise.all(references.map(market => referenceConsumerReadApi.getHistory(market.id, 'ALL')));
+const referenceHistories = await Promise.all(references.map(market => referenceReadApi.getHistory(market.id, 'ALL')));
 const livePreviewHistories = await Promise.all(live.map(async market => (await getPublic(`/api/v1/consumer/markets/${encodeURIComponent(market.id)}/history?period=1W`)).data));
 const previewHistories = new Map([...referenceHistories, ...livePreviewHistories].map(history => [history.market.id, history]));
 const previewSeries = history => history.series.find(series => history.source.mode === 'REFERENCE' && series.evidence === 'ILLUSTRATIVE' && series.points.length)
@@ -165,6 +169,7 @@ try {
       actionTabs:all('.au-action-tabs [role="tab"]').map(e=>e.textContent.trim()),
       chartBeforeActions:(()=>{const chart=document.querySelector('.au-chart'),actions=document.querySelector('.au-action-tabs');return !!chart&&!!actions&&!!(chart.compareDocumentPosition(actions)&Node.DOCUMENT_POSITION_FOLLOWING)})(),
       chartViewport:(()=>{const e=document.querySelector('.au-chart svg,.au-chart-snapshot');if(!e)return null;const r=e.getBoundingClientRect();const overlays=[...document.querySelectorAll('nav')].filter(n=>getComputedStyle(n).position==='fixed').map(n=>n.getBoundingClientRect()).filter(n=>n.top>innerHeight/2);const unobscuredBottom=Math.min(innerHeight,...overlays.map(n=>n.top));const visibleHeight=Math.max(0,Math.min(r.bottom,unobscuredBottom)-Math.max(r.top,60));return {top:r.top,bottom:r.bottom,height:r.height,unobscuredBottom,visibleHeight,inView:visibleHeight>0}})(),
+      layout:(()=>{const names=['.au-trading-workspace','.au-action-tabs','.au-trading-chart','.au-chart','.au-chart-value-summary'];return Object.fromEntries(names.map(name=>{const e=document.querySelector(name);if(!e)return[name,null];const r=e.getBoundingClientRect(),c=getComputedStyle(e);return[name,{top:r.top,bottom:r.bottom,marginTop:c.marginTop,paddingTop:c.paddingTop,position:c.position,topRule:c.top}]}))})(),
       chartSummary:all('.au-chart-value-summary').map(e=>e.innerText),
       executionControls:all('.au-reference-actions button[aria-describedby="reference-action-reason"]').map(e=>({disabled:e.disabled,text:e.textContent})),
       sources:all('a').filter(e=>e.textContent.includes('View data source')).map(e=>e.href),
@@ -304,6 +309,29 @@ try {
         for (const line of row.spark.lines) explore.check(!series.gaps.some(gap => line.fromMs < gap.toMs && line.toMs > gap.fromMs), `sparkline connects a source gap: ${row.label}`);
       }
     }
+    if (focusPages) {
+      const pages = [
+        ['/docs', 'docs', 'Know what your chip means.'],
+        ['/docs/start', 'docs-start', 'Explore, place a chip, and find your record.'],
+        ['/faucet', 'faucet', 'Get ready to play'],
+        ['/register', 'register', 'Register a keyword'],
+        ['/leaderboard', 'leaderboard', 'Leaderboard'],
+        ['/me', 'my-activity', 'Connect your wallet to view your activity.'],
+      ];
+      const actor = board.rows[0]?.actorId;
+      if (actor) {
+        pages.push([`/u/${encodeURIComponent(actor)}`, 'public-profile', 'PUBLIC PROFILE']);
+        const profile = await getPublic(`/api/v1/consumer/profiles/${encodeURIComponent(actor)}`);
+        const recordAction = profile.data.actions.find(action => action.recordId);
+        if (recordAction) {
+          const subject = live.find(market => market.id === recordAction.marketId)?.title;
+          pages.push([`/records/${encodeURIComponent(recordAction.recordId)}`, 'public-record', subject ? marketDisplayTitle(subject) : 'CHIP RECORD']);
+        }
+      }
+      for (const [route, name, marker] of pages) await visit(route, viewport, name, state => state.text.includes(marker));
+      console.log(JSON.stringify({ viewport: viewport.name, capturedViews: results.length, failures: failures.length }));
+      continue;
+    }
     if (focusIllustrative) {
       let checkedPeriods = false;
       for (const [index, history] of referenceHistories.entries()) {
@@ -331,7 +359,7 @@ try {
           if (!checkedPeriods) {
             checkedPeriods = true;
             for (const period of ['1D', '1W', '1M']) {
-              const expected = await referenceConsumerReadApi.getHistory(history.market.id, period);
+              const expected = await referenceReadApi.getHistory(history.market.id, period);
               const expectedSeries = previewSeries(expected);
               const filtered = await visit(`/markets/${encodeURIComponent(history.market.id)}/trade?period=${period}`, viewport, `illustrative-period-${period}`, state => state.selectedPeriod === period && state.chartPoints === expectedSeries.points.length);
               checkReferenceData(filtered, expected, expectedSeries);
@@ -375,7 +403,7 @@ try {
       checkReferenceData(detail, history);
       await checkReferenceEvidence(detail, history);
       if (multiPoint) for (const period of ['1D', '1W', '1M']) {
-        const expected = await referenceConsumerReadApi.getHistory(market.id, period);
+        const expected = await referenceReadApi.getHistory(market.id, period);
         const clicked = await evaluate(`(() => {const e=[...document.querySelectorAll('.au-chart-periods button')].find(e=>e.textContent===${JSON.stringify(period)});if(!e)return false;e.click();return true})()`);
         detail.check(clicked, `${period} period control absent`);
         if (!clicked) continue;

@@ -22,7 +22,7 @@ export interface ConsumerChartProps {
 
 const periods: ConsumerPeriod[] = ['1D', '1W', '1M', 'ALL'];
 const colors: Record<ConsumerSeries['kind'], string> = {
-  CURVE_PRICE: '#dd681f', REFERENCE_PRICE: '#275eaf', TRADE_PRICE: '#171717', ATTENTION_INDEX: '#5874a2', ACTIVITY_COUNT: '#275eaf',
+  CURVE_PRICE: '#bc4b2c', REFERENCE_PRICE: '#8b3f2a', TRADE_PRICE: '#241c18', ATTENTION_INDEX: '#8b7464', ACTIVITY_COUNT: '#a36344',
 };
 const seriesName: Record<ConsumerSeries['kind'], string> = {
   CURVE_PRICE: 'Curve price', REFERENCE_PRICE: 'Index reference', TRADE_PRICE: 'Trade price', ATTENTION_INDEX: 'Attention index', ACTIVITY_COUNT: 'Public activity',

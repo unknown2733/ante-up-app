@@ -32,12 +32,43 @@ const short = (value: string, length: number) => Array.from(value).length > leng
 
 /** Standalone SVG uses escaped public record fields and no remote media or scripts. */
 export function resultCardSvg(data: ResultCardData, logoDataUrl?: string): string {
-  const text = (x: number, y: number, value: string, size = 26, fill = '#252422', weight = 400) => `<text x="${x}" y="${y}" font-size="${size}" fill="${fill}" font-weight="${weight}">${escape(value)}</text>`;
+  const text = (x: number, y: number, value: string, size = 26, fill = '#241c18', weight = 400) => `<text x="${x}" y="${y}" font-size="${size}" fill="${fill}" font-weight="${weight}">${escape(value)}</text>`;
   const resultSize = Math.min(146, Math.floor(890 / Math.max(data.result.length, 1) * 1.55));
   const logo = logoDataUrl?.startsWith('data:image/png;base64,') ? `<image x="64" y="50" width="82" height="82" href="${escape(logoDataUrl)}"/>` : '';
   const title = Array.from(data.title);
   const titleLines = title.length > 28 ? [title.slice(0, 28).join(''), short(title.slice(28).join(''), 28)] : [data.title];
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" role="img" aria-label="Chip result card"><rect width="1080" height="1080" fill="#f7f5ee"/><rect x="0" width="12" height="1080" fill="#ee733c"/><g font-family="Arial, Helvetica, sans-serif">${logo}${text(logo ? 166 : 64, 107, 'ANTE UP', 43, '#171715', 800)}${text(64, 184, 'CALL IT. ANTE UP. PROVE IT.', 19, '#64625b', 700)}${text(755, 89, data.network, 18, '#2955cc', 700)}<path d="M64 222H1016" stroke="#d5d1c7"/>${text(64, 275, 'CHIP RESULT  /  UP', 20, '#a04e23', 700)}${titleLines.map((line, i) => text(64, 346 + i * 58, line, 48, '#171715', 700)).join('')}${text(64, 564, data.result, resultSize, data.negative ? '#bd4239' : '#171715', 800)}${text(68, 614, 'Attention change · not a cash return', 27, '#64625b')}<path d="M80 688H994" stroke="#cbc6ba" stroke-width="3"/><circle cx="80" cy="688" r="11" fill="#ee733c"/><circle cx="994" cy="688" r="11" fill="#2955cc"/>${text(64, 733, 'PLACED CHIP', 18, '#77746c', 700)}${text(594, 733, 'TOOK BACK CHIP', 18, '#77746c', 700)}${text(64, 772, data.placed, 25)}${text(594, 772, data.closed, 25)}${text(64, 830, `${data.wallet.slice(0, 8)}…${data.wallet.slice(-6)}`, 24, '#252422', 700)}${text(594, 830, data.proof, 24, '#2955cc', 700)}<path d="M64 863H1016" stroke="#d5d1c7"/>${text(64, 903, data.url ? 'VIEW THE RECORD  →  ante-up.fun/records/' : 'LOCAL PREVIEW · NO PUBLIC RECORD LINK', 20, '#252422', 700)}${text(64, 940, short(data.recordId, 72), 20, '#64625b')}${text(64, 1000, `Card captured ${data.captured}`, 18, '#77746c')}${text(64, 1032, 'Snapshot only. Open the record for current evidence and proof status.', 18, '#77746c')}</g></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" role="img" aria-label="Chip result card">
+    <rect width="1080" height="1080" fill="#f5f0e6"/>
+    <rect x="0" width="1080" height="12" fill="#241c18"/>
+    <rect x="0" y="12" width="16" height="1068" fill="#bc4b2c"/>
+    <g font-family="Arial, Helvetica, sans-serif">
+      ${logo}
+      ${text(logo ? 166 : 64, 107, 'ANTE UP', 43, '#241c18', 800)}
+      ${text(64, 184, 'CALL IT. ANTE UP. PROVE IT.', 19, '#685d55', 700)}
+      ${text(755, 89, data.network, 18, '#8b3f2a', 700)}
+      <path d="M64 222H1016" stroke="#b5aa9b"/>
+      ${text(64, 275, 'CHIP RESULT  /  UP', 20, '#8b3f2a', 700)}
+      <g font-family="Georgia, Times New Roman, serif">
+        ${titleLines.map((line, i) => text(64, 346 + i * 58, line, 48, '#241c18')).join('')}
+        ${text(64, 564, data.result, resultSize, data.negative ? '#a83d35' : '#241c18')}
+      </g>
+      ${text(68, 614, 'Attention change · not a cash return', 27, '#685d55')}
+      <path d="M80 688H994" stroke="#b5aa9b" stroke-width="3"/>
+      <circle cx="80" cy="688" r="11" fill="#bc4b2c"/>
+      <circle cx="994" cy="688" r="11" fill="#241c18"/>
+      ${text(64, 733, 'PLACED CHIP', 18, '#685d55', 700)}
+      ${text(594, 733, 'TOOK BACK CHIP', 18, '#685d55', 700)}
+      ${text(64, 772, data.placed, 25)}
+      ${text(594, 772, data.closed, 25)}
+      ${text(64, 830, `${data.wallet.slice(0, 8)}…${data.wallet.slice(-6)}`, 24, '#241c18', 700)}
+      ${text(594, 830, data.proof, 24, '#8b3f2a', 700)}
+      <path d="M64 863H1016" stroke="#b5aa9b"/>
+      ${text(64, 903, data.url ? 'VIEW THE RECORD  →  ante-up.fun/records/' : 'LOCAL PREVIEW · NO PUBLIC RECORD LINK', 20, '#241c18', 700)}
+      ${text(64, 940, short(data.recordId, 72), 20, '#685d55')}
+      ${text(64, 1000, `Card captured ${data.captured}`, 18, '#685d55')}
+      ${text(64, 1032, 'Snapshot only. Open the record for current evidence and proof status.', 18, '#685d55')}
+    </g>
+  </svg>`;
 }
 
 export async function resultCardPng(svg: string): Promise<Blob> {

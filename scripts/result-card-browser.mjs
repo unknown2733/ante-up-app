@@ -14,8 +14,10 @@ if (!option('--dist')) throw new Error('Usage: node scripts/result-card-browser.
 const dist = path.resolve(option('--dist'));
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const upstream = new URL(option('--api-origin') ?? 'https://ante-up.fun');
-if (upstream.origin !== 'https://ante-up.fun' || upstream.pathname !== '/' || upstream.username || upstream.password || upstream.search || upstream.hash)
-  throw new Error('Only the public https://ante-up.fun API origin is allowed.');
+const localReadOnlyProxy = upstream.protocol === 'http:' && upstream.hostname === '127.0.0.1' && upstream.port;
+if ((!localReadOnlyProxy && upstream.origin !== 'https://ante-up.fun') || upstream.pathname !== '/' ||
+    upstream.username || upstream.password || upstream.search || upstream.hash)
+  throw new Error('Only the public https://ante-up.fun origin or an explicit local read-only QA proxy is allowed.');
 const getPublic = async pathname => {
   const response = await fetch(new URL(pathname, upstream), { redirect: 'error', signal: AbortSignal.timeout(20_000) });
   if (!response.ok) throw new Error(`Public GET ${pathname}: ${response.status}`);
