@@ -2,6 +2,7 @@ import type { ConsumerMarket, ConsumerReadApi, ConsumerSeries, MarketHistory } f
 import type { ReferenceObservation } from '../../../../contracts/reference/observations.ts';
 import { validateReferenceObservation } from '../../../../contracts/reference/observations.ts';
 import { referenceConsumerReadApi } from './referenceData.ts';
+import { createIllustrativeHistory } from './illustrativeHistory.ts';
 
 const DAY = 86_400_000;
 const PREFIX = 'reference:market:';
@@ -45,8 +46,10 @@ export function mergeReferenceHistory(base: MarketHistory, observations: Referen
   const series: ConsumerSeries = { ...base.series[0], source: market.source, points,
     gaps: points.slice(1).flatMap((point, i) => point.atMs - points[i].atMs > DAY
       ? [{ fromMs: points[i].atMs, toMs: point.atMs }] : []) };
-  // Once fresh measured points arrive, don't imply that a generated chart is source history.
-  return { ...base, market, source: market.source, series: [series], actions: [] };
+  // A new dated report can still leave only a handful of measured points. Keep the
+  // optional preview in its own evidence lane until there is usable source history.
+  const preview = all.length < 7 ? createIllustrativeHistory(market, base.period) : null;
+  return { ...base, market, source: market.source, series: preview ? [series, preview] : [series], actions: [] };
 }
 
 export function createObservedReferenceReadApi(baseUrl: string, fetcher: typeof fetch = fetch): ConsumerReadApi {
@@ -74,7 +77,9 @@ export function createObservedReferenceReadApi(baseUrl: string, fetcher: typeof 
       if (!base) return null;
       const slug = id.slice(PREFIX.length);
       let observations: ReferenceObservation[];
-      const sinceMs = period === 'ALL' ? 0 : Math.max(0, Date.now() - span(period) - DAY);
+      // A provider's report date can be older than the day it was captured. Fetch
+      // the bounded observation journal before clipping relative to its latest date.
+      const sinceMs = 0;
       try { observations = await read(`history/${encodeURIComponent(slug)}?sinceMs=${sinceMs}`); }
       catch { return base; }
       return mergeReferenceHistory(base, observations);
