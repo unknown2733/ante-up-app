@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createClient } from '@solana/kit';
 import { walletSigner } from '@solana/kit-plugin-wallet';
 import { useConnect, useConnectedWallet, useDisconnect, useWalletStatus, useWallets } from '@solana/kit-plugin-wallet/react';
@@ -51,14 +51,26 @@ export function WalletPanel() {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState('');
   const busy = connect.isRunning || disconnect.isRunning;
+  useEffect(() => {
+    const openPanel = () => setOpen(true);
+    window.addEventListener('ante-up-connect-wallet', openPanel);
+    return () => window.removeEventListener('ante-up-connect-wallet', openPanel);
+  }, []);
   return <div className="wallet-panel">
     <button type="button" className="wallet-pill" aria-expanded={open} onClick={() => setOpen(!open)}><span className="wallet-dot" />{connected ? `${connected.account.address.slice(0, 4)}…${connected.account.address.slice(-4)}` : status === 'pending' || status === 'reconnecting' ? 'Checking wallet…' : 'Connect wallet'}</button>
     {open && <div className="wallet-menu"><strong>Solana {walletCluster}</strong>
-      {connected ? <><p>{connected.wallet.name} · {connected.account.address.slice(0, 8)}…</p><button disabled={busy} onClick={async () => { setError(''); try { await disconnect.dispatchAsync(); } catch (cause) { setError(walletDisplayError(cause, 'Could not disconnect wallet.')); } }}>Disconnect</button></> : wallets.length ? wallets.map((wallet) => <button key={wallet.name} disabled={busy} onClick={async () => { setError(''); try { await connect.dispatchAsync(wallet); setOpen(false); } catch (cause) { setError(walletDisplayError(cause, 'Could not connect wallet.')); } }}>Connect {wallet.name}</button>) : <p>No compatible wallet found for this network. On Android, use HTTPS and an MWA-compatible wallet.</p>}
+      {connected ? <><p>{connected.wallet.name} · {connected.account.address.slice(0, 8)}…</p><button disabled={busy} onClick={async () => { setError(''); try { await disconnect.dispatchAsync(); } catch (cause) { setError(walletDisplayError(cause, 'Could not disconnect wallet.')); } }}>Disconnect</button></> : wallets.length ? wallets.map((wallet) => <button key={wallet.name} disabled={busy} onClick={async () => { setError(''); try { await connect.dispatchAsync(wallet); setOpen(false); } catch (cause) { setError(walletDisplayError(cause, 'Could not connect wallet.')); } }}>Connect {wallet.name}</button>) : <p>No compatible wallet found in this browser. On desktop, open Ante Up in a browser with Phantom. On Android, use an MWA-compatible wallet. Set the wallet to Devnet.</p>}
       {error && <p role="alert">{error}</p>}
       <small>Connecting alone does not submit a trade.</small>
     </div>}
   </div>;
+}
+
+export function WalletConnectPrompt({ label = 'Connect wallet to continue' }: { label?: string }) {
+  return <button type="button" className="button button-dark full" onClick={() => {
+    window.dispatchEvent(new Event('ante-up-connect-wallet'));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }}>{label}</button>;
 }
 
 export function WalletProfile({ children }: { children: (address: string | null) => React.ReactNode }) {

@@ -13,6 +13,7 @@ const focusTrends = args.includes('--focus-trends');
 const focusIllustrative = args.includes('--focus-illustrative');
 const focusCompact = args.includes('--focus-compact');
 const focusPages = args.includes('--focus-pages');
+const focusTransactions = args.includes('--focus-transactions');
 const desktopOnly = args.includes('--desktop-only');
 const option = flag => { const i = args.indexOf(flag); return i < 0 ? null : args[i + 1]; };
 if (!option('--dist')) throw new Error('Usage: node scripts/consumer-real-browser.mjs --dist apps/web/dist [--api-origin https://ante-up.fun] [--source-sha SHA]');
@@ -279,6 +280,31 @@ try {
         const observed = await visit(route, viewport, `compact-${index}-observed`, state => actual.points.length === 1 ? state.snapshots.length === 1 : state.chartPoints === actual.points.length, false);
         checkReferenceData(observed, history);
         await checkReferenceEvidence(observed, history);
+      }
+      console.log(JSON.stringify({ viewport: viewport.name, capturedViews: results.length, failures: failures.length }));
+      continue;
+    }
+    if (focusTransactions) {
+      for (const market of live.filter(item => item.id === item.liveMarketId)) {
+        const current = (await getPublic(`/api/v1/markets/${encodeURIComponent(market.id)}`)).data;
+        const chipAllowed = current.capabilities.openFree?.allowed === true;
+        const chip = await visit(`/markets/${encodeURIComponent(market.id)}`, viewport, `wallet-chip-${market.id.slice(0, 6)}`, state => state.actionTabs.length === 4 && (chipAllowed ? state.text.includes('Connect wallet to place chip') : true));
+        if (chipAllowed) {
+          chip.check(chip.probe.text.includes('Connect wallet to place chip'), 'disconnected chip has no direct wallet action');
+          const walletButton = await evaluate("(() => { const button=[...document.querySelectorAll('button')].find(item=>item.textContent?.trim()==='Connect wallet to place chip'); if(!button)return false; button.click(); return true; })()");
+          await delay(100);
+          chip.check(walletButton && await evaluate("!!document.querySelector('.wallet-menu')"), 'chip wallet action did not open the connection menu');
+        }
+        for (const [section, action] of [['trade', current.phase === 'INDEXED' ? 'spotBuy' : 'curveBuy'], ['pro', 'openPro'], ['lp', 'depositLP']]) {
+          const allowed = current.capabilities[action]?.allowed === true;
+          const view = await visit(`/markets/${encodeURIComponent(market.id)}/${section}`, viewport, `wallet-${section}-${market.id.slice(0, 6)}`, state => state.actionTabs.length === 4 && (allowed ? state.text.includes('Connect wallet to trade') : true));
+          if (allowed) view.check(view.probe.text.includes('Connect wallet to trade'), `${section} has no direct wallet action`);
+          else view.check(!view.probe.text.includes('Connect wallet to trade'), `${section} bypasses a closed market stage`);
+        }
+      }
+      for (const [route, label] of [['/faucet', 'Connect wallet to get tUSD'], ['/register', 'Connect wallet to register a market']]) {
+        const view = await visit(route, viewport, `wallet-${route.slice(1)}`, state => state.text.includes(label));
+        view.check(view.probe.text.includes(label), `${route} has no direct wallet action`);
       }
       console.log(JSON.stringify({ viewport: viewport.name, capturedViews: results.length, failures: failures.length }));
       continue;

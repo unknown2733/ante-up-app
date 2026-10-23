@@ -4,7 +4,7 @@ import type { Action, MarketView } from '../../../contracts/types';
 import type { FinancialAction, FinancialIntent, FinancialPortfolio, FinancialQuote, FinancialVault } from '../../../contracts/financial';
 import { apiClock, isFixture, liveFinancialFlow, visitorSolFlow } from './api';
 import type { SolReadiness, SolClaim } from './visitorSol';
-import { currentWalletContext, walletClient, walletCluster } from './walletSdk';
+import { currentWalletContext, walletClient, walletCluster, WalletConnectPrompt } from './walletSdk';
 import type { FinancialOutcome, FinancialProgress } from './liveFinancial';
 import { displayConsumerError } from './consumer-ui/copy';
 import { marketDisplayTitle } from './consumer-ui/catalog';
@@ -114,7 +114,8 @@ export function FinancialMarket({ market, section, onFinalized, refreshBlocked =
   useEffect(() => { setQuote(null); setOutcome(null); setError(''); }, [action, quantity, direction, leverage, positionId, claimId]);
   const modeProblem = isFixture || !liveFinancialFlow ? 'Financial actions are unavailable.' : !wallet ? 'Connect a wallet.' : wallet.cluster !== walletCluster || market.chain?.cluster !== wallet.cluster || market.chain.address !== market.id ? 'Wallet network does not match this market.' : null;
   const capability = market.capabilities[action as Action];
-  const unavailable = refreshBlocked ? 'Refreshing market conditions. Wait for a current quote.' : modeProblem ?? (capability?.allowed !== true ? `${actionLabel[action]} unavailable: ${displayConsumerError(capability?.reason, 'Execution unavailable')}` : null);
+  const stageProblem = capability?.allowed !== true ? `${actionLabel[action]} unavailable: ${displayConsumerError(capability?.reason, 'Execution unavailable')}` : null;
+  const unavailable = refreshBlocked ? 'Refreshing market conditions. Wait for a current quote.' : stageProblem ?? modeProblem;
   const activePosition = portfolio?.positions.filter((item) => item.marketId === market.id && item.owner === wallet?.address && item.status === 'OPEN') ?? [];
   const unpaidClaims = portfolio?.claims.filter((item) => item.marketId === market.id && item.owner === wallet?.address && item.status === 'UNPAID') ?? [];
   const emptySelection = portfolio?.wallet === wallet?.address && portfolio && !modeProblem && !refreshBlocked && !busy && !error
@@ -187,6 +188,7 @@ export function FinancialMarket({ market, section, onFinalized, refreshBlocked =
     </div>
     {emptySelection && <p className="tiny muted" role="status">{emptySelection}</p>}
     {unavailable && !(emptySelection && capability?.reason === 'LIMIT_REACHED') && <Notice>{unavailable}</Notice>}
+    {!wallet && !stageProblem && <WalletConnectPrompt label="Connect wallet to trade" />}
     {pending && <Notice>This wallet has an unresolved request. Check it before sending another. Request ID: {pending.requestId}{pending.signature && ` · Signature: ${pending.signature}`}</Notice>}
     {error && <Notice error>{error}</Notice>}
     {outcome && <div className="au-finance-outcome" role="status"><Notice error={outcome.state === 'FAILED'}>{outcome.state === 'FINALIZED' ? 'Transaction confirmed.' : outcome.reason ? displayConsumerError(outcome.reason) : `Request status: ${outcome.state}`}{outcomeLink && <p><a href={outcomeLink} target="_blank" rel="noopener noreferrer">View transaction ↗</a></p>}<details><summary>Request details</summary><p>Network: Devnet</p><code>{outcome.requestId}</code>{outcome.signature && <code>{outcome.signature}</code>}</details></Notice></div>}
@@ -275,7 +277,7 @@ export function FinancialFaucet({ onFinalized }: { onFinalized: () => void }) {
       {solReadiness?.needsSol && solReadiness.serverGrantEnabled && <button className="button button-blue" disabled={solBusy} onClick={() => void requestSol()}>{solPending ? 'Retry same SOL request' : 'Get Devnet SOL'}</button>}</div>}
     <p className="tiny muted">{wallet ? <>You can also use the <a href="https://faucet.solana.com/" target="_blank" rel="noopener noreferrer">Solana Devnet faucet ↗</a> for {wallet.address}. Copy your wallet address in your wallet before opening it.</> : <>Or use the <a href="https://faucet.solana.com/" target="_blank" rel="noopener noreferrer">Solana Devnet faucet ↗</a> after connecting a wallet.</>}</p>
   </section><section className="detail-panel finance-panel"><h2>2 · Request tUSD</h2><p>Review the amount, then confirm in your wallet.</p><details className="au-evidence-details"><summary>Asset details</summary><p>Network: Devnet · tUSD is a test asset. Devnet SOL covers network fees. Your balance updates after confirmation; request limits and retry times apply.</p></details>
-    {isFixture || !liveFinancialFlow ? <Notice>tUSD is unavailable.</Notice> : !wallet ? <Notice>Connect a Solana wallet.</Notice> : wallet.cluster !== walletCluster ? <Notice>Wallet network does not match.</Notice> : null}
+    {isFixture || !liveFinancialFlow ? <Notice>tUSD is unavailable.</Notice> : !wallet ? <WalletConnectPrompt label="Connect wallet to get tUSD" /> : wallet.cluster !== walletCluster ? <Notice>Wallet network does not match.</Notice> : null}
     {pending && <Notice>Unresolved request ID: {pending.requestId}{pending.signature && ` · Signature: ${pending.signature}`}</Notice>}
     {error && <Notice error>{error}</Notice>}
     {outcome && <Notice error={outcome.state === 'FAILED'}>{outcome.reason ? displayConsumerError(outcome.reason) : outcome.state} · Request ID: {outcome.requestId}</Notice>}
@@ -325,7 +327,7 @@ export function FinancialRegistration({ onFinalized }: { onFinalized: () => void
   return <div className="page"><div className="profile-header"><span className="eyebrow orange-text">NEW MARKET</span><h1>Register a keyword<span className="title-dot">.</span></h1><p>Register an English keyword and limited aliases. The fee is 10 tUSD plus network fees. Registration does not guarantee data coverage or trading availability.</p></div><section className="detail-panel finance-panel"><h2>Review registration terms</h2>
     <div className="finance-form"><label>English keyword<input disabled={busy} value={keyword} placeholder="example keyword" onChange={(event) => { setKeyword(event.target.value); setQuote(null); }} /></label><label>Aliases · comma separated<input disabled={busy} value={aliases} placeholder="#examplekeyword" onChange={(event) => { setAliases(event.target.value); setQuote(null); }} /></label></div>
     <p>Aliases may be the keyword, its joined form, or its hashtag. Data support is checked after registration.</p>
-    {isFixture || !liveFinancialFlow ? <Notice>Market registration is unavailable.</Notice> : !wallet ? <Notice>Connect a wallet.</Notice> : null}
+    {isFixture || !liveFinancialFlow ? <Notice>Market registration is unavailable.</Notice> : !wallet ? <WalletConnectPrompt label="Connect wallet to register a market" /> : null}
     {pending && <Notice>Unresolved request ID: {pending.requestId}{pending.signature && ` · Signature: ${pending.signature}`}</Notice>}
     {error && <Notice error>{error}</Notice>}
     {outcome && <Notice error={outcome.state === 'FAILED'}>{outcome.reason ? displayConsumerError(outcome.reason) : outcome.state} · Request ID: {outcome.requestId}</Notice>}

@@ -4,5 +4,5 @@ WORKDIR /app
 COPY . .
 RUN node scripts/install-dependencies.mjs && npm --prefix clients/chain run build
 ENV VITE_API_BASE_URL=/api VITE_ALLOW_FIXTURE_API=false VITE_WALLET_CLUSTER=devnet VITE_SOLANA_RPC_URL=https://api.devnet.solana.com VITE_MWA_APP_URI=https://ante-up.fun
-RUN npm --prefix apps/web run build
+RUN npm --prefix apps/web run build && node scripts/assert-live-web-build.mjs
 USER node

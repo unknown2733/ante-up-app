@@ -4,7 +4,7 @@ import type { FreeRecord, MarketView, Mode, OpenPreview } from '../../../contrac
 import { useConnectedWallet } from '@solana/kit-plugin-wallet/react';
 import { api, isFixture, liveFreeFlow, transportMode } from './api';
 import { DEMO_WALLET } from './wallet';
-import { currentWalletContext, walletClient, walletCluster, WalletPanel, WalletProfile } from './walletSdk';
+import { currentWalletContext, walletClient, walletCluster, WalletConnectPrompt, WalletPanel, WalletProfile } from './walletSdk';
 import type { FreeOutcome, FreeProgress, FreeRequest, FreeReview } from './liveFree';
 import { FinancialFaucet, FinancialMarket, FinancialRegistration, PrivateFinancialPanel } from './Financial';
 import { displayConsumerError } from './consumer-ui/copy';
@@ -179,7 +179,8 @@ function LiveFreeAction({ market, recordId, mode, profileLoading, limitReached, 
   const disabled = busy || profileLoading || !!unavailable || pending || outcome?.state === 'FINALIZED';
   const progressText: Record<FreeProgress, string> = { AUTH: 'Authenticating wallet…', PREPARING: 'Preparing transaction…', AWAITING_SIGNATURE: 'Waiting for wallet signature…', SUBMITTED: 'Submitted · checking finality…', CONFIRMED: 'Confirming on chain…' };
   return <>
-    {outcome?.state !== 'FINALIZED' && <button className={`button full ${disabled ? 'button-disabled' : 'button-chip'}`} disabled={disabled} onClick={review && remaining > 0 ? sign : run}>{busy ? progressText[progress ?? 'AUTH'] : review ? remaining > 0 ? 'Sign in wallet' : 'Review chip request' : recordId ? 'Take back chip' : 'Place chip'} <span>↗</span></button>}
+    {!connected && market.capabilities[requestValue.action]?.allowed === true && <WalletConnectPrompt label={recordId ? 'Connect wallet to take back chip' : 'Connect wallet to place chip'} />}
+    {connected && outcome?.state !== 'FINALIZED' && <button className={`button full ${disabled ? 'button-disabled' : 'button-chip'}`} disabled={disabled} onClick={review && remaining > 0 ? sign : run}>{busy ? progressText[progress ?? 'AUTH'] : review ? remaining > 0 ? 'Sign in wallet' : 'Review chip request' : recordId ? 'Take back chip' : 'Place chip'} <span>↗</span></button>}
     {review && <p className="tiny muted">{remaining > 0 ? `${recordId ? 'Take back' : 'Place'} one chip · ready to sign for ${remaining}s. Tap Sign in wallet to continue.` : 'Chip request expired without being sent. Review it again for a fresh request.'}</p>}
     {review && <button className="button button-dark full" disabled={busy} onClick={cancelReview}>Cancel review</button>}
     {unavailable && <p className="tiny muted">{displayConsumerError(unavailable)}</p>}
@@ -191,11 +192,21 @@ function LiveFreeAction({ market, recordId, mode, profileLoading, limitReached, 
 }
 
 function MarketPage({ id, refresh, changed, mode, section = 'call', compact = false }: { id: string; refresh: number; changed: () => void; mode: Mode | null; section?: ActionTab; compact?: boolean }) {
+  const [marketRetry, setMarketRetry] = useState(0);
+  const [profileRetry, setProfileRetry] = useState(0);
+  useEffect(() => {
+    const refreshCurrentMarket = () => {
+      if (document.visibilityState === 'visible') setMarketRetry(value => value + 1);
+    };
+    const timer = window.setInterval(refreshCurrentMarket, 60_000);
+    document.addEventListener('visibilitychange', refreshCurrentMarket);
+    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', refreshCurrentMarket); };
+  }, [id]);
   const market = useRetainedData(async () => {
     const response = await api.getMarket(id);
     if (response.data && response.data.id !== id) throw new Error('Market identity could not be verified.');
     return response;
-  }, `${mode}:${id}`, String(refresh));
+  }, `${mode}:${id}`, `${refresh}:${marketRetry}`);
   const connected = useConnectedWallet(walletClient);
   const walletAddress = connected?.account.address ?? null;
   const [profileRefresh, setProfileRefresh] = useState(0);
@@ -205,7 +216,7 @@ function MarketPage({ id, refresh, changed, mode, section = 'call', compact = fa
     const response = expectedWallet ? await api.getProfile(expectedWallet) : { data: null };
     if (response.data && response.data.wallet !== expectedWallet) throw new Error('Wallet profile identity could not be verified.');
     return response;
-  }, `${mode}:${id}:${walletAddress ?? (isFixture ? DEMO_WALLET : 'disconnected')}`, `${refresh}:${profileRefresh}`);
+  }, `${mode}:${id}:${walletAddress ?? (isFixture ? DEMO_WALLET : 'disconnected')}`, `${refresh}:${profileRefresh}:${profileRetry}`);
   const projectionWait = liveFreeFlow?.projectionPending(id, currentWalletContext());
   useEffect(() => {
     if (!profile.loading && !profile.error && liveFreeFlow?.observeProfile(id, currentWalletContext(), profile.value)) redrawProjection(value => value + 1);
@@ -233,14 +244,14 @@ function MarketPage({ id, refresh, changed, mode, section = 'call', compact = fa
     } finally { setBusy(false); }
   }
   if (market.loading && !m) return <div className="page"><p className="muted">Loading markets…</p></div>;
-  if (market.error && !m) return <div className="page"><ErrorBox message={market.error} /></div>;
+  if (market.error && !m) return <div className="page"><ErrorBox message={market.error} /><button type="button" className="button button-dark" onClick={() => setMarketRetry(value => value + 1)}>Retry market data</button></div>;
   if (!m) return <div className="page"><Empty title="Market not found" /></div>;
   const refreshBlocked = market.loading || !!market.error;
   const freeAllowed = m.capabilities[open ? 'closeFree' : 'openFree'];
   const ownLimit = (profile.value?.openRecords.length || 0) >= 3;
   const duplicate = !open && profile.value?.openRecords.some((record) => record.marketId === m.id);
   return <div className={`page${compact ? ' au-order-page' : ''}`}>
-    {refreshBlocked && <Notice tone={market.error ? 'red' : 'blue'}>{market.error ? `Could not verify the latest market data. New actions are blocked. ${market.error}` : 'Refreshing market data. New actions are temporarily blocked.'}</Notice>}
+    {refreshBlocked && <Notice tone={market.error ? 'red' : 'blue'}>{market.error ? <><span>Could not verify the latest market data. New actions are blocked. {market.error}</span> <button type="button" className="button button-dark" onClick={() => setMarketRetry(value => value + 1)}>Retry market data</button></> : 'Refreshing market data. New actions are temporarily blocked.'}</Notice>}
     {compact && <div className="au-order-context"><div className="tag-row"><Tag tone="blue">{phaseText[m.phase]}</Tag><Tag tone={m.dataStatus === 'VALID' ? 'green' : 'orange'}>{statusText[m.dataStatus]}</Tag>{!m.supported && <Tag tone="orange">Data coverage pending</Tag>}</div>{section !== 'call' && <div className="au-order-price"><span>{m.price?.kind === 'curve' ? 'Curve quote' : 'Index reference'}</span><strong>{m.price ? `${atoms(m.price.atoms)} tUSD` : 'Unavailable'}</strong><small>Final price confirmed in your quote</small></div>}{section === 'liquidity' && <p className="tiny muted">Reference price and vault NAV are separate. Load your balances below for current vault NAV and shares.</p>}</div>}
     {!compact && <><div className="detail-title"><span className="eyebrow blue-text">MARKET</span><div className="tag-row"><Tag tone="blue">{phaseText[m.phase]}</Tag><Tag tone={m.dataStatus === 'VALID' ? 'green' : m.dataStatus === 'OUTAGE' ? 'red' : 'orange'}>{statusText[m.dataStatus]}</Tag>{!m.supported && <Tag tone="orange">Data coverage pending</Tag>}</div></div>
     <div className="detail-grid"><div className="metric-card primary-metric"><span className="eyebrow">{m.price?.kind === 'curve' ? 'Curve quote' : 'Index reference'}</span><strong>{m.price ? atoms(m.price.atoms) : '—'}<small>{m.price ? ' tUSD' : ''}</small></strong><p>{isFixture ? 'Sample reference · not an execution price' : m.price?.executable ? 'Published snapshot · rechecked at execution' : 'Reference only · unavailable for execution'}</p></div><div className="metric-card"><span className="eyebrow">Fixed price cap</span><strong>{m.anchor ? `${atoms(m.anchor.maxPriceAtoms)} tUSD` : '—'}</strong><p>{m.anchor ? 'Graduation anchor' : 'Before graduation / no anchor'}</p></div></div>
@@ -252,7 +263,7 @@ function MarketPage({ id, refresh, changed, mode, section = 'call', compact = fa
       {m.dataStatus === 'PREPARING' && <Notice tone="orange">The index is preparing. A missing entry reference will not be backfilled.</Notice>}
       {!isFixture && <p className="tiny muted">New wallet? <Link to="/faucet">Check Devnet SOL for network fees ↗</Link></p>}
       {message && <Notice tone="blue">{message}</Notice>}
-      {!isFixture && profile.error && <Notice tone="red">Could not verify your active chips, so another action is blocked. {profile.error}</Notice>}
+      {!isFixture && profile.error && <Notice tone="red">Could not verify your active chips, so another action is blocked. {profile.error} <button type="button" className="button button-dark" onClick={() => setProfileRetry(value => value + 1)}>Retry activity check</button></Notice>}
       {isFixture ? <button className="button button-chip full" disabled={busy || refreshBlocked || profile.loading || !!profile.error || freeAllowed?.allowed === false || (!!ownLimit && !open) || !!duplicate} onClick={mutate}>{busy ? 'Processing…' : open ? 'Take back chip' : 'Place chip'} <span>↗</span></button> : <LiveFreeAction key={`${mode}:${id}:${walletAddress ?? 'disconnected'}`} market={m} recordId={open?.id ?? null} mode={mode} profileLoading={refreshBlocked || profile.loading || !!profile.error} limitReached={ownLimit} projectionWaiting={!!projectionWait} changed={changed} />}
       {(freeAllowed?.allowed === false || (ownLimit && !open)) && <p className="tiny muted">{ownLimit && !open ? 'You have reached the three active chip limit.' : displayConsumerError(freeAllowed?.detail ?? freeAllowed?.reason)}</p>}
       <p className="tiny muted">{isFixture ? 'This changes a browser-only sample record. It does not submit a transaction or issue proof.' : 'Your wallet confirms each chip action.'}</p>
