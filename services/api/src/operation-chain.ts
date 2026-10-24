@@ -3,6 +3,7 @@ import { address, blockhash, createSolanaRpc, getCompiledTransactionMessageDecod
 import { decodeBase58 } from './auth.ts';
 import { LiveStore, type StoredOperation } from './live-store.ts';
 import { verifyMessageIntent } from './receipt-intent.ts';
+import { retryRpcRead } from '../../indexer/src/rpc-retry.ts';
 
 export interface ChainReceipt { wireBase64: string; status: 'confirmed'|'finalized'|'failed' }
 export interface OperationChain {
@@ -19,18 +20,18 @@ export class KitOperationChain implements OperationChain {
     this.rpc = rpc ?? createSolanaRpc(url);
   }
   async get(signature: string): Promise<ChainReceipt | null> {
-    const statuses = await this.rpc.getSignatureStatuses([signature as Signature], {searchTransactionHistory:true}).send();
+    const statuses = await retryRpcRead(() => this.rpc.getSignatureStatuses([signature as Signature], {searchTransactionHistory:true}).send());
     const status = statuses.value[0];
     if (!status || !status.confirmationStatus || status.confirmationStatus === 'processed') return null;
-    const transaction = await this.rpc.getTransaction(signature as Signature,
-      {commitment:'confirmed', encoding:'base64', maxSupportedTransactionVersion:0}).send();
+    const transaction = await retryRpcRead(() => this.rpc.getTransaction(signature as Signature,
+      {commitment:'confirmed', encoding:'base64', maxSupportedTransactionVersion:0}).send());
     if (!transaction) return null;
     const encoded = transaction.transaction;
     if (!Array.isArray(encoded) || encoded[1] !== 'base64' || typeof encoded[0] !== 'string') throw new Error('INVALID_RPC_TRANSACTION');
     return {wireBase64:encoded[0], status:status.err || transaction.meta?.err ? 'failed' : status.confirmationStatus};
   }
   async discover(recordAddress: string): Promise<Array<{signature:string;receipt:ChainReceipt}>> {
-    const rows=await this.rpc.getSignaturesForAddress(address(recordAddress),{commitment:'finalized',limit:20}).send();
+    const rows=await retryRpcRead(() => this.rpc.getSignaturesForAddress(address(recordAddress),{commitment:'finalized',limit:20}).send());
     const matches:Array<{signature:string;receipt:ChainReceipt}>=[];
     for (const row of rows) {
       if (row.confirmationStatus!=='finalized') continue;
@@ -42,14 +43,14 @@ export class KitOperationChain implements OperationChain {
   /** Fail closed unless lifetime ended at finality and the bounded payer history is complete. */
   async expiredHistory(stored:StoredOperation): Promise<Array<{signature:string;receipt:ChainReceipt}> | null> {
     if (!/^[0-9]+$/.test(stored.prepared.lastValidBlockHeight)) return null;
-    const height=await this.rpc.getBlockHeight({commitment:'finalized'}).send();
+    const height=await retryRpcRead(() => this.rpc.getBlockHeight({commitment:'finalized'}).send());
     if(height<=BigInt(stored.prepared.lastValidBlockHeight))return null;
     const tx=getTransactionDecoder().decode(Buffer.from(stored.prepared.unsignedTransaction,'base64'));
     const message=getCompiledTransactionMessageDecoder().decode(tx.messageBytes);
-    const valid=await this.rpc.isBlockhashValid(blockhash(message.lifetimeToken),{commitment:'finalized'}).send();
+    const valid=await retryRpcRead(() => this.rpc.isBlockhashValid(blockhash(message.lifetimeToken),{commitment:'finalized'}).send());
     if(valid.value)return null;
     // A full page could omit a matching receipt: retain UNKNOWN instead of guessing.
-    const rows=await this.rpc.getSignaturesForAddress(address(stored.intent.wallet),{commitment:'finalized',minContextSlot:valid.context.slot,limit:100}).send();
+    const rows=await retryRpcRead(() => this.rpc.getSignaturesForAddress(address(stored.intent.wallet),{commitment:'finalized',minContextSlot:valid.context.slot,limit:100}).send());
     if(rows.length>=100)return null;
     const history:Array<{signature:string;receipt:ChainReceipt}>=[];
     for(const row of rows){

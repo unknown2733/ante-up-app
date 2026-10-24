@@ -1,4 +1,5 @@
 import { address, createSolanaRpc } from '@solana/kit';
+import { isRpcRateLimited, retryRpcRead } from '../../indexer/src/rpc-retry.ts';
 
 export const CLOCK_ADDRESS='SysvarC1ock11111111111111111111111111111111';
 const SYSVAR_OWNER='Sysvar1111111111111111111111111111111111111';
@@ -29,8 +30,8 @@ export class KitConfirmedFinancialClock {
     try {
       const started=this.monotonic();
       const abortSignal=AbortSignal.timeout(5000);
-      const slot=await this.rpc.getSlot({commitment:'confirmed'}).send({abortSignal});
-      const response=await this.rpc.getAccountInfo(address(CLOCK_ADDRESS),{commitment:'confirmed',encoding:'base64',minContextSlot:slot}).send({abortSignal});
+      const slot=await retryRpcRead(() => this.rpc.getSlot({commitment:'confirmed'}).send({abortSignal}));
+      const response=await retryRpcRead(() => this.rpc.getAccountInfo(address(CLOCK_ADDRESS),{commitment:'confirmed',encoding:'base64',minContextSlot:slot}).send({abortSignal}));
       const elapsed=this.monotonic()-started;
       const value=response.value;
       if (elapsed<0 || elapsed>5000 || abortSignal.aborted || !value || String(value.owner)!==SYSVAR_OWNER ||
@@ -40,6 +41,9 @@ export class KitConfirmedFinancialClock {
       const sample={unixTimestamp:Number(bytes.readBigInt64LE(32)),observedAt:this.now()};
       financialQuoteDeadline(sample.observedAt,sample.observedAt,sample);
       return sample;
-    } catch {throw new Error('REQUOTE_REQUIRED');}
+    } catch (error) {
+      if (isRpcRateLimited(error)) throw error;
+      throw new Error('REQUOTE_REQUIRED');
+    }
   }
 }

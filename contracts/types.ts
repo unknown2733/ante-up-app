@@ -12,7 +12,7 @@ export type DataStatus = 'PREPARING' | 'VALID' | 'LOW_ACTIVITY' | 'OUTAGE';
 export type Phase = 'CURVE' | 'GRADUATION_WAIT' | 'INDEXED';
 export type EpochPhase = 'INITIAL_LP' | 'PRO_OPEN' | 'OPEN_CUTOFF' | 'SETTLING' | 'LP_WINDOW';
 export type Action = 'registerMarket' | 'curveBuy' | 'curveSell' | 'graduate' | 'spotBuy' | 'spotSell' | 'openFree' | 'closeFree' | 'openPro' | 'closePro' | 'finalizeEpoch' | 'claim' | 'depositLP' | 'withdrawLP';
-export type ErrorCode = 'WRONG_PHASE' | 'ENTRY_PAUSED' | 'DATA_NOT_READY' | 'DATA_STALE' | 'LOW_ACTIVITY' | 'INVALID_DENOMINATOR' | 'PRECISION_UNDERFLOW' | 'VERSION_MISMATCH' | 'REQUOTE_REQUIRED' | 'LIMIT_REACHED' | 'INSUFFICIENT_FREE_CAPITAL' | 'LP_WINDOW_CLOSED' | 'ALREADY_EXECUTED' | 'UNAUTHORIZED' | 'PENDING_CONFIRMATION' | 'BUDGET_EXHAUSTED' | 'STORAGE_BACKLOG' | 'INVALID_INPUT';
+export type ErrorCode = 'WRONG_PHASE' | 'ENTRY_PAUSED' | 'DATA_NOT_READY' | 'DATA_STALE' | 'LOW_ACTIVITY' | 'INVALID_DENOMINATOR' | 'PRECISION_UNDERFLOW' | 'VERSION_MISMATCH' | 'REQUOTE_REQUIRED' | 'LIMIT_REACHED' | 'INSUFFICIENT_FREE_CAPITAL' | 'LP_WINDOW_CLOSED' | 'ALREADY_EXECUTED' | 'UNAUTHORIZED' | 'PENDING_CONFIRMATION' | 'BUDGET_EXHAUSTED' | 'STORAGE_BACKLOG' | 'INVALID_INPUT' | 'RPC_RATE_LIMITED';
 export interface ApiError { code: ErrorCode; message: string; retryable: boolean; requestId: string | null }
 export interface Envelope<T> { schemaVersion: '0.1'; mode: Mode; asOf: UnixSeconds; data: T; nextCursor: string | null }
 export interface Observation {

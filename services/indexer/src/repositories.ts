@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { readFile } from 'node:fs/promises';
 import { address, createSolanaRpc } from '@solana/kit';
+import { retryRpcRead } from './rpc-retry.ts';
 import { findSnapshotPda, getSnapshotDecoder, SNAPSHOT_DISCRIMINATOR } from '../../../clients/chain/dist/index.js';
 import type { ProofStatus, SnapshotCandidate } from '../../../contracts/types.ts';
 import { canonical, hash as canonicalHash } from '../../data/index.mjs';
@@ -23,14 +24,14 @@ export class KitFinalizedAccountReader implements FinalizedAccountReader {
     this.rpc = rpc ?? createSolanaRpc(endpoint);
   }
   async get(accountAddress: string): Promise<AccountBytes | null> {
-    const response = await this.rpc.getAccountInfo(address(accountAddress),{commitment:'finalized',encoding:'base64'}).send();
+    const response = await retryRpcRead(() => this.rpc.getAccountInfo(address(accountAddress),{commitment:'finalized',encoding:'base64'}).send());
     if (!response.value) return null;
     const data = response.value.data;
     if (!Array.isArray(data) || data[1] !== 'base64' || typeof data[0] !== 'string') throw new Error('INVALID_ACCOUNT_DATA');
     return {ownerProgramId:String(response.value.owner),data:Buffer.from(data[0],'base64')};
   }
   async scan(programId:string):Promise<{slot:string;accounts:ProgramAccountBytes[]}> {
-    const response=await this.rpc.getProgramAccounts(address(programId),{commitment:'finalized',encoding:'base64',withContext:true}).send();
+    const response=await retryRpcRead(() => this.rpc.getProgramAccounts(address(programId),{commitment:'finalized',encoding:'base64',withContext:true}).send());
     return {slot:response.context.slot.toString(),accounts:response.value.map(row=>{
       const data=row.account.data;
       if (!Array.isArray(data) || data[1]!=='base64' || typeof data[0]!=='string') throw new Error('INVALID_ACCOUNT_DATA');

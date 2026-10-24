@@ -22,6 +22,7 @@ const errors: Record<string, string> = {
   FUNDED_PROOF_CAP: 'New chips are paused until proof capacity is added. Existing chips can still be taken back.',
   DATA_NOT_READY: 'Market data is still being prepared.',
   DATA_STALE: 'Market data is delayed. Try again when it updates.',
+  RPC_RATE_LIMITED: 'Devnet is busy. Request a fresh quote in a moment.',
   LOW_ACTIVITY: 'New paid trades are paused while activity is low.',
   WRONG_PHASE: 'This action is not available at the current market stage.',
   PENDING_CONFIRMATION: 'Your earlier request is still being checked. Check its status before trying again.',
@@ -41,6 +42,7 @@ export function consumerError(code: string | null | undefined, fallback = 'Somet
 /** Display known API codes plainly while keeping provider-owned non-English text out of English UI. */
 export function displayConsumerError(reason: string | null | undefined, fallback = 'Could not complete the request.'): string {
   if (!reason) return fallback;
+  if (/\b429\b|too many requests|rate limit(?:ed)?/i.test(reason)) return errors.RPC_RATE_LIMITED;
   return consumerError(reason, /[가-힣]/u.test(reason) ? fallback : reason);
 }
 

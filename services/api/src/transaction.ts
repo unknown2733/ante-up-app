@@ -7,6 +7,7 @@ import { getOpenFreeInstructionAsync, getCloseFreeInstructionAsync, getOpenFreeI
   OPEN_FREE_DISCRIMINATOR, CLOSE_FREE_DISCRIMINATOR, findRecordPda } from '../../../clients/chain/dist/index.js';
 import type { Action, FreeRecord, MarketView, PreparedTransaction } from '../../../contracts/types.ts';
 import type { ActionBody } from './validate.ts';
+import { retryRpcRead } from '../../indexer/src/rpc-retry.ts';
 
 /** D/F proposed extension to shared PreparedTransaction; A owns the shared type update. */
 export interface PreparedForWallet {
@@ -30,7 +31,7 @@ export class KitBlockhashProvider implements BlockhashProvider {
     this.rpc=rpc??createSolanaRpc(url);
   }
   async latest() {
-    const value=(await this.rpc.getLatestBlockhash({commitment:'finalized'}).send()).value;
+    const value=(await retryRpcRead(() => this.rpc.getLatestBlockhash({commitment:'finalized'}).send())).value;
     return {blockhash:String(value.blockhash),lastValidBlockHeight:value.lastValidBlockHeight};
   }
 }

@@ -17,6 +17,23 @@ async function signedPost(api: ReturnType<typeof app>, path: string, payload: un
   return api.handle(new Request(`${base}${path}`, { method: 'POST', headers: { 'x-ante-nonce': challenge.data.nonce, 'x-ante-signature': 'fixture-test-signature' }, body: JSON.stringify(payload) }));
 }
 
+test('an exhausted RPC is reported as a retryable service error', async () => {
+  const api = createApp({now: () => at, read: {
+    async markets() { throw new Error('HTTP error (429): Too Many Requests'); },
+    async records() { return []; },
+    async proofs() { return []; },
+    async heldCalculationWallets() { return new Set<string>(); },
+  }});
+  const response = await api.handle(new Request(`${base}/v1/markets`));
+  assert.equal(response.status, 503);
+  assert.deepEqual(await body(response), {
+    code: 'RPC_RATE_LIMITED',
+    message: 'Devnet RPC is busy. Request a fresh quote in a moment.',
+    retryable: true,
+    requestId: null,
+  });
+});
+
 test('fixture reads disclose mode, free history, N/A and no Pro/LP money', async () => {
   const api = app();
   const markets = await body(await api.handle(new Request(`${base}/v1/markets`)));
