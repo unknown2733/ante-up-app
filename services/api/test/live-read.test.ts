@@ -13,8 +13,9 @@ test('finalized market and global admission permit free entry before numeric dat
   const programId=String(ANTE_UP_PROGRAM_ADDRESS),seed=new Uint8Array(32).fill(3);
   const [marketAddress]=await findMarketPda({marketId:seed},{programAddress:address(programId)});
   const [admissionAddress]=await findAdmissionPda({programAddress:address(programId)});
-  let open=true,outstanding=0,recent=Array(100).fill(0n),fundedOpenCap=1n,fundedOpenCount=0n;
+  let open=true,outstanding=0,recent=Array(100).fill(0n),fundedOpenCap=1n,fundedOpenCount=0n,accountReads=0;
   const accountReader={async get(id:string){
+    accountReads++;
     if (id===String(admissionAddress)) return {ownerProgramId:programId,data:getAdmissionEncoder().encode({admin:address(programId),open,outstanding,recent,fundedOpenCap,fundedOpenCount})};
     if (id===String(marketAddress)) return {ownerProgramId:programId,data:getMarketEncoder().encode({id:seed,admin:address(programId),
       queryHash:new Uint8Array(32),queryVersion:0n,phase:MarketPhase.Curve,dataStatus:DataStatus.Preparing,
@@ -29,24 +30,26 @@ test('finalized market and global admission permit free entry before numeric dat
   assert.equal(market.snapshot,null);
   assert.equal(market.dataStatus,'PREPARING');
   assert.equal(market.capabilities.openFree?.allowed,true);
+  assert.equal((await read.markets())[0],market);
+  assert.equal(accountReads,2,'public market read should reuse the verified snapshot');
   fundedOpenCount=1n;
-  const exhausted=(await read.markets())[0];
+  const exhausted=(await read.markets(0))[0];
   assert.deepEqual(exhausted.capabilities.openFree,{allowed:false,reason:'BUDGET_EXHAUSTED',detail:'FUNDED_PROOF_CAP'});
   assert.equal(validateMarket(exhausted),exhausted);
   open=false;
-  assert.deepEqual((await read.markets())[0].capabilities.openFree,
+  assert.deepEqual((await read.markets(0))[0].capabilities.openFree,
     {allowed:false,reason:'BUDGET_EXHAUSTED',detail:'FUNDED_PROOF_CAP'});
   fundedOpenCount=0n;
-  const [closedGate]=await read.markets();
+  const [closedGate]=await read.markets(0);
   assert.equal(closedGate.capabilities.openFree?.allowed,false);
   assert.equal(closedGate.capabilities.openFree?.reason,'ENTRY_PAUSED');
   assert.equal(closedGate.capabilities.closeFree?.allowed,true);
   open=true;outstanding=200;
-  assert.deepEqual((await read.markets())[0].capabilities.openFree,{allowed:false,reason:'LIMIT_REACHED',detail:'GLOBAL_OUTSTANDING_LIMIT'});
+  assert.deepEqual((await read.markets(0))[0].capabilities.openFree,{allowed:false,reason:'LIMIT_REACHED',detail:'GLOBAL_OUTSTANDING_LIMIT'});
   outstanding=0;recent=Array(100).fill(1_800_000_000n-10n);
-  assert.deepEqual((await read.markets())[0].capabilities.openFree,{allowed:false,reason:'LIMIT_REACHED',detail:'GLOBAL_DAILY_LIMIT'});
+  assert.deepEqual((await read.markets(0))[0].capabilities.openFree,{allowed:false,reason:'LIMIT_REACHED',detail:'GLOBAL_DAILY_LIMIT'});
   recent=Array(100).fill(1_800_000_000n-86_400n);
-  assert.deepEqual((await read.markets())[0].capabilities.openFree,{allowed:true,reason:null});
+  assert.deepEqual((await read.markets(0))[0].capabilities.openFree,{allowed:true,reason:null});
   repositories.close();store.close();
 });
 
@@ -81,13 +84,13 @@ test('indexed market price requires matching fresh finalized snapshot and blocks
   assert.equal((await read.markets())[0].capabilities.depositLP?.allowed,true);
   assert.equal((await read.markets())[0].capabilities.spotBuy?.allowed,true);
   fm.lpWindowEnd=BigInt(now-100);fm.proReopenAt=BigInt(now-100);
-  assert.equal((await read.markets())[0].epochPhase,'PRO_OPEN');
+  assert.equal((await read.markets(0))[0].epochPhase,'PRO_OPEN');
   fm.currentMaturity=BigInt(now+2000);settled=true;
-  assert.equal((await read.markets())[0].epochPhase,'SETTLING');
+  assert.equal((await read.markets(0))[0].epochPhase,'SETTLING');
   status=DataStatus.LowActivity;
-  assert.deepEqual((await read.markets())[0].price,{kind:'indexed',atoms:'1000000',executable:false});
+  assert.deepEqual((await read.markets(0))[0].price,{kind:'indexed',atoms:'1000000',executable:false});
   through=now-600;
-  assert.equal((await read.markets())[0].price,null);
+  assert.equal((await read.markets(0))[0].price,null);
   repositories.close();store.close();
 });
 

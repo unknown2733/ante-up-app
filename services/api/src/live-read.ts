@@ -44,6 +44,8 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
   private readonly now: () => number;
   private readonly financial: FinalizedFinancialAccounts | null;
   private readonly registrations: SqliteFinancialRegistrationStore | null;
+  private marketCache: {atMs:number;value:MarketView[]} | null = null;
+  private marketRead: Promise<MarketView[]> | null = null;
   constructor(options: {mode:'localnet'|'devnet';programId:string;store:SqliteProjectionStore;
     repositories:SqliteEventRepositories;accounts:FinalizedAccountReader;registry:MarketRegistryEntry[];now:()=>number;
     financial?:FinalizedFinancialAccounts;registrations?:SqliteFinancialRegistrationStore}) {
@@ -51,9 +53,20 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
     this.repositories=options.repositories;this.accounts=options.accounts;this.registry=options.registry;this.now=options.now;
     this.financial=options.financial??null;this.registrations=options.registrations??null;
   }
-  async market(marketId: string) {return (await this.markets()).find(m=>m.id===marketId)??null;}
+  async market(marketId: string) {return (await this.markets(0)).find(m=>m.id===marketId)??null;}
   async record(recordId: string) {return (await this.records()).find(r=>r.id===recordId)??null;}
-  async markets(): Promise<MarketView[]> {
+  async markets(maxAgeMs=30_000): Promise<MarketView[]> {
+    if (maxAgeMs>0 && this.marketCache && Date.now()-this.marketCache.atMs<maxAgeMs) return this.marketCache.value;
+    if (this.marketRead) return this.marketRead;
+    const current=this.readMarkets();
+    this.marketRead=current;
+    try {
+      const value=await current;
+      this.marketCache={atMs:Date.now(),value};
+      return value;
+    } finally {if (this.marketRead===current) this.marketRead=null;}
+  }
+  private async readMarkets(): Promise<MarketView[]> {
     const snapshots=this.store.snapshots(this.mode,this.programId);
     const [admissionAddress]=await findAdmissionPda({programAddress:address(this.programId)});
     const admissionRaw=await this.accounts.get(String(admissionAddress));

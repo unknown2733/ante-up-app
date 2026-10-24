@@ -18,7 +18,8 @@ import type { ReferenceObservationStore } from './reference-observations.ts';
 
 export interface ReadAdapter {
   mode?: Mode;
-  markets(): Promise<MarketView[]>;
+  /** Public reads may reuse a brief finalized snapshot; execution passes zero. */
+  markets(maxAgeMs?: number): Promise<MarketView[]>;
   records(): Promise<FreeRecord[]>;
   proofs(): Promise<ProofStatus[]>;
   heldCalculationWallets(): Promise<Set<string>>;
@@ -163,7 +164,7 @@ export function createApp(options: {
             if (existing.expiresAt <= asOf) return fail('REQUOTE_REQUIRED','financial quote expired',intent.requestId);
             return json(envelope({kind:'quote',quote:existing},asOf));
           }
-          const market = intent.marketId ? (await read.markets()).map(validateMarket).find(m => m.id === intent.marketId) ?? null : null;
+          const market = intent.marketId ? (await read.markets(0)).map(validateMarket).find(m => m.id === intent.marketId) ?? null : null;
           if (intent.marketId && !market) return fail('INVALID_INPUT','market not found',intent.requestId);
           const quoted = await options.financial.quote(intent,market,asOf);
           if (!quoted) return json(envelope(notExecutable('FINANCIAL_CHAIN_STATE_NOT_READY'),asOf));
@@ -281,13 +282,13 @@ export function createApp(options: {
         if (parts[1] === 'transactions') return fail('INVALID_INPUT', 'unknown route');
         const body = validateActionBody(await parseBody(request));
         if (!(await signed(request, body.wallet))) return fail('UNAUTHORIZED', 'wallet signature required', body.requestId);
-        if (!(await read.markets()).some(m => m.id === body.marketId)) return fail('INVALID_INPUT', 'market not found', body.requestId);
+        if (!(await read.markets(0)).some(m => m.id === body.marketId)) return fail('INVALID_INPUT', 'market not found', body.requestId);
         return json(envelope(notExecutable(mode === 'fixture' ? 'FIXTURE_NO_CHAIN_ADAPTER' : 'CHAIN_ADAPTER_NOT_CONFIGURED'), asOf));
       }
       if (request.method === 'POST' && parts.length === 3 && parts[1] === 'transactions' && parts[2] === 'prepare') {
         const body = validateActionBody(await parseBody(request));
         if (!(await signed(request, body.wallet))) return fail('UNAUTHORIZED', 'wallet signature required', body.requestId);
-        if (!(await read.markets()).some(m => m.id === body.marketId)) return fail('INVALID_INPUT', 'market not found', body.requestId);
+        if (!(await read.markets(0)).some(m => m.id === body.marketId)) return fail('INVALID_INPUT', 'market not found', body.requestId);
         if (mode === 'fixture') return json(envelope(notExecutable('FIXTURE_NO_CHAIN_ADAPTER'),asOf));
         if (body.action !== 'openFree' && body.action !== 'closeFree') return json(envelope(notExecutable('UNSUPPORTED_ACTION'),asOf));
         if (!options.transactions) return json(envelope(notExecutable('CHAIN_ADAPTER_NOT_CONFIGURED'),asOf));
