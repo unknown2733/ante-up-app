@@ -27,6 +27,15 @@ test('weekly LP rollover uses the Monday boundary with an accelerated clock',()=
   assert.equal(planEmptyLpRecovery(sameGeneration,marketId,thisMonday+604_800).state,'ready');
 });
 
+test('matured cycle reopens only after every prior position has a verified fixed claim',()=>{
+  const matured={...base,cycle:'2',currentMaturity:now-900,maturedCycleVerified:true};
+  assert.equal(planEmptyLpRecovery(matured,marketId,now).state,'ready');
+  assert.equal(planEmptyLpRecovery({...matured,maturedCycleVerified:false},marketId,now).state,'notDue');
+  assert.equal(planEmptyLpRecovery({...matured,currentMaturity:now+1},marketId,now).state,'notDue');
+  assert.equal(planEmptyLpRecovery({...matured,openPositions:1},marketId,now).state,'notDue');
+  assert.equal(planEmptyLpRecovery({...matured,navValid:false},marketId,now).state,'notDue');
+});
+
 test('recovery submits once, persists unknown signature and resumes after finalized state',async()=>{
   const attempts=new SqliteKeeperAttempts(resolve(work,`${randomUUID()}.sqlite`));
   let sends=0;let current=structuredClone(base);

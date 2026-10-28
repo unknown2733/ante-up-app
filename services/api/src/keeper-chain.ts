@@ -36,10 +36,34 @@ export class KitFinancialEpochChain implements FinancialEpochChain {
     if (marketId!==this.scope.marketId) throw new Error('KEEPER_SCOPE_MISMATCH');
     const [market,fm,vault]=await Promise.all([this.state.market(marketId),this.state.financeMarket(marketId),
       this.reader.vault(marketId)]);
+    let maturedCycleVerified=false;
+    if(fm.currentMaturity>0n && fm.openPositions===0 &&
+      BigInt(Math.floor(Date.now()/1000))>=fm.currentMaturity) {
+      const cycle=await this.read(this.scope);
+      if(cycle.maturityAt!==Number(fm.currentMaturity) || cycle.openPositionCount!==0 ||
+        !cycle.navValid || cycle.settlement) throw new Error('KEEPER_MATURED_CYCLE_INVALID');
+      const scan=await this.state.programAccounts();
+      if(!scan) throw new Error('KEEPER_CYCLE_POSITIONS_UNAVAILABLE');
+      let fixed=0;
+      for(const account of scan.accounts) {
+        if(!equal(account.data.subarray(0,8),PRO_POSITION_DISCRIMINATOR)) continue;
+        const position=getProPositionDecoder().decode(account.data);
+        if(String(position.market)!==marketId || position.cycle!==fm.currentCycle) continue;
+        const claim=await this.state.claim(account.address);
+        if(position.state!==PositionState.Settled || !claim ||
+          String(claim.value.market)!==marketId ||
+          String(claim.value.position)!==account.address ||
+          String(claim.value.owner)!==String(position.owner))
+          throw new Error('KEEPER_MATURED_CLAIM_UNFIXED');
+        fixed++;
+      }
+      maturedCycleVerified=fixed>0;
+    }
     return {marketId,cycle:fm.currentCycle.toString(),currentMaturity:Number(fm.currentMaturity),
       openPositions:fm.openPositions,totalShares:fm.totalShares.toString(),lpGeneration:fm.lpGeneration.toString(),
       validityGeneration:market.validityGeneration.toString(),lastLpMaturity:Number(fm.lastLpMaturity),
       lpWindowStart:Number(fm.lpWindowStart),lpWindowEnd:Number(fm.lpWindowEnd),
+      maturedCycleVerified,
       navValid:market.phase===MarketPhase.Indexed && !!vault?.value.navAtoms && fm.totalShares>0n &&
         (market.dataStatus===DataStatus.LowActivity ||
           market.dataStatus===DataStatus.Valid && market.admission.state===AdmissionState.Open)};
@@ -144,7 +168,11 @@ export class KitFinancialEpochChain implements FinancialEpochChain {
   async startLpWindow(marketId:string,onSigned?:(signature:string)=>void):Promise<string> {
     await this.authority();
     const fm=await this.state.financeMarket(marketId),settlement=await this.state.settlement(marketId,fm.currentCycle);
-    if (fm.openPositions!==0 || fm.currentMaturity!==0n && !settlement) throw new Error('KEEPER_SETTLEMENT_INCOMPLETE');
+    if(fm.openPositions!==0) throw new Error('KEEPER_SETTLEMENT_INCOMPLETE');
+    if(fm.currentMaturity!==0n && !settlement) {
+      const verified=await this.readEmptyWindow(marketId);
+      if(!verified.maturedCycleVerified) throw new Error('KEEPER_SETTLEMENT_INCOMPLETE');
+    }
     const vault=await this.reader.vault(marketId);
     if (!vault?.value.navAtoms) throw new Error('KEEPER_NAV_UNAVAILABLE');
     const settlementAddress=settlement?.address??await this.state.settlementAddress(marketId,fm.currentCycle);

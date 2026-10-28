@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { address, createNoopSigner, generateKeyPairSigner, getBase58Decoder, getBase64Encoder,
   getSignatureFromTransaction, getTransactionDecoder } from '@solana/kit';
-import { ANTE_UP_PROGRAM_ADDRESS, MarketPhase, PositionDirection, PositionState, SettlementMode,
+import { ANTE_UP_PROGRAM_ADDRESS, AdmissionState, DataStatus, MarketPhase, PositionDirection, PositionState, SettlementMode,
   ACCEPT_SETTLEMENT_DISCRIMINATOR, SETTLE_PRO_DISCRIMINATOR, START_LP_WINDOW_DISCRIMINATOR,
   getAcceptSettlementInstructionDataDecoder, getProPositionEncoder,
   getStartLpWindowInstructionAsync } from '../../../clients/chain/dist/index.js';
@@ -69,6 +69,42 @@ test('B keeper adapter verifies finalized cycle then builds accept, settle and L
   settlement=null;fm.currentMaturity=0n;
   assert.equal(await chain.startLpWindow(marketId),'publisher-sig');
   assert.equal(String(sent[4].ix.accounts[3].address),settlementAddress);
+});
+
+test('matured cycle without a candidate reopens only with fixed finalized claims',async()=>{
+  const now=Math.floor(Date.now()/1000),due=now-900,opened=due-10_000;
+  const maturedScope={...scope,maturityAt:due,epochStartedAt:opened};
+  const position={market:address(marketId),owner:address(keeper),id:9n,cycle:2n,
+    direction:PositionDirection.Long,collateral:1_000_000n,notional:2_000_000n,
+    leverageBps:20_000n,entryPrice:1_000_000n,maximumPayout:5_000_000n,capital:4_000_000n,
+    prepaidFee:1000n,openedAt:BigInt(opened),maturity:BigInt(due),
+    state:PositionState.Settled,settlementPrice:1_000_000n};
+  const fm={currentCycle:2n,currentMaturity:BigInt(due),openPositions:0,totalShares:1_000n,
+    lpGeneration:1n,lastLpMaturity:BigInt(due-604_800),lpWindowStart:1n,lpWindowEnd:2n,
+    anchorPg:1_000_000n,anchorSg:1_000_000_000_000n,anchorDg:1_000_000_000_000n,pmax:5_000_000n};
+  const market={phase:MarketPhase.Indexed,dataStatus:DataStatus.Valid,
+    admission:{state:AdmissionState.Open},validityGeneration:1n,queryVersion:1n,
+    queryHash:Uint8Array.from(Buffer.from('a'.repeat(64),'hex'))};
+  let fixedClaim:any={value:{market:address(marketId),position:address(positionAddress),
+    owner:address(keeper),paid:true}};
+  const state=({options:{cluster:'localnet' as const,programId},async config(){return {publisher:address(publisher)};},
+    async market(){return market;},async financeMarket(){return fm;},async settlement(){return null;},
+    async settlementAddress(){return settlementAddress;},async position(){return position;},
+    async claim(){return fixedClaim;},async programAccounts(){return {slot:'77',accounts:[
+      {address:positionAddress,ownerProgramId:programId,data:getProPositionEncoder().encode(position)}]};}
+  }) as unknown as FinalizedFinancialAccounts;
+  const reader=({async vault(){return {value:{navAtoms:'1000000'}};}}) as unknown as FirstSliceFinancialReader;
+  let sends=0;
+  const transport={publisherAddress:publisher,keeperAddress:keeper,async send(){sends++;return 'publisher-sig';},
+    async signatureStatus(){return 'PENDING' as const;}};
+  const chain=new KitFinancialEpochChain(state,reader,transport,maturedScope);
+  assert.equal((await chain.readEmptyWindow(marketId)).maturedCycleVerified,true);
+  assert.equal(await chain.startLpWindow(marketId),'publisher-sig');
+  assert.equal(sends,1);
+  fixedClaim=null;
+  await assert.rejects(chain.readEmptyWindow(marketId),/KEEPER_MATURED_CLAIM_UNFIXED/);
+  await assert.rejects(chain.startLpWindow(marketId),/KEEPER_MATURED_CLAIM_UNFIXED/);
+  assert.equal(sends,1);
 });
 
 test('keeper signer transport signs one generated instruction and returns its signature',async()=>{

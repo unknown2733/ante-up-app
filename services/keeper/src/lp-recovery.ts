@@ -5,6 +5,8 @@ export interface EmptyWindowState {
   marketId:string;cycle:string;currentMaturity:number;openPositions:number;totalShares:string;
   lpGeneration:string;validityGeneration:string;lastLpMaturity:number;
   lpWindowStart:number;lpWindowEnd:number;navValid:boolean;
+  /** Finalized cycle scan confirms that every position has a fixed claim. */
+  maturedCycleVerified?:boolean;
 }
 export interface EmptyWindowChain {
   readEmptyWindow(marketId:string):Promise<EmptyWindowState>;
@@ -24,13 +26,16 @@ export function planEmptyLpRecovery(state:EmptyWindowState,marketId:string,now:n
       !Number.isSafeInteger(state.lpWindowEnd) || state.openPositions<0 || state.currentMaturity<0 ||
       state.lastLpMaturity<0 || state.lpWindowStart<0 || state.lpWindowEnd<state.lpWindowStart)
     throw new Error('KEEPER_EMPTY_WINDOW_INVALID');
-  if (state.currentMaturity!==0 || state.openPositions!==0 || BigInt(state.totalShares)===0n ||
+  const maturedEmpty=state.currentMaturity>0 && now>=state.currentMaturity &&
+    state.maturedCycleVerified===true;
+  if (state.currentMaturity!==0 && !maturedEmpty || state.openPositions!==0 || BigInt(state.totalShares)===0n ||
       !state.navValid || state.lpWindowStart<=now && now<state.lpWindowEnd &&
       state.lpGeneration===state.validityGeneration ||
       !(monday(now)>state.lastLpMaturity || state.lpGeneration!==state.validityGeneration))
     return {state:'notDue',fingerprint:null};
-  return {state:'ready',fingerprint:hash({marketId,cycle:state.cycle,lpGeneration:state.lpGeneration,
-    validityGeneration:state.validityGeneration,lastLpMaturity:state.lastLpMaturity})};
+  return {state:'ready',fingerprint:hash({marketId,cycle:state.cycle,currentMaturity:state.currentMaturity,
+    lpGeneration:state.lpGeneration,validityGeneration:state.validityGeneration,
+    lastLpMaturity:state.lastLpMaturity})};
 }
 
 export async function advanceEmptyLpRecovery(input:{marketId:string;chain:EmptyWindowChain;
