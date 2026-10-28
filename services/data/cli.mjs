@@ -30,12 +30,19 @@ export function latestSettledBucketEnd(now) {
 export async function runLiveCycle({config,argv,now,store,transport,publisherRuntime=null}) {
   store??=new FileCollectionState(join(config.directory,'collection.json'));
   transport??=new XCountsHttpAdapter({bearerToken:config.token});
+  let pendingPublication=null;
   if (argv.includes('--publish')) {
     if (!publisherRuntime) throw new Error('PUBLISH_RUNTIME_REQUIRED');
     const reconciliation=await reconcilePublications({collectionStore:store,...publisherRuntime});
-    if (reconciliation.unresolved) return {state:'PUBLICATION_PENDING',reconciliation};
     const stored=(await store.read()).markets[config.marketId];
     const intent=stored && getAdmissionGateIntent(stored,config.marketId);
+    if (reconciliation.unresolved) {
+      // Keep the paid, bounded source observations durable for weekly settlement.
+      // A blocked prior transaction still forbids a newer on-chain publication.
+      if(intent?.provenance.reason==='SOURCE_INVALID')
+        return {state:'PUBLICATION_PENDING',reconciliation};
+      pendingPublication=reconciliation;
+    }
     if(intent?.provenance.reason==='SOURCE_INVALID'){
       const id=`source-invalid:${intent.incidentId}`;
       if(!(await publisherRuntime.repository.read()).jobs[id]){
@@ -59,7 +66,8 @@ export async function runLiveCycle({config,argv,now,store,transport,publisherRun
   const hasGap=market && market.observations.some(o=>o.bucketEnd>from);
   if (!argv.includes('--initial') && latestComplete<from) throw new Error('COLLECTION_CURSOR_AHEAD');
   if (!argv.includes('--initial') && latestComplete===from && !hasGap)
-    return {state:'SKIPPED',reason:'WAIT_FOR_SETTLED_BUCKET',publication:null};
+    return pendingPublication?{state:'PUBLICATION_PENDING',reconciliation:pendingPublication}:
+      {state:'SKIPPED',reason:'WAIT_FOR_SETTLED_BUCKET',publication:null};
   const result=argv.includes('--initial') ? await runInitialArchive({...common,start:config.historyStart,
     through:config.historyStart+28*86400,now,
     estimatedCostMicros:config.initialEstimatedCostMicros??config.estimatedCostMicros}) : hasGap ? await runGapFill({...common,historyStart:config.historyStart,now}) :
@@ -69,6 +77,11 @@ export async function runLiveCycle({config,argv,now,store,transport,publisherRun
     await runRegularPoll({...common,historyStart:config.historyStart,from,through:latestComplete,now});
   let publication=null;
   if (argv.includes('--publish')) {
+    if(pendingPublication)
+      return {id:result.id,state:'PUBLICATION_PENDING',collectionState:result.state,
+        error:result.error??null,
+        publication:{pending:true,reason:'PRIOR_PUBLICATION_PENDING',
+          unresolved:pendingPublication.unresolved}};
     const current=(await store.read()).markets[config.marketId];
     const intent=current && getAdmissionGateIntent(current,config.marketId);
     if(intent?.provenance.reason==='SOURCE_INVALID')

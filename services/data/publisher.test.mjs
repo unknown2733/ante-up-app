@@ -56,11 +56,14 @@ test('paged archive, gap repair, and generated publisher persist exact finalized
     const publisherRuntime={repository,market,chain,publisherSigner:signer};
     const transport={async count({from,through}){paidCalls++;return {data:rows(from,through),meta:{}};}};
     const blocked=await runLiveCycle({config,argv:['--execute','--publish'],now:end+900,store,transport,publisherRuntime});
-    assert.equal(blocked.state,'PUBLICATION_PENDING');assert.equal(paidCalls,0);assert.equal(sends,1);
+    assert.equal(blocked.state,'PUBLICATION_PENDING');
+    assert.equal(blocked.collectionState,'VALIDATED');
+    assert.equal(blocked.publication.reason,'PRIOR_PUBLICATION_PENDING');
+    assert.equal(paidCalls,1);assert.equal(sends,1);
     finalityReady=true;
-    const resumed=await runLiveCycle({config,argv:['--execute','--publish'],now:end+900,store,transport,publisherRuntime});
+    const resumed=await runLiveCycle({config,argv:['--execute','--publish'],now:end+1200,store,transport,publisherRuntime});
     assert.equal(resumed.state,'VALIDATED');assert.equal(resumed.publication.pending,true);
-    assert.equal(paidCalls,1);assert.equal(sends,2);
+    assert.equal(paidCalls,2);assert.equal(sends,2);
     const final=await publishSnapshot({collectionStore:store,repository:new FileCandidateRepository(repository.path),
       batchId:repaired.id,market,chain,publisherSigner:signer});
     assert.equal(final.finality,'finalized');assert.equal(final.payload.configVersion,'2');
