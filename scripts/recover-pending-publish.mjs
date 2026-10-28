@@ -15,8 +15,9 @@ const MIN_AGE_MS = 60 * 60 * 1000;
 const check = (ok, code) => { if (!ok) throw new Error(code); };
 const required = name => { const value = process.env[name]; check(value, `${name}_REQUIRED`); return value; };
 
-// A crash after REQUESTING and before a signature is persisted is ambiguous.
-// This is an explicit operator recovery, never a normal collector retry.
+// A stopped collector may leave PREPARED, REQUESTING, or SUBMITTED behind.
+// This operator-only path checks the finalized chain and any prior signature
+// before reusing the original candidate. Normal collection never resends it.
 export async function recoverPendingPublish({ mode, jobId, directory, endpoint, signerPath, collectorStopped = false,
   now = Date.now() }) {
   check(mode === 'plan' || mode === 'execute', 'RECOVERY_MODE_INVALID');
@@ -27,8 +28,9 @@ export async function recoverPendingPublish({ mode, jobId, directory, endpoint, 
   const pending = Object.values(state.jobs).filter(job => job.state !== 'FINALIZED');
   check(pending.length === 1 && pending[0].id === jobId, 'RECOVERY_PENDING_SET_CHANGED');
   const job = pending[0];
-  check(job.state === 'REQUESTING' && job.signature === null && job.published === null,
-    'RECOVERY_JOB_NOT_UNSIGNED_REQUESTING');
+  check(['PREPARED', 'REQUESTING', 'SUBMITTED'].includes(job.state) && job.published === null &&
+    (job.state === 'SUBMITTED' ? typeof job.signature === 'string' && job.signature.length > 0 :
+      job.signature === null), 'RECOVERY_JOB_STATE_INVALID');
   check(job.market?.cluster === 'devnet' && job.market.programId === sdk.ANTE_UP_PROGRAM_ADDRESS &&
     job.candidate?.marketId === job.market.address && job.candidate?.sequence === job.sequence &&
     hash(job.candidate) === job.candidateHash, 'RECOVERY_JOB_MISMATCH');
@@ -48,9 +50,16 @@ export async function recoverPendingPublish({ mode, jobId, directory, endpoint, 
     if (error.message !== 'ACCOUNT_MISSING_OR_ADDRESS_MISMATCH') throw error;
   }
   check(!snapshot, 'RECOVERY_SNAPSHOT_ALREADY_EXISTS');
+  let priorSignatureStatus = null;
+  if (job.signature) {
+    const response = await rpc.getSignatureStatuses([job.signature], { searchTransactionHistory: true }).send();
+    priorSignatureStatus = response.value[0] ?? null;
+    check(priorSignatureStatus === null, 'RECOVERY_PRIOR_SIGNATURE_FOUND');
+  }
   const report = { mode, jobId, market: market.address, sequence: job.sequence,
     ageSeconds: Math.floor((now - job.candidate.computedAt * 1000) / 1000),
-    finalizedSequence: market.data.latestSequence.toString(), snapshot: 'ABSENT' };
+    finalizedSequence: market.data.latestSequence.toString(), snapshot: 'ABSENT',
+    priorState: job.state, priorSignatureStatus: job.signature ? 'ABSENT' : 'NONE' };
   if (mode === 'plan') return report;
 
   check(collectorStopped, 'RECOVERY_COLLECTOR_MUST_BE_STOPPED');
