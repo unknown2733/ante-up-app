@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFile } from 'node:fs/promises';
 import { address, createSolanaRpc } from '@solana/kit';
 import { retryRpcRead } from './rpc-retry.ts';
-import { findSnapshotPda, getSnapshotDecoder, SNAPSHOT_DISCRIMINATOR } from '../../../clients/chain/dist/index.js';
+import { findSnapshotPda, getMarketDecoder, getSnapshotDecoder, MARKET_DISCRIMINATOR, SNAPSHOT_DISCRIMINATOR } from '../../../clients/chain/dist/index.js';
 import type { ProofStatus, SnapshotCandidate } from '../../../contracts/types.ts';
 import { canonical, hash as canonicalHash } from '../../data/index.mjs';
 import { status as evidenceStatus } from '../../evidence/index.mjs';
@@ -32,11 +32,53 @@ export class KitFinalizedAccountReader implements FinalizedAccountReader {
   }
   async scan(programId:string):Promise<{slot:string;accounts:ProgramAccountBytes[]}> {
     const response=await retryRpcRead(() => this.rpc.getProgramAccounts(address(programId),{commitment:'finalized',encoding:'base64',withContext:true}).send());
-    return {slot:response.context.slot.toString(),accounts:response.value.map(row=>{
+    const accounts:ProgramAccountBytes[]=response.value.map(row=>{
       const data=row.account.data;
       if (!Array.isArray(data) || data[1]!=='base64' || typeof data[0]!=='string') throw new Error('INVALID_ACCOUNT_DATA');
       return {address:String(row.pubkey),ownerProgramId:String(row.account.owner),data:Buffer.from(data[0],'base64')};
-    })};
+    });
+    // Some Devnet RPC account indexes omit older Snapshot PDAs while reporting a
+    // newer finalized context slot. The immutable market sequence lets us
+    // detect those holes and verify each missing PDA with a direct account read.
+    const markets=new Map<string,bigint>(),snapshots=new Map<string,Set<string>>();
+    for(const account of accounts){
+      if(account.ownerProgramId!==programId)throw new Error('PROGRAM_SCAN_OWNER_MISMATCH');
+      if(Buffer.from(account.data.subarray(0,8)).equals(Buffer.from(MARKET_DISCRIMINATOR))){
+        const market=getMarketDecoder().decode(account.data);
+        if(markets.has(account.address))throw new Error('PROGRAM_SCAN_DUPLICATE_MARKET');
+        markets.set(account.address,market.latestSequence);
+      }else if(Buffer.from(account.data.subarray(0,8)).equals(Buffer.from(SNAPSHOT_DISCRIMINATOR))){
+        const snapshot=getSnapshotDecoder().decode(account.data);
+        const key=String(snapshot.market),seen=snapshots.get(key)??new Set<string>(),sequence=snapshot.sequence.toString();
+        if(seen.has(sequence))throw new Error('PROGRAM_SCAN_DUPLICATE_SNAPSHOT');
+        seen.add(sequence);snapshots.set(key,seen);
+      }
+    }
+    let repaired=0;
+    for(const [market,latest] of markets){
+      if(latest>1_000_000n)throw new Error('PROGRAM_SCAN_SEQUENCE_INVALID');
+      const seen=snapshots.get(market)??new Set<string>();
+      for(let sequence=1n;sequence<=latest;sequence++){
+        if(seen.has(sequence.toString()))continue;
+        if(++repaired>32)throw new Error('PROGRAM_SCAN_INCOMPLETE');
+        const [snapshotAddress]=await findSnapshotPda({market:address(market),sequence},{programAddress:address(programId)});
+        const found=await this.get(String(snapshotAddress));
+        if(!found||found.ownerProgramId!==programId||
+          !Buffer.from(found.data.subarray(0,8)).equals(Buffer.from(SNAPSHOT_DISCRIMINATOR)))
+          throw new Error('PROGRAM_SCAN_INCOMPLETE');
+        const snapshot=getSnapshotDecoder().decode(found.data);
+        if(String(snapshot.market)!==market||snapshot.sequence!==sequence)throw new Error('PROGRAM_SCAN_INCOMPLETE');
+        accounts.push({address:String(snapshotAddress),...found});
+        seen.add(sequence.toString());
+      }
+      if(BigInt(seen.size)!==latest)throw new Error('PROGRAM_SCAN_INCOMPLETE');
+    }
+    for(const [market,seen] of snapshots){
+      const latest=markets.get(market);
+      if(latest===undefined||BigInt(seen.size)>latest||[...seen].some(sequence=>BigInt(sequence)>latest))
+        throw new Error('PROGRAM_SCAN_INCOMPLETE');
+    }
+    return {slot:response.context.slot.toString(),accounts};
   }
 }
 
