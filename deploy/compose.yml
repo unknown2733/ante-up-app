@@ -44,6 +44,8 @@ services:
       retries: 3
   collector:
     <<: *base
+    # Let an in-flight finalized publish finish before a planned rollout stops it.
+    stop_grace_period: 180s
     command: [flock, -n, -F, /state/collector.lock, node, scripts/service-entry.mjs, scripts/collect-devnet.mjs, --execute, --follow]
     depends_on:
       indexer: {condition: service_healthy}
