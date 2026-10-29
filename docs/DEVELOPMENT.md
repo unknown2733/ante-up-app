@@ -114,6 +114,14 @@ approval to its market seed, query hash, and query version. The collector checks
 it before each paid source call. An environment opt-in or collection config by
 itself cannot authorize spending.
 
+Each five-minute publication creates a new rent-funded snapshot account. Keep
+the operations monitor's market list aligned with the approved collectors.
+The optional `snapshotFunding` settings in `deploy/ops/monitor.example.json`
+estimate the publisher balance needed for one and three days of publications,
+using the measured rent per snapshot and an explicit reserve. Recheck that
+rent amount after a program/account-size change. This alert does not fund the
+wallet or permit another market to be approved automatically.
+
 For a new market, prepare a collection config with explicit initial, daily,
 and total cost limits. First compare its seed, query, version, and limits to
 the finalized Devnet market without making a paid request:

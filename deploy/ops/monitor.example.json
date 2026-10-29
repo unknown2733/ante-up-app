@@ -57,6 +57,13 @@
     {"role": "proof-payer", "address": "REPLACE_WITH_PUBLIC_PROOF_PAYER", "minLamports": "10000000"},
     {"role": "visitor-sol", "address": "7QDMuRP88NeZFL8mjoX71jDmDU3oWEzLdUKpwtdveqDv", "minLamports": "120000000"}
   ],
+  "snapshotFunding": {
+    "rentLamports": "1991360",
+    "reserveLamports": "500000000",
+    "publishIntervalSeconds": 300,
+    "warningHorizonSeconds": 259200,
+    "criticalHorizonSeconds": 86400
+  },
   "webhookUrlFile": "/run/secrets/ops-webhook.url",
   "deadmanUrlFile": "/run/secrets/ops-deadman.url",
   "backup": {

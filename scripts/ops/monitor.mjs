@@ -42,6 +42,13 @@ export function validateConfig(c) {
       'MONITOR_REFERENCE_YOUTUBE_INVALID');
   check(Array.isArray(c.wallets)&&c.wallets.length>0&&c.wallets.every(w=>typeof w.role==='string'&&/^[a-z0-9-]+$/.test(w.role)&&address(w.address)&&DECIMAL.test(w.minLamports)),'MONITOR_WALLETS_INVALID');
   check(new Set(c.markets.map(m=>m.id)).size===c.markets.length&&new Set(c.wallets.map(w=>w.role)).size===c.wallets.length&&new Set(c.services.map(s=>s.name)).size===c.services.length,'DUPLICATE_MONITOR_SCOPE');
+  if(c.snapshotFunding){
+    const f=c.snapshotFunding;
+    check(c.wallets.some(w=>w.role==='publisher')&&DECIMAL.test(f.rentLamports)&&BigInt(f.rentLamports)>0n&&
+      DECIMAL.test(f.reserveLamports)&&positive(f.publishIntervalSeconds)&&positive(f.warningHorizonSeconds)&&
+      positive(f.criticalHorizonSeconds)&&f.criticalHorizonSeconds<f.warningHorizonSeconds&&
+      c.markets.length<=5,'MONITOR_SNAPSHOT_FUNDING_INVALID');
+  }
   check(typeof c.rpcUrlFile==='string','MONITOR_RPC_REQUIRED');
   if(c.httpChecks)check(Array.isArray(c.httpChecks)&&c.httpChecks.every(h=>/^[a-z0-9-]+$/.test(h.name)&&/^https?:\/\//.test(h.url)&&(!h.expectMode||h.expectMode==='devnet')),'MONITOR_HTTP_CHECKS_INVALID');
   if(c.backup)check(typeof c.backup.copyReceipt==='string'&&typeof c.backup.drillReport==='string'&&positive(c.backup.maxAgeSeconds)&&typeof c.backup.destinationId==='string','MONITOR_BACKUP_CONFIG_INVALID');
@@ -248,6 +255,18 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
         if(BigInt(result.value)<BigInt(wallet.minLamports))add('WALLET_LOW',wallet.role,'critical',{lamports:String(result.value),minLamports:wallet.minLamports});
       }catch{add('WALLET_UNAVAILABLE',wallet.role);}
     }));
+    if(c.snapshotFunding&&metrics.walletLamports.publisher!==undefined){
+      const f=c.snapshotFunding,balance=BigInt(metrics.walletLamports.publisher);
+      const rent=BigInt(f.rentLamports),reserve=BigInt(f.reserveLamports),count=BigInt(c.markets.length);
+      const required=seconds=>reserve+BigInt(Math.ceil(seconds/f.publishIntervalSeconds))*count*rent;
+      const warning=required(f.warningHorizonSeconds),critical=required(f.criticalHorizonSeconds);
+      const available=balance>reserve?balance-reserve:0n;
+      const estimatedRunwaySeconds=available*BigInt(f.publishIntervalSeconds)/(count*rent);
+      metrics.snapshotFunding={marketCount:c.markets.length,rentLamports:f.rentLamports,
+        requiredLamports:warning.toString(),estimatedRunwaySeconds:estimatedRunwaySeconds.toString()};
+      if(balance<warning)add('PUBLISHER_RENT_RUNWAY_LOW','publisher',balance<critical?'critical':'warning',
+        {lamports:balance.toString(),requiredLamports:warning.toString(),estimatedRunwaySeconds:estimatedRunwaySeconds.toString(),marketCount:c.markets.length});
+    }
   }catch{add('RPC_UNAVAILABLE','devnet');}
   if(c.backup){
     const receipt=await load(c.backup.copyReceipt,'backup-copy'),drill=await load(c.backup.drillReport,'restore-drill');

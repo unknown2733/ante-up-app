@@ -43,6 +43,29 @@ test('healthy observer accepts partial price coverage and makes only Devnet read
   assert.deepEqual(f.calls.map(c=>c.method),['getGenesisHash','getBalance']);assert.equal(f.calls[1].params[1].commitment,'finalized');
 });
 
+test('publisher snapshot rent warning scales with approved market count and remaining runway',async t=>{
+  const f=await fixture(t);
+  f.config.snapshotFunding={rentLamports:'1991360',reserveLamports:'500000000',
+    publishIntervalSeconds:300,warningHorizonSeconds:259200,criticalHorizonSeconds:86400};
+  let balance=3000000000;
+  const fetcher=async(_url,request)=>({ok:true,json:async()=>({result:JSON.parse(request.body).method==='getGenesisHash'
+    ?'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG':{value:balance}})});
+  const one=await collect(f.config,{now,fetcher});
+  assert.ok(!one.alerts.some(a=>a.code==='PUBLISHER_RENT_RUNWAY_LOW'));
+  assert.equal(one.metrics.snapshotFunding.marketCount,1);
+  f.config.markets.push({id:'33333333333333333333333333333333',collectionMaxAgeSeconds:900,snapshotMaxAgeSeconds:900});
+  const two=await collect(f.config,{now,fetcher});
+  const warning=two.alerts.find(a=>a.code==='PUBLISHER_RENT_RUNWAY_LOW');
+  assert.equal(warning.severity,'warning');
+  assert.equal(warning.metrics.requiredLamports,'3941070080');
+  assert.equal(two.metrics.snapshotFunding.marketCount,2);
+  balance=1000000000;
+  const critical=await collect(f.config,{now,fetcher});
+  assert.equal(critical.alerts.find(a=>a.code==='PUBLISHER_RENT_RUNWAY_LOW').severity,'critical');
+  assert.throws(()=>validateConfig({...f.config,snapshotFunding:{...f.config.snapshotFunding,rentLamports:'0'}}),/MONITOR_SNAPSHOT_FUNDING_INVALID/);
+  assert.throws(()=>validateConfig({...f.config,snapshotFunding:{...f.config.snapshotFunding,criticalHorizonSeconds:259200}}),/MONITOR_SNAPSHOT_FUNDING_INVALID/);
+});
+
 test('dated Spotify reference collector has a bounded success and failure alert',async t=>{
   const f=await fixture(t);
   f.config.referenceKworb={ledgerPath:'live-smoke/index.sqlite',maxAgeSeconds:36*3600};
