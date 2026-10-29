@@ -32,7 +32,7 @@ compose_args() {
 }
 
 for service in collector collector-tariff; do
-  docker inspect "ante-up-$service-1" +    --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}' +    > "$scratch/$service.files"
+  docker inspect "ante-up-$service-1" --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}' > "$scratch/$service.files"
   compose_args "$service" old
   docker compose "${args[@]}" config --format json > "$scratch/$service.old.json"
   docker inspect "ante-up-$service-1" --format '{{.Config.Image}}' > "$scratch/$service.image"
