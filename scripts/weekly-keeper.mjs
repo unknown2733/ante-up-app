@@ -1,4 +1,4 @@
-/** Bounded Devnet weekly settlement driver. At most one Keeper instruction per market/pass. */
+/** Bounded Devnet settlement and validity recovery driver. One instruction per market/pass. */
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {readFile,readdir,mkdir,mkdtemp,writeFile,rename,rm} from 'node:fs/promises';

@@ -1,6 +1,7 @@
 #!/bin/sh
 # Host cron entrypoint. The allowlisted driver signs at most one Devnet instruction
-# per market and invocation, only after the Monday 09:16 KST data cutoff.
+# per market and invocation. Weekly settlement starts after Monday 09:16 KST;
+# same-week validity resets may reopen an empty LP window at other times.
 set -eu
 STATE=/srv/ante-up/builds/service-state
 SECRETS=/srv/ante-up/secrets
