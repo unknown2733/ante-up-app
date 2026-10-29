@@ -1,0 +1,12 @@
+# Each collector keeps its existing primary RPC. The old Devnet URL is a read-only backup.
+services:
+  collector:
+    environment:
+      ANTE_UP_RPC_FALLBACK_URL_FILE: /run/secrets/rpc-backup.url
+    volumes:
+      - ${ANTE_UP_SECRET_DIR:?Set secret directory}/devnet-rpc.url:/run/secrets/rpc-backup.url:ro
+  collector-tariff:
+    environment:
+      ANTE_UP_RPC_FALLBACK_URL_FILE: /run/secrets/rpc-backup.url
+    volumes:
+      - ${ANTE_UP_SECRET_DIR:?Set secret directory}/devnet-rpc.url:/run/secrets/rpc-backup.url:ro

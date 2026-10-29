@@ -18,6 +18,8 @@ import { collectorProjectionDbPath } from './collector-paths.mjs';
 import { assertPaidXApproved } from './paid-x-approvals.mjs';
 import { GlobalXBudget } from '../services/data/global-budget.mjs';
 import { nextRegularPollAt } from '../services/data/poll-schedule.mjs';
+import { createRpcReadFailover } from '../services/indexer/src/rpc-failover.ts';
+import { withChainReadFailover } from '../services/data/transport-failover.mjs';
 
 // Explicit paid-data opt-in. Files stay on the execution host; no secrets in argv.
 const required=name=>{if(!process.env[name])throw Error(`MISSING_${name}`);return process.env[name];};
@@ -30,8 +32,13 @@ process.once('SIGTERM',()=>{stopping=true;});
 process.once('SIGINT',()=>{stopping=true;});
 try{
  const endpoint=(await readFile(required('ANTE_UP_RPC_URL_FILE'),'utf8')).trim();
- const rpc=kit.createSolanaRpc(endpoint);
- if(await rpc.getGenesisHash().send()!=='EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG')throw Error('DEVNET_REQUIRED');
+ const fallbackEndpoint=process.env.ANTE_UP_RPC_FALLBACK_URL;
+ const devnetGenesis='EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
+ const rpc=fallbackEndpoint
+  ?createRpcReadFailover(endpoint,fallbackEndpoint,{expectedGenesisHash:devnetGenesis,
+    onFailover:()=>console.warn('RPC_READ_FAILOVER')})
+  :kit.createSolanaRpc(endpoint);
+ if(await rpc.getGenesisHash().send()!==devnetGenesis)throw Error('DEVNET_REQUIRED');
  const config=JSON.parse(await readFile(required('ANTE_UP_COLLECTION_CONFIG'),'utf8'));
  if(typeof config.logicalId!=='string'||!config.logicalId||typeof config.directory!=='string'||!config.directory||!Number.isSafeInteger(config.historyStart)||config.historyStart%300!==0||!Number.isSafeInteger(config.estimatedCostMicros)||config.estimatedCostMicros<=0||!/^[a-f0-9]{64}$/.test(config.seedHex))throw Error('COLLECTION_CONFIG_INVALID');
  if(config.initialEstimatedCostMicros!==undefined&&(!Number.isSafeInteger(config.initialEstimatedCostMicros)||config.initialEstimatedCostMicros<config.estimatedCostMicros))
@@ -61,15 +68,20 @@ try{
    day:new Date(now*1000).toISOString().slice(0,10)});
  config.token=(await readFile(required('X_BEARER_TOKEN_FILE'),'utf8')).trim();
  const publisher=await kit.createKeyPairSignerFromBytes(Uint8Array.from(JSON.parse(await readFile(required('ANTE_UP_PUBLISHER_KEYPAIR_FILE'),'utf8'))));
- const transport=sdk.createKitChainTransport(endpoint),programId=sdk.ANTE_UP_PROGRAM_ADDRESS;
+ const transport=fallbackEndpoint
+  ?withChainReadFailover(sdk.createKitChainTransport(endpoint),sdk.createKitChainTransport(fallbackEndpoint),{
+    validateBackup:async()=>{if(await kit.createSolanaRpc(fallbackEndpoint).getGenesisHash().send()!==devnetGenesis)
+      throw Error('RPC_FAILOVER_GENESIS_MISMATCH');},onFailover:()=>console.warn('RPC_READ_FAILOVER')})
+  :sdk.createKitChainTransport(endpoint);
+ const programId=sdk.ANTE_UP_PROGRAM_ADDRESS;
  const scope={cluster:'devnet',programId,address:programId};
  // A market-specific collector journal is separate from the shared finalized
  // projection. Reconciliation must read the indexer's database, not an empty
  // database under this market's collection directory.
  const db=collectorProjectionDbPath(config.directory,process.env);
  const candidatePath=join(config.directory,'candidates.json');
- projection=new SqliteProjectionStore(db);repositories=new SqliteEventRepositories(db,new KitFinalizedAccountReader(endpoint));
- const poller=new FinalizedPoller(projection,new KitFinalizedRpc(endpoint),new GeneratedProgramEventDecoder({snapshots:repositories,proofs:repositories}),100,async key=>{
+ projection=new SqliteProjectionStore(db);repositories=new SqliteEventRepositories(db,new KitFinalizedAccountReader(endpoint,rpc));
+ const poller=new FinalizedPoller(projection,new KitFinalizedRpc(endpoint,rpc),new GeneratedProgramEventDecoder({snapshots:repositories,proofs:repositories}),100,async key=>{
   try{await repositories.importCandidateFile(candidatePath,key);}catch(e){if(e.code!=='ENOENT')throw e;}
  });
  const chain=createKitPublisherChain({transport,programId,publisherSigner:publisher,feePayer:publisher.address,
