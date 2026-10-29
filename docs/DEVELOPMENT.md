@@ -99,7 +99,18 @@ it before each paid source call. An environment opt-in or collection config by
 itself cannot authorize spending.
 
 For a new market, prepare a collection config with explicit initial, daily,
-and total cost limits. Review it, then run:
+and total cost limits. First compare its seed, query, version, and limits to
+the finalized Devnet market without making a paid request:
+
+```sh
+ANTE_UP_RPC_URL_FILE=/absolute/path/devnet-rpc.url \
+ANTE_UP_APPROVED_X_MARKETS_PATH=/absolute/path/approved-x-markets.json \
+node scripts/verify-paid-x-candidate.mjs MARKET_PDA /absolute/path/collection-config.json
+```
+
+`READY_FOR_OPERATOR_REVIEW` means the config matches the registered market
+and one of the five approval slots is free. It is not an approval decision.
+After the operator selects this market and reviews its budget, run:
 
 ```sh
 node scripts/approve-paid-x-market.mjs --plan /absolute/path/approved-x-markets.json /absolute/path/collection-config.json
