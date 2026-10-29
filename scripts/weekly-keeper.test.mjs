@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {weeklyDue,inWeeklyServiceWindow,validityRecoveryDue,validateWeeklyMarkets,resolveWeeklyScope,
+import {weeklyDue,inWeeklyServiceWindow,inValidityRecoveryTick,validityRecoveryDue,validateWeeklyMarkets,resolveWeeklyScope,
   runWeeklyPass,runValidityRecoveryPass} from './weekly-keeper.mjs';
 
 const program='FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr';
@@ -39,6 +39,13 @@ test('weekly trigger waits for data cutoff and never repeats an opened LP window
  assert.equal(weeklyDue(finance({currentMaturity:0n}),week+960).due,true);
  assert.equal(weeklyDue(finance({currentMaturity:0n,lastLpMaturity:BigInt(week),
   lpWindowStart:BigInt(week+970),lpWindowEnd:BigInt(week+1870)}),week+1900).reason,'LP_ALREADY_OPENED');
+});
+
+test('validity recovery waits until two minutes after the five-minute publisher boundary',()=>{
+ assert.equal(inValidityRecoveryTick(week+600),false);
+ assert.equal(inValidityRecoveryTick(week+720),true);
+ assert.equal(inValidityRecoveryTick(week+840),false);
+ assert.equal(inValidityRecoveryTick(week+900),false);
 });
 
 test('market allowlist rejects duplicate and non-state paths',()=>{

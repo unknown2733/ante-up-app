@@ -20,6 +20,10 @@ const withinState=path=>typeof path==='string'&&path.startsWith('/state/')&&!pat
 const scrub=message=>String(message).replace(/https?:\/\/[^\s]+/g,'[RPC_REDACTED]').slice(-500);
 export const inWeeklyServiceWindow=now=>Number.isSafeInteger(now)&&now>=monday(now)+960&&
   now<=monday(now)+86_400+960;
+// The X publisher runs on five-minute boundaries. Check validity recovery
+// two minutes later so a newly finalized snapshot can settle first.
+export const inValidityRecoveryTick=now=>Number.isSafeInteger(now)&&now>=0&&
+  now%600>=120&&now%600<240;
 
 /** A new validity generation can close Pro after this week's LP window already opened. */
 export function validityRecoveryDue(finance,market,now){
@@ -182,7 +186,7 @@ async function main(){
  const weekly=inWeeklyServiceWindow(now);
  // Cron invokes every two minutes for maturity. Check validity resets every ten
  // minutes outside that window to avoid exhausting the shared Devnet RPC.
- const recoveryTick=now%600<120||args.includes('--preflight');
+ const recoveryTick=inValidityRecoveryTick(now)||args.includes('--preflight');
  if(!weekly&&!recoveryTick)return;
  const completion={week:monday(now),marketIds:markets.map(m=>m.marketId).sort()};
  const previous=await readJson(config.completionPath).catch(error=>{
