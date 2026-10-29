@@ -59,3 +59,24 @@ paths before invoking `deploy/run-reference-youtube.sh` with a reviewed image.
 
 Devnet deployment requires explicit operator setup and current chain checks.
 Do not infer live service health or economic safety from a passing local test.
+
+## Paid X market approval
+
+Market registration and curve trading are separate from paid X collection.
+Collectors require an operator-owned `approved-x-markets.json` in mounted
+service state. The registry allows at most five market IDs and binds each
+approval to its market seed, query hash, and query version. The collector checks
+it before each paid source call. An environment opt-in or collection config by
+itself cannot authorize spending.
+
+For a new market, prepare a collection config with explicit initial, daily,
+and total cost limits. Review it, then run:
+
+```sh
+node scripts/approve-paid-x-market.mjs --plan /absolute/path/approved-x-markets.json /absolute/path/collection-config.json
+node scripts/approve-paid-x-market.mjs --apply /absolute/path/approved-x-markets.json /absolute/path/collection-config.json
+```
+
+The apply step writes the registry atomically and is idempotent. It does not
+start a collector, buy data, publish observations, provide graduation capital,
+or open Pro trading. Those steps require their own chain and budget checks.
