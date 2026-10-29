@@ -2,10 +2,12 @@
 # This enables historical readback; it does not retire any on-chain account.
 services:
   indexer:
+    image: ante-up:${ANTE_UP_SNAPSHOT_ARCHIVE_RELEASE:?}
     environment:
       ANTE_UP_SNAPSHOT_ARCHIVE_PATH: /state/archives/${ANTE_UP_SNAPSHOT_ARCHIVE_BASENAME:?}
       ANTE_UP_SNAPSHOT_ARCHIVE_SHA256: ${ANTE_UP_SNAPSHOT_ARCHIVE_SHA256:?}
   api:
+    image: ante-up:${ANTE_UP_SNAPSHOT_ARCHIVE_RELEASE:?}
     environment:
       ANTE_UP_SNAPSHOT_ARCHIVE_PATH: /state/archives/${ANTE_UP_SNAPSHOT_ARCHIVE_BASENAME:?}
       ANTE_UP_SNAPSHOT_ARCHIVE_SHA256: ${ANTE_UP_SNAPSHOT_ARCHIVE_SHA256:?}
