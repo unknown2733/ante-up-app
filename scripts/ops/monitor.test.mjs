@@ -6,6 +6,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {createServer} from 'node:http';
 import {once} from 'node:events';
 import {collect, notification, runOnce, validateConfig} from './monitor.mjs';
+import {GlobalXBudget} from '../../services/data/global-budget.mjs';
 
 const now=Date.parse('2026-10-16T08:00:00Z'),at=now/1000;
 const market='11111111111111111111111111111111',program='22222222222222222222222222222222';
@@ -71,6 +72,24 @@ test('an additional keyword is monitored from its own collection journal and sha
   assert.ok(stale.alerts.some(a=>a.id==='COLLECTION_STALE:collector-tariff'));
   assert.throws(()=>validateConfig({...f.config,markets:[{...f.config.markets[1],collectionDirectory:'../outside'}]}),
     /MONITOR_MARKETS_INVALID/);
+});
+test('operations alerts use the shared X ledger across approved markets',async t=>{
+  const f=await fixture(t),path=join(f.config.stateDirectory,'global-x-budget.sqlite');
+  const ledger=new GlobalXBudget(path,{dailyLimitMicros:1000,totalLimitMicros:10000,initialLimitMicros:5000});
+  try{
+    ledger.reserve({id:'solana',marketId:market,day:'2026-10-16',kind:'regular',costMicros:600,at});
+    ledger.reserve({id:'tariff',marketId:'33333333333333333333333333333333',
+      day:'2026-10-16',kind:'regular',costMicros:350,at});
+  }finally{ledger.close();}
+  f.config.xBudget={dailyMicros:1000,totalMicros:10000,initialMicros:5000,
+    estimatedRequestMicros:100,ledgerPath:'global-x-budget.sqlite'};
+  const report=await collect(f.config,{now,fetcher:f.fetcher});
+  assert.deepEqual(report.metrics.xReservedMicros,{total:950,today:950,initial:0});
+  assert.ok(report.alerts.some(a=>a.id==='BUDGET_EXHAUSTED:x-daily'));
+  assert.throws(()=>validateConfig({...f.config,xBudget:{...f.config.xBudget,ledgerPath:'../private'}}),
+    /MONITOR_X_LEDGER_INVALID/);
+  await rm(path);
+  assert.ok((await collect(f.config,{now,fetcher:f.fetcher})).alerts.some(a=>a.id==='INPUT_UNAVAILABLE:global-x-budget'));
 });
 test('state quota warns before the collector storage gate and fails at the cap',async t=>{
   const f=await fixture(t),baseline=await collect(f.config,{now,fetcher:f.fetcher});

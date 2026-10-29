@@ -20,6 +20,9 @@ export function validateConfig(c) {
   check(positive(c.pendingPublishMaxAgeSeconds)&&positive(c.proofMaxAgeSeconds)&&positive(c.maxProofBacklog)&&positive(c.repeatSeconds)&&positive(c.intervalSeconds)&&positive(c.minFreeBytes),'MONITOR_THRESHOLDS_INVALID');
   if(c.maxStateBytes!==undefined)check(positive(c.maxStateBytes),'MONITOR_STATE_LIMIT_INVALID');
   check(positive(c.xBudget?.dailyMicros)&&positive(c.xBudget?.totalMicros)&&positive(c.xBudget?.estimatedRequestMicros),'MONITOR_X_BUDGET_INVALID');
+  if(c.xBudget.ledgerPath!==undefined)
+    check(safeRelative(c.xBudget.ledgerPath)&&positive(c.xBudget.initialMicros)&&
+      c.xBudget.initialMicros<=c.xBudget.totalMicros,'MONITOR_X_LEDGER_INVALID');
   check(c.budgetWarningPercent>0&&c.budgetWarningPercent<100&&Number.isInteger(c.budgetWarningPercent),'MONITOR_BUDGET_THRESHOLD_INVALID');
   check(DECIMAL.test(c.proofBudget?.dailyWinc)&&DECIMAL.test(c.proofBudget?.totalWinc)&&BigInt(c.proofBudget.dailyWinc)>0n&&BigInt(c.proofBudget.totalWinc)>0n,'MONITOR_PROOF_BUDGET_INVALID');
   if(c.visitorFaucet){
@@ -99,13 +102,33 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
     if(used+next>cap||used>=cap)add('BUDGET_EXHAUSTED',scope,'critical',{reserved:used.toString(),limit:cap.toString()});
     else if(used*100n>=cap*BigInt(c.budgetWarningPercent))add('BUDGET_NEAR_LIMIT',scope,'warning',{reserved:used.toString(),limit:cap.toString()});
   }
+  let xSpending=null;
   if(collection)try{
     check(Number.isSafeInteger(collection.totalSpentMicros)&&collection.totalSpentMicros>=0&&collection.spentByDay&&typeof collection.spentByDay==='object','INVALID_X_LEDGER');
     const today=collection.spentByDay[day]??0;check(Number.isSafeInteger(today)&&today>=0,'INVALID_X_LEDGER');
-    metrics.xReservedMicros={total:collection.totalSpentMicros,today};
-    budget(today,c.xBudget.dailyMicros,'x-daily',BigInt(c.xBudget.estimatedRequestMicros));budget(collection.totalSpentMicros,c.xBudget.totalMicros,'x-total',BigInt(c.xBudget.estimatedRequestMicros));
+    if(!c.xBudget.ledgerPath)xSpending={total:collection.totalSpentMicros,today};
     for(const batch of Object.values(collection.batches??{}))if(batch.state==='REQUESTING')age(batch.requestedAt,c.pendingPublishMaxAgeSeconds,'X_REQUEST_UNCERTAIN',batch.id);
   }catch{add('INPUT_INVALID','x-budget');}
+  if(c.xBudget.ledgerPath){
+    let xdb;
+    try{
+      xdb=new DatabaseSync(join(c.stateDirectory,c.xBudget.ledgerPath),{readOnly:true});
+      xdb.exec('PRAGMA busy_timeout=3000');
+      const row=xdb.prepare(`SELECT COALESCE(SUM(estimated_cost_micros),0) total,
+        COALESCE(SUM(CASE WHEN day=? THEN estimated_cost_micros ELSE 0 END),0) today,
+        COALESCE(SUM(CASE WHEN kind='initial' THEN estimated_cost_micros ELSE 0 END),0) initial
+        FROM x_spend`).get(day);
+      check([row.total,row.today,row.initial].every(n=>Number.isSafeInteger(n)&&n>=0),'INVALID_GLOBAL_X_LEDGER');
+      xSpending={total:row.total,today:row.today,initial:row.initial};
+    }catch{add('INPUT_UNAVAILABLE','global-x-budget');}
+    finally{xdb?.close();}
+  }
+  if(xSpending){
+    metrics.xReservedMicros=xSpending;
+    budget(xSpending.today,c.xBudget.dailyMicros,'x-daily',BigInt(c.xBudget.estimatedRequestMicros));
+    budget(xSpending.total,c.xBudget.totalMicros,'x-total',BigInt(c.xBudget.estimatedRequestMicros));
+    if(xSpending.initial!==undefined)budget(xSpending.initial,c.xBudget.initialMicros,'x-initial');
+  }
   const candidates=await load(join(live,'candidates.json'),'publications');
   if(candidates){
     if(!candidates.jobs||typeof candidates.jobs!=='object')add('INPUT_INVALID','publications');
