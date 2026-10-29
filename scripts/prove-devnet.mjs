@@ -156,5 +156,9 @@ try{
   }while(true);
  }
 }catch(error){console.error(/^[A-Z][A-Z0-9_]+$/.test(error.message)?error.message:'LIVE_EVIDENCE_FAILED');
- console.error((error.stack??'').split('\n').filter(line=>/^\s+at /.test(line)&&line.includes('/work/')).slice(0,5).join('\n'));process.exitCode=1;}
+ // Report only the error class, standard code and source location. Provider
+ // messages can contain endpoint URLs or credentials, so never print them.
+ const location=(error.stack??'').match(/(?:\/app|\/work)\/[A-Za-z0-9_./-]+:\d+:\d+/)?.[0]??null;
+ const code=typeof error.code==='string'&&/^[A-Z][A-Z0-9_]+$/.test(error.code)?error.code:null;
+ console.error(JSON.stringify({errorClass:error.name??'Error',code,location}));process.exitCode=1;}
 finally{repositories?.close();projection?.close();}

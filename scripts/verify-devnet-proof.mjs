@@ -7,6 +7,7 @@ import * as chain from '../clients/chain/dist/index.js';
 import {canonical,payloadHash} from '../services/evidence/index.mjs';
 import {decodeAnteUpClaims,nonceForProofJob,projectionReaders} from '../services/evidence/runtime.mjs';
 import {ReadOnlyProjection} from '../services/evidence/worker-support.mjs';
+import {readProofJob} from '../services/evidence/archive.mjs';
 const require=createRequire(new URL('../services/evidence/package.json',import.meta.url));
 const kit=require('@solana/kit'),sas=require('sas-lib');
 const check=(ok,code)=>{if(!ok)throw Error(code);};
@@ -18,8 +19,7 @@ try{
  const endpoint=(await readFile(required('ANTE_UP_RPC_URL_FILE'),'utf8')).trim();
  const rpc=kit.createSolanaRpc(endpoint);
  check(await rpc.getGenesisHash().send()==='EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG','DEVNET_REQUIRED');
- const jobs=await json(join(directory,'evidence/jobs.json'));
- const job=jobs[`proof:${recordId}:original`];check(job?.recordId===recordId,'JOB_REQUIRED');
+ const job=await readProofJob(join(directory,'evidence'),recordId);check(job?.recordId===recordId,'JOB_REQUIRED');
  check(job.payloadHash===payloadHash(job.payload),'PAYLOAD_HASH_MISMATCH');
  const metadata=await json(join(directory,'evidence/runtime.json'));
  const transport=chain.createKitChainTransport(endpoint);

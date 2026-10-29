@@ -30,13 +30,26 @@ export class FileJobRepository {
     const temporary = `${this.path}.${process.pid}.tmp`;
     const file=await open(temporary,'w',0o600);
     // This is a mutable recovery journal, not a hashed evidence artifact.
-    // Native serialization avoids repeatedly canonicalizing hundreds of MB
-    // of unchanged calculations at every upload checkpoint.
-    try{await file.writeFile(JSON.stringify(jobs),'utf8');await file.sync();}finally{await file.close();}
+    // Serialize one job at a time. A single JSON.stringify(jobs) exceeds V8's
+    // maximum string length once several completed proof artifacts accumulate.
+    try{
+      await file.writeFile('{','utf8');
+      let first=true;
+      for(const [id,job] of Object.entries(jobs)){
+        await file.writeFile(`${first?'':','}${JSON.stringify(id)}:${JSON.stringify(job)}`,'utf8');
+        first=false;
+      }
+      await file.writeFile('}','utf8');
+      await file.sync();
+    }finally{await file.close();}
     await replaceJournal(temporary, this.path);
     // Keep the indexer handoff small. The recovery journal includes raw
     // observations and calculations and can grow to tens of megabytes.
-    const proofLinks = Object.fromEntries(Object.entries(jobs)
+    const archiveIndexPath = `${this.path}.archive-index.json`;
+    let archivedLinks = {};
+    try { archivedLinks = JSON.parse(await readFile(archiveIndexPath,'utf8')); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    const proofLinks = {...archivedLinks,...Object.fromEntries(Object.entries(jobs)
       .filter(([, job]) => typeof job.payloadHash === 'string')
       .map(([id, job]) => [id, {
         id:job.id,recordId:job.recordId,payloadHash:job.payloadHash,
@@ -44,7 +57,7 @@ export class FileJobRepository {
         artifacts:job.artifacts.map(({contentHash,ref}) => ({contentHash,ref})),
         confirmations:job.confirmations,sasId:job.sasId,retryAt:job.retryAt,
         error:job.error,replacementId:job.replacementId
-      }]));
+      }]))};
     const indexPath = `${this.path}.index.json`;
     const indexTemporary = `${indexPath}.${process.pid}.tmp`;
     const indexFile = await open(indexTemporary,'w',0o600);

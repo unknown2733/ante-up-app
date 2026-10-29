@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { FileJobRepository, enqueue, processJob, payloadHash, getProofStatus, fetchManifest, status } from './index.mjs';
 
@@ -12,6 +12,15 @@ const withRepo = async fn => {
   try { await fn(new FileJobRepository(join(dir,'jobs.json'))); }
   finally { await rm(dir,{recursive:true,force:true}); }
 };
+
+test('archived proof links remain in the index after an active journal write', async () => withRepo(async repo => {
+  const archived={id:'proof:old:original',recordId:'old',payloadHash:'hash',state:'ISSUED'};
+  await writeFile(`${repo.path}.archive-index.json`,JSON.stringify({[archived.id]:archived}));
+  await repo.write({});
+  assert.deepEqual(JSON.parse(await readFile(`${repo.path}.index.json`,'utf8'))[archived.id],archived);
+  await enqueue(repo,input);
+  assert.deepEqual(JSON.parse(await readFile(`${repo.path}.index.json`,'utf8'))[archived.id],archived);
+}));
 function fakeAdapter() {
   const data = new Map(), issues = new Map(); let uploads = 0, issueCalls = 0, confirmations = 19, manifestConfirmations = null, failVerify = false;
   return {

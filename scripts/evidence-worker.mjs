@@ -5,6 +5,7 @@ import {join} from 'node:path';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {ReadOnlyProjection,readJson,durableJson,pendingRecords,evidenceScope} from '../services/evidence/worker-support.mjs';
 import {reconcileIntake} from '../services/evidence/intake.mjs';
+import {archiveLinkedCompletedJobs} from '../services/evidence/archive.mjs';
 import {heartbeat,checkStorage} from './runtime-status.mjs';
 import {ANTE_UP_PROGRAM_ADDRESS} from '../clients/chain/dist/index.js';
 
@@ -56,9 +57,11 @@ async function run(id,script='scripts/prove-devnet.mjs'){
 try{
  projection=new ReadOnlyProjection(join(directory,'index.sqlite'));
  do{
-  const jobs=await readJson(join(evidence,'jobs.json'),{}),now=Math.floor(Date.now()/1000);
+  const now=Math.floor(Date.now()/1000);
   const state=await readJson(statePath,{version:1,attempts:{}});
   const records=projection.records('devnet',ANTE_UP_PROGRAM_ADDRESS);
+  if(!preflight)await archiveLinkedCompletedJobs(join(evidence,'jobs.json'),records);
+  const jobs=await readJson(join(evidence,'jobs.json'),{});
   if(autoDiscover&&!preflight){
    const path=join(evidence,'intake.json'),prior=await readJson(path,{version:1,obligations:{}});
    const inventory=reconcileIntake(records,jobs,prior,now);
