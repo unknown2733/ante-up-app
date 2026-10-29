@@ -114,6 +114,7 @@ test('an additional keyword is monitored from its own collection journal and sha
   await mkdir(join(f.config.stateDirectory,'tariff'));
   await f.save(join(f.config.stateDirectory,'tariff/collection.json'),
     {markets:{[extra]:{lastPollAt:at-100}},batches:{},totalSpentMicros:15000,spentByDay:{}});
+  await f.save(join(f.config.stateDirectory,'tariff/candidates.json'),{jobs:{}});
   await f.save(join(f.config.stateDirectory,'health/collector-tariff.json'),{at:now-1000,lastPollAt:at-100});
   const db=new DatabaseSync(f.dbPath);
   db.prepare('INSERT INTO current_snapshots VALUES(?,?,?,?,?)').run('devnet',program,extra,'1',
@@ -128,6 +129,11 @@ test('an additional keyword is monitored from its own collection journal and sha
   const stale=await collect(f.config,{now,fetcher:f.fetcher});
   assert.ok(stale.alerts.some(a=>a.id===`COLLECTION_STALE:${extra}`));
   assert.ok(stale.alerts.some(a=>a.id==='COLLECTION_STALE:collector-tariff'));
+  await f.save(join(f.config.stateDirectory,'tariff/candidates.json'),
+    {jobs:{pending:{id:'tariff-pending',state:'REQUESTING',candidate:{computedAt:at-1800}}}});
+  const pending=await collect(f.config,{now,fetcher:f.fetcher});
+  assert.equal(pending.metrics.pendingPublications,1);
+  assert.ok(pending.alerts.some(a=>a.id==='PUBLICATION_STUCK:tariff-pending'));
   assert.throws(()=>validateConfig({...f.config,markets:[{...f.config.markets[1],collectionDirectory:'../outside'}]}),
     /MONITOR_MARKETS_INVALID/);
 });

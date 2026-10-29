@@ -158,13 +158,19 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
     budget(xSpending.total,c.xBudget.totalMicros,'x-total',BigInt(c.xBudget.estimatedRequestMicros));
     if(xSpending.initial!==undefined)budget(xSpending.initial,c.xBudget.initialMicros,'x-initial');
   }
-  const candidates=await load(join(live,'candidates.json'),'publications');
-  if(candidates){
-    if(!candidates.jobs||typeof candidates.jobs!=='object')add('INPUT_INVALID','publications');
-    else {
-      const pending=Object.values(candidates.jobs).filter(j=>j.state!=='FINALIZED');metrics.pendingPublications=pending.length;
-      for(const job of pending)age(job.candidate?.computedAt,c.pendingPublishMaxAgeSeconds,'PUBLICATION_STUCK',job.id??'unknown');
+  const publicationDirectories=new Map([[c.liveDirectory,'publications']]);
+  for(const market of c.markets)if(market.collectionDirectory)
+    publicationDirectories.set(market.collectionDirectory,`publications-${market.id}`);
+  metrics.pendingPublications=0;
+  for(const [directory,scope] of publicationDirectories){
+    const candidates=await load(join(c.stateDirectory,directory,'candidates.json'),scope);
+    if(!candidates)continue;
+    if(!candidates.jobs||typeof candidates.jobs!=='object'||Array.isArray(candidates.jobs)){
+      add('INPUT_INVALID',scope);continue;
     }
+    const pending=Object.values(candidates.jobs).filter(j=>j.state!=='FINALIZED');
+    metrics.pendingPublications+=pending.length;
+    for(const job of pending)age(job.candidate?.computedAt,c.pendingPublishMaxAgeSeconds,'PUBLICATION_STUCK',job.id??'unknown');
   }
   let db;
   try{
