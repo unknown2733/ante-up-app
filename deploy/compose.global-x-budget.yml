@@ -1,11 +1,7 @@
-# Append to each paid X collector's existing Compose configuration after seeding
+# Append to the solana collector's existing Compose configuration after seeding
 # the shared SQLite ledger from every running market journal.
 services:
   collector:
-    image: ante-up:${ANTE_UP_GLOBAL_X_RELEASE:?Set global budget collector image}
-    environment:
-      ANTE_UP_GLOBAL_X_BUDGET_DB: /state/global-x-budget.sqlite
-  collector-tariff:
     image: ante-up:${ANTE_UP_GLOBAL_X_RELEASE:?Set global budget collector image}
     environment:
       ANTE_UP_GLOBAL_X_BUDGET_DB: /state/global-x-budget.sqlite

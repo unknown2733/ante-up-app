@@ -1,0 +1,7 @@
+# Append to the tariff collector's existing Compose configuration after seeding
+# the same shared SQLite ledger used by solana.
+services:
+  collector-tariff:
+    image: ante-up:${ANTE_UP_GLOBAL_X_RELEASE:?Set global budget collector image}
+    environment:
+      ANTE_UP_GLOBAL_X_BUDGET_DB: /state/global-x-budget.sqlite
