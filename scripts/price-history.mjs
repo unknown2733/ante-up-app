@@ -2,6 +2,7 @@ import { readFile, mkdir, writeFile, rename } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { KitFinalizedAccountReader } from '../services/indexer/src/repositories.ts';
+import { createRpcReadFailover } from '../services/indexer/src/rpc-failover.ts';
 import { FinalizedFinancialAccounts } from '../services/api/src/financial-chain.ts';
 import { createFinalizedChainPriceReader, createPriceSampler, DEFAULT_PRICE_INTERVAL_MS,
   SqlitePriceHistoryStore, validatePriceSamplerConfig } from '../services/api/src/consumer-price-sampler.ts';
@@ -48,7 +49,12 @@ async function main() {
   await configFor();
   const rpcUrl = (await readFile(resolve(required('ANTE_UP_RPC_URL_FILE')), 'utf8')).trim();
   if (!/^https?:\/\//.test(rpcUrl)) throw new Error('PRICE_RPC_URL_INVALID');
-  const accounts = new KitFinalizedAccountReader(rpcUrl);
+  const backupFile = process.env.ANTE_UP_RPC_FALLBACK_URL_FILE;
+  const backupUrl = backupFile ? (await readFile(resolve(backupFile), 'utf8')).trim() : null;
+  const rpc = backupUrl ? createRpcReadFailover(rpcUrl, backupUrl, {
+    expectedGenesisHash: 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG',
+  }) : undefined;
+  const accounts = new KitFinalizedAccountReader(rpcUrl, rpc);
   const state = new FinalizedFinancialAccounts({ cluster: 'devnet', programId, accounts });
   const reader = createFinalizedChainPriceReader(state);
   const store = mode === '--dry-run' ? undefined : new SqlitePriceHistoryStore(resolve(required('ANTE_UP_PRICE_DB')), programId, intervalMs);

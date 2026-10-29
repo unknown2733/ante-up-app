@@ -1,0 +1,6 @@
+services:
+  price-history:
+    environment:
+      ANTE_UP_RPC_FALLBACK_URL_FILE: /run/secrets/rpc-backup.url
+    volumes:
+      - ${ANTE_UP_SECRET_DIR}/devnet-rpc.url:/run/secrets/rpc-backup.url:ro
