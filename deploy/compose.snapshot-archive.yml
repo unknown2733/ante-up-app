@@ -1,0 +1,11 @@
+# Add only after the archive's independent verification and offsite restore.
+# This enables historical readback; it does not retire any on-chain account.
+services:
+  indexer:
+    environment:
+      ANTE_UP_SNAPSHOT_ARCHIVE_PATH: /state/archives/${ANTE_UP_SNAPSHOT_ARCHIVE_BASENAME:?}
+      ANTE_UP_SNAPSHOT_ARCHIVE_SHA256: ${ANTE_UP_SNAPSHOT_ARCHIVE_SHA256:?}
+  api:
+    environment:
+      ANTE_UP_SNAPSHOT_ARCHIVE_PATH: /state/archives/${ANTE_UP_SNAPSHOT_ARCHIVE_BASENAME:?}
+      ANTE_UP_SNAPSHOT_ARCHIVE_SHA256: ${ANTE_UP_SNAPSHOT_ARCHIVE_SHA256:?}

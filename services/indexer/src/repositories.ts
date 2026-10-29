@@ -30,6 +30,7 @@ export class KitFinalizedAccountReader implements FinalizedAccountReader {
     this.rpc = rpc ?? createSolanaRpc(endpoint);
     const path=process.env.ANTE_UP_SNAPSHOT_ARCHIVE_PATH,sha=process.env.ANTE_UP_SNAPSHOT_ARCHIVE_SHA256;
     if(Boolean(path)!==Boolean(sha))throw new Error('SNAPSHOT_ARCHIVE_CONFIG_INCOMPLETE');
+    if(path&&process.env.ANTE_UP_CLUSTER!=='devnet')throw new Error('SNAPSHOT_ARCHIVE_DEVNET_ONLY');
     this.archive=archive??(path&&sha?new TrustedSnapshotArchive(path,sha,String(ANTE_UP_PROGRAM_ADDRESS)):undefined);
   }
   async get(accountAddress: string): Promise<AccountBytes | null> {
