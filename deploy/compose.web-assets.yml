@@ -1,0 +1,3 @@
+services:
+  web:
+    image: ante-up:${ANTE_UP_WEB_ASSETS_RELEASE:?Set reviewed web assets image}

@@ -6,7 +6,7 @@ Check the source, metric, and date on each subject. Observed Devnet markets use 
 
 Reference metrics identify the activity counted: YouTube video views, X post likes, or Spotify track streams. Each snapshot shows its count, unit, source link, and capture time in UTC. A provider's report date is shown separately when supplied; an unspecified time zone remains unspecified. Platform counters may be cached. Spotify stream counts from third-party reports retain the provider's name and report date; a popularity score is not a stream count.
 
-A single observation appears as a snapshot. A history requires multiple recorded observations, and a change requires comparable counts from different times. Captured counts are not continuously updated feeds. Subjects without a verified count show available metadata and artwork. Reference counts do not feed chip results or settlement.
+A single observation appears as a snapshot. A history requires multiple recorded observations, and a change requires comparable counts from different times. Three YouTube video view counters are polled on a bounded five-minute schedule, while other reference sources have their own capture or report dates. A scheduled poll can fail or be delayed, so check each timestamp. Subjects without a verified count show available metadata and artwork. Reference counts do not feed chip results or settlement.
 
 ## Reading historical activity
 
