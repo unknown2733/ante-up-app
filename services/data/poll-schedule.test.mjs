@@ -11,6 +11,7 @@ test('paid poll shifts just ahead of the five-minute boundary and then stays fiv
   assert.equal(latestSettledBucketEnd(shifted), boundary + 300);
   assert.ok(shifted - oldPoll >= 300);
   assert.equal(nextRegularPollAt(shifted), shifted + 300);
+  assert.equal(nextRegularPollAt(shifted + 1), shifted + 301);
   assert.ok(nextRegularPollAt(shifted) + 15 - latestSettledBucketEnd(shifted) < 600);
 });
 
