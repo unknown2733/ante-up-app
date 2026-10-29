@@ -17,6 +17,7 @@ import { heartbeat, checkStorage } from './runtime-status.mjs';
 import { collectorProjectionDbPath } from './collector-paths.mjs';
 import { assertPaidXApproved } from './paid-x-approvals.mjs';
 import { GlobalXBudget } from '../services/data/global-budget.mjs';
+import { nextRegularPollAt } from '../services/data/poll-schedule.mjs';
 
 // Explicit paid-data opt-in. Files stay on the execution host; no secrets in argv.
 const required=name=>{if(!process.env[name])throw Error(`MISSING_${name}`);return process.env[name];};
@@ -86,7 +87,7 @@ try{
   await reconcilePublications({collectionStore:store,...publisherRuntime});
   const state=await store.read(),stored=state.markets[market],now=Math.floor(Date.now()/1000);
   const retryAt=Math.max(0,...Object.values(state.batches).filter(b=>b.state==='FAILED').map(b=>b.retryAt??0));
-  const due=Math.max(stored?.lastPollAt?stored.lastPollAt+300:0,retryAt);
+  const due=Math.max(stored?.lastPollAt?nextRegularPollAt(stored.lastPollAt):0,retryAt);
   await heartbeat(healthName,{marketId:market,lastPollAt:stored?.lastPollAt??null,totalSpentMicros:state.totalSpentMicros,nextPollAt:due});
   if(!initial&&now<due){
    if(!args.includes('--follow')){console.log(JSON.stringify({state:'WAITING',nextPollAt:due}));break;}
