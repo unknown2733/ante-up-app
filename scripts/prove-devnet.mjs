@@ -12,7 +12,7 @@ import {checkStorage} from './runtime-status.mjs';
 import {createReceiptVerifier} from '../services/evidence/receipt.mjs';
 import {createArweaveInclusionVerifier} from '../services/evidence/inclusion.mjs';
 import {createJournaledUpload,signedItemSize} from '../services/evidence/upload-journal.mjs';
-import {createTurboClient,encodeStorageContent,storageTags,quoteUploadCosts} from '../services/evidence/turbo.mjs';
+import {createTurboClient,encodeStorageContent,storageTags,quoteUploadCosts,retryTurboRead} from '../services/evidence/turbo.mjs';
 import {FileCandidateRepository} from '../services/data/publisher.mjs';
 import {FileRawResponseRepository} from '../services/data/index.mjs';
 import {SqliteProjectionStore} from '../services/indexer/src/sqlite.ts';
@@ -104,7 +104,9 @@ try{
  const sizes=stored.map(s=>s.bytes.length);
  const signedSizes=await Promise.all(job.artifacts.map((a,i)=>signedItemSize({
   data:stored[i].bytes,tags:storageTags(stored[i],a.contentHash),signer:uploadSigner})));
- const [balance,free,costs]=await Promise.all([turbo.getBalance(),turbo.getFreeStatus(),quoteUploadCosts(turbo,[...signedSizes,16000])]);
+ const balance=await retryTurboRead(()=>turbo.getBalance(),'TURBO_BALANCE_UNAVAILABLE');
+ const free=await retryTurboRead(()=>turbo.getFreeStatus(),'TURBO_FREE_STATUS_UNAVAILABLE');
+ const costs=await retryTurboRead(()=>quoteUploadCosts(turbo,[...signedSizes,16000]),'TURBO_COST_QUOTE_UNAVAILABLE');
  const cached=await Promise.all(job.artifacts.map(async a=>Boolean(a.ref||await readJson(join(receiptDirectory,`${a.contentHash}.json`),null))));
  const estimatedNewWinc=costs.reduce((sum,item,i)=>sum+((i<job.artifacts.length?cached[i]:job.manifestRef)?0n:BigInt(item.winc)),0n).toString();
  const preflight={recordId:job.recordId,jobId:job.id,credential,schema,authority:authority.address,estimatedNewWinc,

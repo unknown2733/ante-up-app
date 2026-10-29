@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { sha256,canonical } from './index.mjs';
-import { createTurboStorageAdapter,encodeStorageContent,quoteUploadCosts } from './turbo.mjs';
+import { createTurboStorageAdapter,encodeStorageContent,quoteUploadCosts,retryTurboRead } from './turbo.mjs';
 import {gunzipSync} from 'node:zlib';
 
 const item='A'.repeat(43), parent='B'.repeat(43), content='{"hello":"world"}';
@@ -18,6 +18,15 @@ test('Turbo cost quote batches a large proof packet without changing item order'
   assert.equal(costs[0].winc,'1');
   assert.equal(costs.at(-1).winc,'1337');
   await assert.rejects(()=>quoteUploadCosts({getUploadCosts:async()=>[]},[1]),/INVALID_COST_QUOTE/);
+});
+
+test('transient read failure retries without creating another upload',async()=>{
+  let reads=0;const waits=[];
+  const value=await retryTurboRead(async()=>{if(++reads<3)throw new TypeError('temporary provider error');return {winc:'7'};},
+    'TURBO_COST_QUOTE_UNAVAILABLE',{wait:async ms=>waits.push(ms)});
+  assert.deepEqual(value,{winc:'7'});assert.equal(reads,3);assert.deepEqual(waits,[250,500]);
+  await assert.rejects(()=>retryTurboRead(async()=>{throw new TypeError('provider secret');},
+    'TURBO_BALANCE_UNAVAILABLE',{wait:async()=>{}}),/TURBO_BALANCE_UNAVAILABLE/);
 });
 test('Turbo SDK receipt is only upload acceptance; gateway parent and 20 confirmations are separate',async()=>{
   let uploads=0,confirmations=19,verified=true;

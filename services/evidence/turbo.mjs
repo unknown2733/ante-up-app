@@ -39,6 +39,17 @@ export async function quoteUploadCosts(turbo,bytes,{batchSize=64}={}) {
   return costs;
 }
 
+// Turbo metadata and cost reads do not create uploads or spend credits. A
+// transient SDK/network failure should not hold an accepted proof for an hour.
+export async function retryTurboRead(read,code,{attempts=3,wait=ms=>new Promise(resolve=>setTimeout(resolve,ms))}={}) {
+  check(typeof read==='function'&&typeof code==='string'&&/^[A-Z][A-Z0-9_]+$/.test(code)&&
+    Number.isInteger(attempts)&&attempts>=1&&attempts<=3&&typeof wait==='function','INVALID_TURBO_RETRY');
+  for(let attempt=1;attempt<=attempts;attempt++){
+    try{return await read();}
+    catch{if(attempt===attempts)throw Error(code);await wait(attempt*250);}
+  }
+}
+
 // turbo is an authenticated @ardrive/turbo-sdk client. receiptVerifier must
 // implement the allowlisted service key + receipt-version signature rules.
 export function createTurboStorageAdapter({turbo,fetcher=globalThis.fetch,
