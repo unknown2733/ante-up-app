@@ -164,6 +164,18 @@ node scripts/export-snapshot-archive.mjs --plan SOURCE_INDEX.sqlite OUTPUT_ARCHI
 node scripts/export-snapshot-archive.mjs --create SOURCE_INDEX.sqlite OUTPUT_ARCHIVE.sqlite DEVNET_RPC_URL_FILE
 ```
 
+To build a later immutable archive after an older Snapshot account is no longer
+on chain, pass the previous archive and its separately recorded SHA-256. The
+exporter verifies every previous row, compares any still-live copy byte for
+byte, requires the newest Snapshot of each market on chain, and adds new
+finalized accounts from the index. It records the parent file hash in the new
+manifest. Keep both archive generations and their trusted hashes:
+
+```sh
+node scripts/export-snapshot-archive.mjs --plan SOURCE_INDEX.sqlite NEXT_ARCHIVE.sqlite DEVNET_RPC_URL_FILE PRIOR_ARCHIVE.sqlite PRIOR_TRUSTED_SHA256
+node scripts/export-snapshot-archive.mjs --create SOURCE_INDEX.sqlite NEXT_ARCHIVE.sqlite DEVNET_RPC_URL_FILE PRIOR_ARCHIVE.sqlite PRIOR_TRUSTED_SHA256
+```
+
 The tool verifies the Devnet genesis, requires a complete sequence for each
 market, writes atomically, and stores a count and digest in the archive manifest.
 Keep the archive inside the encrypted backup scope and verify its SQLite
@@ -180,6 +192,7 @@ The verifier requires the separately recorded SHA-256 and checks SQLite
 integrity, per-account hashes, PDAs, candidate and event agreement, sequence
 continuity and the manifest digest. It reads the archive only. A successful
 readback does not yet prove that the live indexer can replay after closure.
-Creating this archive does not close onchain accounts, recover rent, or enable
-the indexer to replay events after a Snapshot account is closed. That requires
-a separately verified archive read path and a reviewed program upgrade.
+Creating or rolling an archive does not close onchain accounts or recover rent.
+The indexer has an opt-in verified archive read path and a test for a missing
+historical account, but an actual post-closure Devnet replay and a reviewed
+program upgrade are still required before any account retirement.

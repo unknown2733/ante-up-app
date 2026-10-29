@@ -26,6 +26,8 @@ export async function verifyArchive({ archivePath, expectedSha256 }) {
     const summary = JSON.parse(manifestRows[0].value);
     check(summary.schemaVersion === 1 && summary.cluster === 'devnet' && summary.programId === PROGRAM &&
       /^(0|[1-9][0-9]*)$/.test(summary.scanSlot) && hex.test(summary.digest) &&
+      (summary.parentArchiveSha256 === undefined || summary.parentArchiveSha256 === null ||
+        hex.test(summary.parentArchiveSha256)) &&
       Number.isSafeInteger(summary.markets) && Number.isSafeInteger(summary.snapshots), 'ARCHIVE_MANIFEST_INVALID');
     // Export uses JavaScript localeCompare, which differs from SQLite byte ordering.
     const rows = db.prepare('SELECT market,sequence,address,payload_hash,account_sha256,account_data,event_json,candidate_json FROM snapshots').all()

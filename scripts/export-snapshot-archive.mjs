@@ -6,6 +6,7 @@ import { open, link, mkdir, unlink, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { KitFinalizedAccountReader } from '../services/indexer/src/repositories.ts';
+import { TrustedSnapshotArchive } from '../services/indexer/src/snapshot-archive.ts';
 import { snapshotViewFromGenerated, verifyPublishedSnapshot } from '../services/indexer/src/snapshot.ts';
 import { findSnapshotPda, getMarketDecoder, getSnapshotDecoder, MARKET_DISCRIMINATOR, SNAPSHOT_DISCRIMINATOR } from '../clients/chain/dist/index.js';
 import { canonical, hash as canonicalHash } from '../services/data/index.mjs';
@@ -17,12 +18,17 @@ const matches = (data, discriminator) => Buffer.from(data.subarray(0, 8)).equals
 const check = (condition, code) => { if (!condition) throw new Error(code); };
 const safeError = error => String(error?.message ?? error).replace(/https?:\/\/[^\s"'<>]+/g, '[RPC_URL_REDACTED]').slice(0, 180);
 
-export async function buildArchive({ sourceDb, outPath, rpcFile, create = false, accounts, genesis }) {
+export async function buildArchive({ sourceDb, outPath, rpcFile, create = false, accounts, genesis,
+  priorArchivePath, priorArchiveSha256, rpc: injectedRpc }) {
+  check(Boolean(priorArchivePath) === Boolean(priorArchiveSha256), 'ARCHIVE_PRIOR_CONFIG_INCOMPLETE');
+  check(!priorArchiveSha256 || /^[0-9a-f]{64}$/.test(priorArchiveSha256), 'ARCHIVE_PRIOR_HASH_INVALID');
+  check(!priorArchivePath || resolve(priorArchivePath) !== resolve(outPath), 'ARCHIVE_PRIOR_OUTPUT_SAME');
   const endpoint = (await readFile(rpcFile, 'utf8')).trim();
   check(/^https:\/\//.test(endpoint), 'DEVNET_RPC_REQUIRED');
-  const rpc = kit.createSolanaRpc(endpoint);
+  const rpc = injectedRpc ?? kit.createSolanaRpc(endpoint);
   check((genesis ?? await rpc.getGenesisHash().send()) === DEVNET_GENESIS, 'DEVNET_GENESIS_MISMATCH');
-  const reader = accounts ?? new KitFinalizedAccountReader(endpoint, rpc);
+  const prior = priorArchivePath ? new TrustedSnapshotArchive(priorArchivePath, priorArchiveSha256, PROGRAM) : undefined;
+  const reader = accounts ?? new KitFinalizedAccountReader(endpoint, rpc, prior);
   const scan = await reader.scan(PROGRAM);
   const source = new DatabaseSync(sourceDb, { readOnly: true });
   let archive;
@@ -93,7 +99,8 @@ export async function buildArchive({ sourceDb, outPath, rpcFile, create = false,
     }
     for (const [market, latest] of markets) check((seen.get(market) ?? 0n) === latest, 'ARCHIVE_SEQUENCE_INCOMPLETE');
     const result = { schemaVersion: 1, cluster: 'devnet', programId: PROGRAM, scanSlot: scan.slot,
-      markets: markets.size, snapshots: snapshots.length, digest: digest.digest('hex') };
+      markets: markets.size, snapshots: snapshots.length, digest: digest.digest('hex'),
+      parentArchiveSha256: priorArchiveSha256 ?? null };
     if (create) {
       archive.prepare('INSERT INTO manifest VALUES(?,?)').run('summary', JSON.stringify(result));
       archive.exec('COMMIT');
@@ -110,12 +117,13 @@ export async function buildArchive({ sourceDb, outPath, rpcFile, create = false,
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
-  const [mode, sourceDb, outPath, rpcFile] = process.argv.slice(2);
-  if (!['--plan', '--create'].includes(mode) || !sourceDb || !outPath || !rpcFile) {
-    console.error('Usage: node scripts/export-snapshot-archive.mjs --plan|--create SOURCE_DB OUTPUT_DB RPC_URL_FILE');
+  const [mode, sourceDb, outPath, rpcFile, priorArchivePath, priorArchiveSha256] = process.argv.slice(2);
+  if (!['--plan', '--create'].includes(mode) || !sourceDb || !outPath || !rpcFile ||
+      Boolean(priorArchivePath) !== Boolean(priorArchiveSha256)) {
+    console.error('Usage: node scripts/export-snapshot-archive.mjs --plan|--create SOURCE_DB OUTPUT_DB RPC_URL_FILE [PRIOR_ARCHIVE_DB PRIOR_TRUSTED_SHA256]');
     process.exitCode = 2;
   } else {
-    buildArchive({ sourceDb, outPath, rpcFile, create: mode === '--create' })
+    buildArchive({ sourceDb, outPath, rpcFile, create: mode === '--create', priorArchivePath, priorArchiveSha256 })
       .then(result => console.log(JSON.stringify(result)))
       .catch(error => { console.error(safeError(error)); process.exitCode = 1; });
   }
