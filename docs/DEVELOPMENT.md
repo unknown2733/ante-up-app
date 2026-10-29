@@ -57,6 +57,16 @@ templates, not live operator configuration. For the optional YouTube collector,
 set `ANTE_UP_HOST_STATE_DIR` and `ANTE_UP_YOUTUBE_API_KEY_FILE` to private host
 paths before invoking `deploy/run-reference-youtube.sh` with a reviewed image.
 
+The optional Spotify track reference collector reads three fixed Kworb artist
+reports once per UTC day. It stores the dated source HTML and extracted stream
+count in the append-only reference database. A repeated report is skipped; an
+older report or a later lower cumulative count is not promoted as a new point.
+Run `deploy/run-reference-kworb.sh <reviewed-image-tag>` with
+`ANTE_UP_HOST_STATE_DIR` set to the private host state directory, using the
+`deploy/systemd/ante-up-reference-kworb.timer` example. Kworb can report
+several days late. These counts are third-party display references and do not
+set a market price or settle a position.
+
 Devnet deployment requires explicit operator setup and current chain checks.
 Do not infer live service health or economic safety from a passing local test.
 

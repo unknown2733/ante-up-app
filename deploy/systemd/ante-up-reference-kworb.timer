@@ -1,0 +1,10 @@
+[Unit]
+Description=Check Ante Up Spotify reference streams once daily
+
+[Timer]
+OnCalendar=*-*-* 02:40:00 UTC
+Persistent=true
+Unit=ante-up-reference-kworb.service
+
+[Install]
+WantedBy=timers.target
