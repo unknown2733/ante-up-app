@@ -3,13 +3,16 @@ import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {weeklyDue,inWeeklyServiceWindow,validateWeeklyMarkets,resolveWeeklyScope,runWeeklyPass} from './weekly-keeper.mjs';
+import {weeklyDue,inWeeklyServiceWindow,validityRecoveryDue,validateWeeklyMarkets,resolveWeeklyScope,
+  runWeeklyPass,runValidityRecoveryPass} from './weekly-keeper.mjs';
 
 const program='FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr';
 const marketId='CyYjBcb4LyuyLN1Akaf2eXXJV5GhFUkaPNb7caLCuHN6';
 const week=1793577600;
 const finance=(overrides={})=>({currentCycle:3n,currentMaturity:BigInt(week),
-  lastLpMaturity:BigInt(week-604800),lpWindowStart:0n,lpWindowEnd:0n,openPositions:0,...overrides});
+  lastLpMaturity:BigInt(week-604800),lpWindowStart:0n,lpWindowEnd:0n,openPositions:0,
+  totalShares:100n,lpGeneration:1n,...overrides});
+const chainMarket={validityGeneration:1n};
 const anchor={graduationPriceAtoms:'1200000',graduationNowQ12:'20',graduation7dQ12:'10',maxPriceAtoms:'7474059'};
 const scope={cluster:'devnet',programId:program,marketId,epoch:'3',epochStartedAt:week-300000,
   maturityAt:week,queryHash:'a'.repeat(64),queryVersion:'1',configVersion:'20',anchor};
@@ -68,7 +71,7 @@ test('scope rotation persists a new cycle separately and refuses unexpected chai
 test('empty recovery signs only after an exact read-only plan; missing candidate blocks open positions',async()=>{
  const f=await fixture();
  try{
-  const accounts={financeMarket:async()=>finance()};
+  const accounts={financeMarket:async()=>finance(),market:async()=>chainMarket};
   const calls=[];
   const run=async args=>{calls.push(args);
    return args.includes('--execute')?{marketId,epoch:'3',state:'submitted',action:'RECOVER_LP_WINDOW',signature:'sig'}:
@@ -79,8 +82,40 @@ test('empty recovery signs only after an exact read-only plan; missing candidate
   assert.equal(result[0].state,'submitted');assert.equal(calls.length,2);
   assert.ok(calls[1].includes('--execute'));
   const blocked=await runWeeklyPass({now:week+960,markets:[f.market],
-   accounts:{financeMarket:async()=>finance({openPositions:1})},env:{},execute:true,
+   accounts:{financeMarket:async()=>finance({openPositions:1}),market:async()=>chainMarket},env:{},execute:true,
    run:async args=>{assert.equal(args[0],'scripts/prepare-observed-settlement.mjs');throw Error('OBSERVATION_INCOMPLETE');}});
   assert.equal(blocked[0].state,'blocked');assert.match(blocked[0].error,/OBSERVATION_INCOMPLETE/);
+ }finally{await rm(f.root,{recursive:true,force:true});}
+});
+
+test('same-week validity reset reopens LP only with no maturity or open positions',async()=>{
+ const now=week+3600,stale=finance({currentMaturity:0n,lastLpMaturity:BigInt(week),
+   lpWindowStart:BigInt(week+960),lpWindowEnd:BigInt(week+1860)});
+ const changed={validityGeneration:2n};
+ assert.equal(validityRecoveryDue(stale,changed,now),true);
+ assert.equal(weeklyDue(stale,now,changed).reason,'EMPTY_RECOVERY');
+ assert.equal(validityRecoveryDue({...stale,currentMaturity:BigInt(week+604800)},changed,now),false);
+ assert.equal(validityRecoveryDue({...stale,openPositions:1},changed,now),false);
+ assert.equal(validityRecoveryDue(stale,changed,week+1000),false);
+ assert.equal(validityRecoveryDue(stale,chainMarket,now),false);
+ const f=await fixture();
+ try{
+  const calls=[];
+  const run=async args=>{calls.push(args);return args.includes('--execute')?
+   {marketId,epoch:'3',state:'submitted',action:'RECOVER_LP_WINDOW',signature:'sig'}:
+   {marketId,epoch:'3',state:'ready',action:'RECOVER_LP_WINDOW'};};
+  const accounts={financeMarket:async()=>stale,market:async()=>changed};
+  const env={ANTE_UP_PUBLISHER_KEYPAIR_FILE:'/run/secrets/publisher.json',
+    ANTE_UP_KEEPER_KEYPAIR_FILE:'/run/secrets/keeper.json'};
+  assert.deepEqual((await runValidityRecoveryPass({now,markets:[f.market],accounts,env,run}))[0],
+    {marketId,state:'ready',action:'RECOVER_LP_WINDOW'});
+  assert.equal(calls.length,1);
+  assert.deepEqual((await runValidityRecoveryPass({now,markets:[f.market],accounts,env,execute:true,run}))[0],
+    {marketId,state:'submitted',action:'RECOVER_LP_WINDOW',signature:'sig'});
+  assert.equal(calls.length,3);
+  const quiet=await runValidityRecoveryPass({now,markets:[f.market],
+    accounts:{financeMarket:async()=>stale,market:async()=>chainMarket},env,execute:true,run});
+  assert.equal(quiet[0].reason,'NO_VALIDITY_RESET');
+  assert.equal(calls.length,3);
  }finally{await rm(f.root,{recursive:true,force:true});}
 });

@@ -21,13 +21,24 @@ const scrub=message=>String(message).replace(/https?:\/\/[^\s]+/g,'[RPC_REDACTED
 export const inWeeklyServiceWindow=now=>Number.isSafeInteger(now)&&now>=monday(now)+960&&
   now<=monday(now)+86_400+960;
 
-export function weeklyDue(finance,now){
+/** A new validity generation can close Pro after this week's LP window already opened. */
+export function validityRecoveryDue(finance,market,now){
+ if(!Number.isSafeInteger(now)||now<0||!market)return false;
+ const maturity=asInt(finance.currentMaturity),open=asInt(finance.openPositions);
+ const shares=BigInt(finance.totalShares),last=asInt(finance.lastLpMaturity);
+ const lpEnd=asInt(finance.lpWindowEnd);
+ return maturity===0&&open===0&&shares>0&&last===monday(now)&&now>=lpEnd&&
+   BigInt(finance.lpGeneration)!==BigInt(market.validityGeneration);
+}
+
+export function weeklyDue(finance,now,market=null){
  if(!Number.isSafeInteger(now)||now<0)fail('WEEKLY_TIME_INVALID');
  const maturity=asInt(finance.currentMaturity),cycle=asInt(finance.currentCycle);
  const last=asInt(finance.lastLpMaturity),open=asInt(finance.openPositions);
  const lpStart=asInt(finance.lpWindowStart),lpEnd=asInt(finance.lpWindowEnd);
  if(cycle<1||lpEnd<lpStart)fail('WEEKLY_STATE_INVALID');
  const week=monday(now);
+ if(validityRecoveryDue(finance,market,now))return {due:true,reason:'EMPTY_RECOVERY'};
  if(last>=week&&lpStart>=week)return {due:false,reason:'LP_ALREADY_OPENED'};
  if(maturity>0){
   if(now<maturity+960)return {due:false,reason:'WAIT_FOR_CUTOFF'};
@@ -102,7 +113,8 @@ export async function runWeeklyPass({now,markets,accounts,env,execute=false,run=
  const output=[];
  for(const market of markets){
   try{
-   const finance=await accounts.financeMarket(market.marketId),due=weeklyDue(finance,now);
+   const [finance,chainMarket]=await Promise.all([accounts.financeMarket(market.marketId),accounts.market(market.marketId)]);
+   const due=weeklyDue(finance,now,chainMarket);
    if(!due.due){output.push({marketId:market.marketId,state:'idle',reason:due.reason});continue;}
    const active=await resolveWeeklyScope(market,finance,env,run);
    if(BigInt(active.scope.epoch)!==finance.currentCycle)fail('WEEKLY_SCOPE_CYCLE_MISMATCH');
@@ -129,6 +141,34 @@ export async function runWeeklyPass({now,markets,accounts,env,execute=false,run=
  return output;
 }
 
+/** Outside the maturity window, only a same-week validity reset may reopen LP. */
+export async function runValidityRecoveryPass({now,markets,accounts,env,execute=false,run=command}){
+ const output=[];
+ for(const market of markets){
+  try{
+   const [finance,chainMarket]=await Promise.all([accounts.financeMarket(market.marketId),accounts.market(market.marketId)]);
+   if(!validityRecoveryDue(finance,chainMarket,now)){
+    output.push({marketId:market.marketId,state:'idle',reason:'NO_VALIDITY_RESET'});continue;
+   }
+   const active=await resolveWeeklyScope(market,finance,env,run);
+   if(BigInt(active.scope.epoch)!==finance.currentCycle)fail('WEEKLY_SCOPE_CYCLE_MISMATCH');
+   const args=['services/api/src/keeper-run.ts','--scope',active.scopePath,'--journal',join(active.directory,'settlements.json'),
+     '--expected-genesis-hash',GENESIS];
+   const plan=await run(args,env);
+   if(plan.marketId!==market.marketId||plan.epoch!==active.scope.epoch||
+      plan.action!=='RECOVER_LP_WINDOW'||plan.state!=='ready')fail('VALIDITY_RECOVERY_PLAN_NOT_READY');
+   if(!execute){output.push({marketId:market.marketId,state:'ready',action:plan.action});continue;}
+   const sent=await run([...args,'--attempts',join(active.directory,'keeper-attempts.sqlite'),
+     '--publisher-keypair',env.ANTE_UP_PUBLISHER_KEYPAIR_FILE,'--keeper-keypair',env.ANTE_UP_KEEPER_KEYPAIR_FILE,
+     '--execute'],env);
+   if(sent.marketId!==market.marketId||sent.epoch!==active.scope.epoch||sent.action!==plan.action||
+     !['submitted','unknown','notDue','complete'].includes(sent.state))fail('VALIDITY_RECOVERY_EXECUTION_MISMATCH');
+   output.push({marketId:market.marketId,state:sent.state,action:sent.action,signature:sent.signature??null});
+  }catch(error){output.push({marketId:market.marketId,state:'blocked',error:scrub(error?.message)});}
+ }
+ return output;
+}
+
 async function main(){
  const args=process.argv.slice(2),execute=args.includes('--execute');
  if(args.some(arg=>!['--execute','--preflight'].includes(arg))||
@@ -139,12 +179,17 @@ async function main(){
  if(!withinState(path)||!secret)fail('WEEKLY_CONFIGURATION_INCOMPLETE');
  const config=await readJson(path),markets=validateWeeklyMarkets(config);
  const now=Math.floor(Date.now()/1000);
- if(!inWeeklyServiceWindow(now)&&!args.includes('--preflight'))return;
+ const weekly=inWeeklyServiceWindow(now);
+ // Cron invokes every two minutes for maturity. Check validity resets every ten
+ // minutes outside that window to avoid exhausting the shared Devnet RPC.
+ const recoveryTick=now%600<120||args.includes('--preflight');
+ if(!weekly&&!recoveryTick)return;
  const completion={week:monday(now),marketIds:markets.map(m=>m.marketId).sort()};
  const previous=await readJson(config.completionPath).catch(error=>{
   if(error.code==='ENOENT')return null;throw error;
  });
- if(!args.includes('--preflight')&&previous&&exact(previous,completion))return;
+ const weeklyComplete=!args.includes('--preflight')&&previous&&exact(previous,completion);
+ if(weekly&&weeklyComplete&&!recoveryTick)return;
  const endpoint=(await readFile(secret,'utf8')).trim();
  if(!/^https:\/\//.test(endpoint)||await kit.createSolanaRpc(endpoint).getGenesisHash().send()!==GENESIS)
   fail('WEEKLY_DEVNET_REQUIRED');
@@ -153,9 +198,11 @@ async function main(){
  const accounts=new FinalizedFinancialAccounts({cluster:'devnet',programId:PROGRAM,
   accounts:new KitFinalizedAccountReader(endpoint)});
  const env={...process.env,ANTE_UP_RPC_URL:endpoint};
- const result=await runWeeklyPass({now,markets,accounts,env,execute});
+ const result=weekly&&!weeklyComplete?
+   await runWeeklyPass({now,markets,accounts,env,execute}):
+   await runValidityRecoveryPass({now,markets,accounts,env,execute});
  for(const row of result)console.log(JSON.stringify(row));
- if(execute&&result.every(row=>row.state==='idle'&&row.reason==='LP_ALREADY_OPENED')){
+ if(weekly&&!weeklyComplete&&execute&&result.every(row=>row.state==='idle'&&row.reason==='LP_ALREADY_OPENED')){
   await mkdir(dirname(config.completionPath),{recursive:true,mode:0o750});
   const temporary=config.completionPath+'.tmp-'+process.pid;
   await writeFile(temporary,JSON.stringify(completion)+'\n',{mode:0o600,flag:'wx'});
