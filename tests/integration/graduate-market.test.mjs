@@ -236,3 +236,37 @@ test('journaled unknown transaction is never resent; Indexed recovery needs its 
       runtime,journal}),/GRADUATE_JOURNAL_SCOPE_MISMATCH/);
   }finally{await rm(directory,{recursive:true,force:true});}
 });
+
+test('Devnet graduation requires exact operator approval before any new signature',async()=>{
+  const directory=await mkdtemp(join(process.cwd(),'ante-graduate-approval-'));
+  try{
+    const devnet={...config,cluster:'devnet'};
+    const state=fixture();
+    let sends=0;
+    const runtime={expectedGenesisHash:'genesis-fixture',now:()=>now,
+      readFinalizedState:async()=>structuredClone(state),
+      signatureStatus:async()=> 'UNKNOWN',
+      sendInstruction:async (_plan,{onSigned})=>{
+        sends++;await onSigned('fixture-signature');
+        return {state:'UNKNOWN',signature:'fixture-signature'};
+      }};
+    const journal=new FileGraduationJournal(join(directory,'journal.json'));
+    const approved={schemaVersion:1,maxMarkets:5,markets:[{
+      marketId:a.market,seedHex:config.marketSeedHex,
+      queryHash:state.market.queryHash,queryVersion:state.market.queryVersion}]};
+    await assert.rejects(executeGraduation({config:devnet,runtime,journal}),
+      /GRADUATE_APPROVAL_REQUIRED/);
+    await assert.rejects(executeGraduation({config:devnet,runtime,journal,
+      approvalRegistry:{...approved,markets:[]}}),/PAID_X_NOT_APPROVED/);
+    await assert.rejects(executeGraduation({config:devnet,runtime,journal,
+      approvalRegistry:{...approved,markets:[{...approved.markets[0],
+        queryHash:'a'.repeat(64)}]}}),/PAID_X_APPROVAL_MISMATCH/);
+    assert.equal(sends,0);
+    assert.equal((await executeGraduation({config:devnet,runtime,journal,
+      approvalRegistry:approved})).state,'PENDING_RECONCILIATION');
+    assert.equal(sends,1);
+    assert.equal((await executeGraduation({config:devnet,runtime,journal,
+      approvalRegistry:null})).state,'PENDING_RECONCILIATION');
+    assert.equal(sends,1);
+  }finally{await rm(directory,{recursive:true,force:true});}
+});

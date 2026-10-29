@@ -10,6 +10,7 @@ import {dirname,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import * as chain from '../clients/chain/dist/index.js';
 import {UNIT,Q12,ceilDiv,indexPrice,freeCapital} from '../contracts/reference.mjs';
+import {assertPaidXApproved} from './paid-x-approvals.mjs';
 
 const chainRequire=createRequire(new URL('../clients/chain/package.json',import.meta.url));
 const kit=chainRequire('@solana/kit');
@@ -199,7 +200,7 @@ export class FileGraduationJournal{
     await writeFile(temporary,JSON.stringify(value),'utf8');await replaceJournal(temporary,this.path);}
 }
 
-export async function executeGraduation({config,runtime,journal}){
+export async function executeGraduation({config,runtime,journal,approvalRegistry=null}){
   check(runtime?.readFinalizedState && runtime?.sendInstruction &&
     runtime?.signatureStatus && journal?.read && journal?.write,'GRADUATE_RUNTIME_REQUIRED');
   const offline=await createGraduatePlan(config);
@@ -221,6 +222,12 @@ export async function executeGraduation({config,runtime,journal}){
       await runtime.signatureStatus(saved.pending.signature):'UNKNOWN';
     return {state:status==='FAILED'?'FAILED_TRANSACTION':'PENDING_RECONCILIATION',
       signatureStatus:status,pending:saved.pending};
+  }
+  if(config.cluster==='devnet'){
+    check(approvalRegistry,'GRADUATE_APPROVAL_REQUIRED');
+    assertPaidXApproved(approvalRegistry,{marketId:offline.scope.market,
+      seedHex:config.marketSeedHex,queryHash:state.market.queryHash,
+      queryVersion:state.market.queryVersion});
   }
   const plan=await createGraduatePlan(config,state,{mode:'EXECUTE',now:runtime.now()});
   check(plan.state==='READY','GRADUATE_NOT_READY');
@@ -398,11 +405,15 @@ async function main(argv=process.argv.slice(2),env=process.env){
     process.stdout.write(`${JSON.stringify(await createGraduatePlan(config,state),null,2)}\n`);return;
   }
   check(env.ANTE_UP_GRADUATE_JOURNAL_FILE,'GRADUATE_JOURNAL_REQUIRED');
+  if(config.cluster==='devnet')check(env.ANTE_UP_GRADUATE_APPROVAL_PATH,
+    'GRADUATE_APPROVAL_PATH_REQUIRED');
   const signer=await signerFromFile(env.ANTE_UP_GRADUATE_ADMIN_KEYPAIR_FILE);
   const runtime=await createGraduateRuntime(config,{endpoint:env.ANTE_UP_GRADUATE_RPC_URL,
     expectedGenesisHash:env.ANTE_UP_GRADUATE_EXPECTED_GENESIS_HASH,adminSigner:signer});
   const result=await executeGraduation({config,runtime,
-    journal:new FileGraduationJournal(resolve(env.ANTE_UP_GRADUATE_JOURNAL_FILE))});
+    journal:new FileGraduationJournal(resolve(env.ANTE_UP_GRADUATE_JOURNAL_FILE)),
+    approvalRegistry:config.cluster==='devnet'?
+      JSON.parse(await readFile(env.ANTE_UP_GRADUATE_APPROVAL_PATH,'utf8')):null});
   process.stdout.write(`${JSON.stringify(result,null,2)}\n`);
 }
 

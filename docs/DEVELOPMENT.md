@@ -82,7 +82,13 @@ ANTE_UP_RPC_URL_FILE=/absolute/path/devnet-rpc.url ANTE_UP_APPROVED_X_MARKETS_PA
 
 This is a preliminary gate. The existing `graduate-market.mjs` finalized plan
 must still verify the full funding, liability, source freshness, and account
-conditions before any graduation transaction.
+conditions before any graduation transaction. A Devnet `--execute` run also
+requires `ANTE_UP_GRADUATE_APPROVAL_PATH` pointing to the same operator-owned
+approval registry used by the paid collectors. Immediately before creating a
+new signed graduation transaction, the runner matches the finalized market
+PDA, seed, query hash, and version against that registry. Missing or changed
+approval stops a new signature; a previously journaled uncertain transaction
+can still be reconciled without sending it again.
 
 All approved collectors also share one durable X spending ledger. Its limits
 are $10 per UTC day, $100 for historical initialization, and $150 total across
