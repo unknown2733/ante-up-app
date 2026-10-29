@@ -28,6 +28,12 @@
   "budgetWarningPercent": 80,
   "xBudget": {"dailyMicros": 10000000, "totalMicros": 100000000, "estimatedRequestMicros": 1000},
   "proofBudget": {"dailyWinc": "60000000000", "totalWinc": "100000000000"},
+  "visitorFaucet": {
+    "ledgerPath": "live-smoke/index.sqlite.visitor-sol.sqlite",
+    "grantLamports": "20000000",
+    "dailyCapLamports": "400000000",
+    "totalCapLamports": "800000000"
+  },
   "rpcUrlFile": "/run/secrets/rpc.url",
   "wallets": [
     {"role": "publisher", "address": "8qfbLii5YBfJiHoLGBNozyJnLFA4knBymTCtK9pP4mHH", "minLamports": "10000000"},

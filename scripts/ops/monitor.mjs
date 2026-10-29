@@ -22,6 +22,12 @@ export function validateConfig(c) {
   check(positive(c.xBudget?.dailyMicros)&&positive(c.xBudget?.totalMicros)&&positive(c.xBudget?.estimatedRequestMicros),'MONITOR_X_BUDGET_INVALID');
   check(c.budgetWarningPercent>0&&c.budgetWarningPercent<100&&Number.isInteger(c.budgetWarningPercent),'MONITOR_BUDGET_THRESHOLD_INVALID');
   check(DECIMAL.test(c.proofBudget?.dailyWinc)&&DECIMAL.test(c.proofBudget?.totalWinc)&&BigInt(c.proofBudget.dailyWinc)>0n&&BigInt(c.proofBudget.totalWinc)>0n,'MONITOR_PROOF_BUDGET_INVALID');
+  if(c.visitorFaucet){
+    const v=c.visitorFaucet;
+    check(safeRelative(v.ledgerPath)&&DECIMAL.test(v.grantLamports)&&DECIMAL.test(v.dailyCapLamports)&&DECIMAL.test(v.totalCapLamports)&&
+      BigInt(v.grantLamports)>0n&&BigInt(v.grantLamports)<=BigInt(v.dailyCapLamports)&&BigInt(v.dailyCapLamports)<=BigInt(v.totalCapLamports),
+      'MONITOR_VISITOR_FAUCET_INVALID');
+  }
   check(Array.isArray(c.wallets)&&c.wallets.length>0&&c.wallets.every(w=>typeof w.role==='string'&&/^[a-z0-9-]+$/.test(w.role)&&address(w.address)&&DECIMAL.test(w.minLamports)),'MONITOR_WALLETS_INVALID');
   check(new Set(c.markets.map(m=>m.id)).size===c.markets.length&&new Set(c.wallets.map(w=>w.role)).size===c.wallets.length&&new Set(c.services.map(s=>s.name)).size===c.services.length,'DUPLICATE_MONITOR_SCOPE');
   check(typeof c.rpcUrlFile==='string','MONITOR_RPC_REQUIRED');
@@ -134,6 +140,27 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
     }
     metrics.proofReservedWinc={total:total.toString(),today:today.toString()};budget(total,c.proofBudget.totalWinc,'proof-total');budget(today,c.proofBudget.dailyWinc,'proof-daily');
   }catch{add('INPUT_INVALID','proof-budget');}
+  if(c.visitorFaucet){
+    let grantDb;
+    try{
+      grantDb=new DatabaseSync(join(c.stateDirectory,c.visitorFaucet.ledgerPath),{readOnly:true});
+      grantDb.exec('PRAGMA busy_timeout=3000');
+      const rows=grantDb.prepare('SELECT amount,at_ms,state FROM visitor_sol_grants').all();
+      let total=0n,today=0n;
+      const dayStart=Math.floor(now/86400000)*86400000;
+      for(const row of rows){
+        check(typeof row.amount==='string'&&DECIMAL.test(row.amount)&&BigInt(row.amount)>0n&&
+          Number.isSafeInteger(row.at_ms)&&row.at_ms>0&&row.at_ms<=now+30000&&
+          ['RESERVED','UNKNOWN','SUBMITTED','FINALIZED'].includes(row.state),'VISITOR_LEDGER_INVALID');
+        const amount=BigInt(row.amount);total+=amount;
+        if(row.at_ms>=dayStart)today+=amount;
+      }
+      metrics.visitorSolReservedLamports={total:total.toString(),today:today.toString()};
+      budget(today,c.visitorFaucet.dailyCapLamports,'visitor-sol-daily',BigInt(c.visitorFaucet.grantLamports));
+      budget(total,c.visitorFaucet.totalCapLamports,'visitor-sol-total',BigInt(c.visitorFaucet.grantLamports));
+    }catch(error){add(error.message==='VISITOR_LEDGER_INVALID'?'INPUT_INVALID':'INPUT_UNAVAILABLE','visitor-sol');}
+    finally{grantDb?.close();}
+  }
   try{
     const endpoint=(await readFile(c.rpcUrlFile,'utf8')).trim();check(/^https?:\/\//.test(endpoint),'INVALID_RPC_URL');
     check(await rpcCall(endpoint,'getGenesisHash',[],fetcher)==='EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG','DEVNET_REQUIRED');

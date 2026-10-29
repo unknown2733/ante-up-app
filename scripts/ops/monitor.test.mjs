@@ -80,6 +80,26 @@ test('state quota warns before the collector storage gate and fails at the cap',
   const full=await collect({...f.config,maxStateBytes:used},{now,fetcher:f.fetcher});
   assert.ok(full.alerts.some(a=>a.code==='STATE_LIMIT'));
 });
+test('visitor SOL grant reservations warn before daily and total caps stop first-time visitors',async t=>{
+  const f=await fixture(t),path=join(f.live,'index.sqlite.visitor-sol.sqlite');
+  const db=new DatabaseSync(path);
+  db.exec('CREATE TABLE visitor_sol_grants(request_id TEXT PRIMARY KEY,wallet TEXT,amount TEXT,state TEXT,signature TEXT,at_ms INTEGER)');
+  const insert=db.prepare('INSERT INTO visitor_sol_grants VALUES(?,?,?,?,?,?)');
+  insert.run('earlier','wallet-a','60000000','FINALIZED',null,now-86400000);
+  insert.run('today','wallet-b','20000000','RESERVED',null,now-1000);
+  db.close();
+  f.config.visitorFaucet={ledgerPath:'live-smoke/index.sqlite.visitor-sol.sqlite',grantLamports:'20000000',dailyCapLamports:'40000000',totalCapLamports:'100000000'};
+  const near=await collect(f.config,{now,fetcher:f.fetcher});
+  assert.deepEqual(near.metrics.visitorSolReservedLamports,{total:'80000000',today:'20000000'});
+  assert.ok(near.alerts.some(a=>a.id==='BUDGET_NEAR_LIMIT:visitor-sol-total'));
+  assert.ok(!near.alerts.some(a=>a.id==='BUDGET_EXHAUSTED:visitor-sol-daily'));
+  const exhausted=await collect({...f.config,visitorFaucet:{...f.config.visitorFaucet,totalCapLamports:'90000000',dailyCapLamports:'30000000'}},{now,fetcher:f.fetcher});
+  assert.ok(exhausted.alerts.some(a=>a.id==='BUDGET_EXHAUSTED:visitor-sol-total'));
+  assert.ok(exhausted.alerts.some(a=>a.id==='BUDGET_EXHAUSTED:visitor-sol-daily'));
+  assert.throws(()=>validateConfig({...f.config,visitorFaucet:{...f.config.visitorFaucet,ledgerPath:'../private'}}),/MONITOR_VISITOR_FAUCET_INVALID/);
+  await rm(path);
+  assert.ok((await collect(f.config,{now,fetcher:f.fetcher})).alerts.some(a=>a.id==='INPUT_UNAVAILABLE:visitor-sol'));
+});
 test('detects stalled collection/publication, proof obligations outside allowlist, budgets and wallets',async t=>{
   const f=await fixture(t);
   await f.save(join(f.live,'collection.json'),{markets:{[market]:{lastPollAt:at-80000}},batches:{uncertain:{id:'uncertain',state:'REQUESTING',requestedAt:at-5000}},totalSpentMicros:9995,spentByDay:{'2026-10-16':800}});
