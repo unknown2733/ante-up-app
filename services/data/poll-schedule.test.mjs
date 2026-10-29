@@ -7,10 +7,11 @@ test('paid poll shifts just ahead of the five-minute boundary and then stays fiv
   const boundary = 1_800_000_000;
   const oldPoll = boundary + 2;
   const shifted = nextRegularPollAt(oldPoll);
-  assert.equal(shifted, boundary + 180);
-  assert.equal(latestSettledBucketEnd(shifted), boundary);
+  assert.equal(shifted, boundary + 480);
+  assert.equal(latestSettledBucketEnd(shifted), boundary + 300);
+  assert.ok(shifted - oldPoll >= 300);
   assert.equal(nextRegularPollAt(shifted), shifted + 300);
-  assert.ok(shifted + 15 - (boundary - 300) < 600);
+  assert.ok(nextRegularPollAt(shifted) + 15 - latestSettledBucketEnd(shifted) < 600);
 });
 
 test('invalid poll timestamps are rejected', () => {

@@ -15,7 +15,13 @@ compose_args() {
   args=(-p ante-up --env-file "$base/.env"
     --env-file "$base/evidence-budget.env"
     --env-file /srv/ante-up/builds/visitor-onboarding-174c8e4/visitor-sol.env)
-  for file in "${files[@]}"; do args+=(-f "$file"); done
+  for file in "${files[@]}"; do
+    if [[ ! -f "$file" ]]; then
+      [[ "$file" == /tmp/tmp.*/collector*.new.yml ]] || { echo COLLECTOR_COMPOSE_FILE_MISSING; exit 1; }
+      continue
+    fi
+    args+=(-f "$file")
+  done
   [[ "$variant" == old ]] || args+=(-f "$scratch/$service.$variant.yml")
 }
 
