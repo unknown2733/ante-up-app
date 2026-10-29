@@ -62,6 +62,23 @@ Do not infer live service health or economic safety from a passing local test.
 
 ## Paid X market approval
 
+All approved collectors also share one durable X spending ledger. Its limits
+are $10 per UTC day, $100 for historical initialization, and $150 total across
+all markets. Every paid request reserves its estimated cost before reaching X;
+failed or uncertain requests retain their reservation. The shared SQLite file
+must be initialized from **all** existing collection journals while the paid
+collectors are stopped:
+
+```sh
+node scripts/seed-global-x-budget.mjs --plan /absolute/path/global-x-budget.sqlite /absolute/path/solana/collection.json /absolute/path/tariff/collection.json
+node scripts/seed-global-x-budget.mjs --apply /absolute/path/global-x-budget.sqlite /absolute/path/solana/collection.json /absolute/path/tariff/collection.json
+```
+
+Only after the seed succeeds, mount that same file path in every paid collector
+as `ANTE_UP_GLOBAL_X_BUDGET_DB`. A missing ledger stops paid collection. When
+adding a market, include its existing collection journal in the baseline or
+start it with a fresh empty journal; never create an independent ledger for it.
+
 Market registration and curve trading are separate from paid X collection.
 Collectors require an operator-owned `approved-x-markets.json` in mounted
 service state. The registry allows at most five market IDs and binds each

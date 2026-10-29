@@ -33,13 +33,15 @@ test('X Counts URL, bearer header, minute granularity, and archive endpoint use 
 test('archive pagination reserves budget before each page and stops at the cap',async()=>{
   const dir=await mkdtemp(join(process.cwd(),'ante-pages-'));
   try {
-    const store=new FileCollectionState(join(dir,'state.json'));let calls=0;
+    const store=new FileCollectionState(join(dir,'state.json'));let calls=0;const reservations=[];
     const result=await runInitialArchive({store,rawDirectory:join(dir,'raw'),marketId:'fixture:pages',
       expressions:['alpha'],queryVersion:'1',start,through:start+HISTORY_MINUTES*60,
       now:start+HISTORY_MINUTES*60,estimatedCostMicros:1000,totalLimitMicros:1500,
+      beforeSourceRequest:request=>reservations.push(request),
       transport:{async count(){calls++;return {data:[],meta:{next_token:'second'}};}}});
     assert.equal(result.state,'FAILED');assert.equal(result.error,'BUDGET_EXHAUSTED');
     assert.equal(result.pages.length,1);assert.equal(calls,1);
+    assert.deepEqual(reservations.map(r=>[r.kind,r.costMicros]),[['initial',1000]]);
     assert.equal((await store.read()).totalSpentMicros,1000);
   } finally {await rm(dir,{recursive:true,force:true});}
 });
@@ -89,16 +91,19 @@ test('durable initial archive and regular five-minute poll charge once before tr
 test('failed HTTP attempt remains charged and is not silently retried', async () => {
   const dir=await mkdtemp(join(process.cwd(),'ante-collection-'));
   try {
-    const store=new FileCollectionState(join(dir,'state.json')); let calls=0;
+    const store=new FileCollectionState(join(dir,'state.json')); let calls=0;const reservations=[];
     const params={store,rawDirectory:join(dir,'raw'),transport:{async count(){calls++; throw new Error('X_HTTP_429');}},
       marketId:'fixture:fail',expressions:['alpha'],queryVersion:'1',historyStart:start,
-      from:start,through:start+300,now:start+300,estimatedCostMicros:5000};
+      from:start,through:start+300,now:start+300,estimatedCostMicros:5000,
+      beforeSourceRequest:request=>reservations.push(request)};
     assert.equal((await runRegularPoll(params)).state,'FAILED');
     assert.equal((await runRegularPoll(params)).state,'FAILED');
     assert.equal(calls,1); assert.equal((await store.read()).totalSpentMicros,5000);
     const second=await runRegularPoll({...params,now:start+600});
     assert.equal(second.state,'FAILED'); assert.equal(second.attempts,2); assert.equal(second.retryAt,start+1500);
     assert.equal(calls,2); assert.equal((await store.read()).totalSpentMicros,10000);
+    assert.deepEqual(reservations.map(r=>[r.kind,r.costMicros]),
+      [['regular',5000],['regular',5000]]);
   } finally { await rm(dir,{recursive:true,force:true}); }
 });
 

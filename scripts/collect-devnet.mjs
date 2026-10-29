@@ -1,5 +1,6 @@
 import {createRequire} from 'node:module';
-import {readFile,mkdir} from 'node:fs/promises';
+import {readFile,mkdir,stat} from 'node:fs/promises';
+import {randomUUID} from 'node:crypto';
 import {resolve,join} from 'node:path';
 import {setTimeout as sleep} from 'node:timers/promises';
 import * as sdk from '../clients/chain/dist/index.js';
@@ -15,13 +16,14 @@ import {GeneratedProgramEventDecoder} from '../services/indexer/src/generated-de
 import { heartbeat, checkStorage } from './runtime-status.mjs';
 import { collectorProjectionDbPath } from './collector-paths.mjs';
 import { assertPaidXApproved } from './paid-x-approvals.mjs';
+import { GlobalXBudget } from '../services/data/global-budget.mjs';
 
 // Explicit paid-data opt-in. Files stay on the execution host; no secrets in argv.
 const required=name=>{if(!process.env[name])throw Error(`MISSING_${name}`);return process.env[name];};
 const args=process.argv.slice(2);
 if(!args.includes('--execute')||process.env.ANTE_UP_ENABLE_PAID_X!=='yes'||args.some(a=>!['--execute','--initial','--follow'].includes(a)))throw Error('LIVE_EXECUTION_DISABLED');
 const kit=createRequire(new URL('../clients/chain/package.json',import.meta.url))('@solana/kit');
-let projection,repositories;
+let projection,repositories,globalBudget;
 let stopping=false;
 process.once('SIGTERM',()=>{stopping=true;});
 process.once('SIGINT',()=>{stopping=true;});
@@ -47,6 +49,15 @@ try{
  const approvalPath=required('ANTE_UP_APPROVED_X_MARKETS_PATH');
  const checkApproval=async()=>assertPaidXApproved(JSON.parse(await readFile(approvalPath,'utf8')),approvedMarket);
  await checkApproval();
+ const budgetPath=required('ANTE_UP_GLOBAL_X_BUDGET_DB');
+ if(!(await stat(budgetPath).catch(error=>{
+   if(error.code==='ENOENT')throw Error('GLOBAL_X_BUDGET_NOT_INITIALIZED');
+   throw error;
+ })).isFile())throw Error('GLOBAL_X_BUDGET_NOT_INITIALIZED');
+ globalBudget=new GlobalXBudget(budgetPath);
+ const beforeSourceRequest=({marketId,kind,costMicros,now})=>globalBudget.reserve({
+   id:randomUUID(),marketId,kind,costMicros,at:now,
+   day:new Date(now*1000).toISOString().slice(0,10)});
  config.token=(await readFile(required('X_BEARER_TOKEN_FILE'),'utf8')).trim();
  const publisher=await kit.createKeyPairSignerFromBytes(Uint8Array.from(JSON.parse(await readFile(required('ANTE_UP_PUBLISHER_KEYPAIR_FILE'),'utf8'))));
  const transport=sdk.createKitChainTransport(endpoint),programId=sdk.ANTE_UP_PROGRAM_ADDRESS;
@@ -84,7 +95,7 @@ try{
   // Do not buy fresh data when the publisher cannot fund the next snapshots.
   if((await rpc.getBalance(publisher.address).send()).value<10_000_000n)throw Error('PUBLISHER_SOL_LOW');
   await checkApproval();
-  const result=await runLiveCycle({config,argv:['--execute','--publish',...(initial?['--initial']:[])],now,store,publisherRuntime});
+  const result=await runLiveCycle({config,argv:['--execute','--publish',...(initial?['--initial']:[])],now,store,publisherRuntime,beforeSourceRequest});
   console.log(JSON.stringify(result));
   if(result.error==='BUDGET_EXHAUSTED')throw Error('BUDGET_EXHAUSTED');
   initial=false;
@@ -94,4 +105,4 @@ try{
 }catch(error){
  // Never print SDK provider URLs or token-bearing request context.
  console.error(/^[A-Z][A-Z0-9_]+$/.test(error.message)?error.message:'LIVE_COLLECTION_FAILED');process.exitCode=1;
-}finally{repositories?.close();projection?.close();}
+}finally{repositories?.close();projection?.close();globalBudget?.close();}

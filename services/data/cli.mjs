@@ -27,7 +27,7 @@ export function latestSettledBucketEnd(now) {
   return Math.floor((now - 60) / 300) * 300;
 }
 
-export async function runLiveCycle({config,argv,now,store,transport,publisherRuntime=null}) {
+export async function runLiveCycle({config,argv,now,store,transport,publisherRuntime=null,beforeSourceRequest}) {
   store??=new FileCollectionState(join(config.directory,'collection.json'));
   transport??=new XCountsHttpAdapter({bearerToken:config.token});
   let pendingPublication=null;
@@ -56,6 +56,7 @@ export async function runLiveCycle({config,argv,now,store,transport,publisherRun
   const common={store,rawDirectory:join(config.directory,'raw'),transport,
     marketId:config.marketId,expressions:config.expressions,queryVersion:config.queryVersion,
     estimatedCostMicros:config.estimatedCostMicros,
+    beforeSourceRequest,
     initialLimitMicros:config.initialLimitMicros,
     dailyLimitMicros:config.dailyLimitMicros,
     totalLimitMicros:config.totalLimitMicros};

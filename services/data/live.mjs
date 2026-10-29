@@ -42,7 +42,8 @@ export class FileCollectionState {
 }
 
 export async function runInitialArchive({store,rawDirectory,transport,marketId,expressions,queryVersion,start,through,now,
-  estimatedCostMicros,initialLimitMicros=100_000_000,totalLimitMicros=100_000_000,configVersion='1'}) {
+  estimatedCostMicros,initialLimitMicros=100_000_000,totalLimitMicros=100_000_000,configVersion='1',
+  beforeSourceRequest}) {
   check(Number.isSafeInteger(start) && start % 60 === 0 && through === start + HISTORY_MINUTES*60 && now >= through);
   check(Number.isSafeInteger(estimatedCostMicros) && estimatedCostMicros > 0);
   const query = buildQuery(expressions), queryHash = queryHashFor(query), key = `initial:${marketId}:${queryVersion}`;
@@ -59,6 +60,7 @@ export async function runInitialArchive({store,rawDirectory,transport,marketId,e
     while (true) {
       check(pages.length<500,'X_PAGE_LIMIT');
       check(state.totalSpentMicros+estimatedCostMicros<=Math.min(initialLimitMicros,totalLimitMicros),'BUDGET_EXHAUSTED');
+      await beforeSourceRequest?.({marketId,kind:'initial',costMicros:estimatedCostMicros,now});
       state.totalSpentMicros+=estimatedCostMicros;
       state.batches[key]={id:key,state:'REQUESTING',chargedMicros:(pages.length+1)*estimatedCostMicros,
         requestedAt:now,pages,nextToken};
@@ -105,7 +107,8 @@ export async function runInitialArchive({store,rawDirectory,transport,marketId,e
 // failed/429 requests are not refunded because provider billing is unverified.
 export async function runRegularPoll({ store, rawDirectory, transport, marketId, expressions, queryVersion,
   historyStart, from, through, now, estimatedCostMicros, dailyLimitMicros = 10_000_000,
-  totalLimitMicros = 100_000_000, configVersion = '1', kind = 'regular', revision = '0' }) {
+  totalLimitMicros = 100_000_000, configVersion = '1', kind = 'regular', revision = '0',
+  beforeSourceRequest }) {
   check(Number.isSafeInteger(now) && Number.isSafeInteger(from) && Number.isSafeInteger(through) &&
     from % 300 === 0 && through % 300 === 0 && through >= from + 300 &&
     through <= from + 7*86400 && through <= now && Number.isSafeInteger(historyStart));
@@ -124,6 +127,7 @@ export async function runRegularPoll({ store, rawDirectory, transport, marketId,
   const knownMarket=Boolean(state.markets[marketId]);
   check(market.queryHash === queryHash && market.queryVersion === queryVersion, 'VERSION_MISMATCH');
   if (kind==='regular') check(market.lastPollAt === undefined || now >= market.lastPollAt + 300, 'POLL_NOT_DUE');
+  await beforeSourceRequest?.({marketId,kind:'regular',costMicros:estimatedCostMicros,now});
   state.spentByDay[day] = (state.spentByDay[day] ?? 0) + estimatedCostMicros;
   state.totalSpentMicros += estimatedCostMicros;
   const attempts=(priorBatch?.attempts??0)+1;
