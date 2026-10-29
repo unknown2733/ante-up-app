@@ -36,6 +36,13 @@ test('candidate repository resolves immutable B account by PDA, owner and hash',
   ownerProgramId=marketAddress;
   await assert.rejects(repositories.resolve({marketAddress,sequence:candidate.sequence,payloadHash:hash,scope}),/SNAPSHOT_ACCOUNT_UNAVAILABLE/);
   repositories.close();
+  const archived=new SqliteEventRepositories(':memory:',{async get(){return null;}},{
+    async get(id){return id===String(pda)?{ownerProgramId:programId,data}:null;},
+    async entries(){return [{address:String(pda),ownerProgramId:programId,data}];}
+  });
+  archived.putCandidate(scope,marketAddress,candidate);
+  assert.equal((await archived.resolve({marketAddress,sequence:candidate.sequence,payloadHash:hash,scope})).account.address,String(pda));
+  archived.close();
 });
 
 test('program scan repairs omitted historical snapshots by direct PDA read and fails closed if absent',async()=>{
@@ -69,4 +76,24 @@ test('program scan repairs omitted historical snapshots by direct PDA read and f
   assert.equal(individualReads,1);
   present=false;
   await assert.rejects(reader.scan(programId),/PROGRAM_SCAN_INCOMPLETE/);
+  const archive={async get(id:string){return String(id)===String(first)?{ownerProgramId:programId,data:snapshotData(1n)}:null;},
+    async entries(){return [{address:String(first),ownerProgramId:programId,data:snapshotData(1n)}];}};
+  const rpcWithRetiredFirst={
+    getProgramAccounts:()=>({send:async()=>({context:{slot:78n},value:[
+      {pubkey:marketAddress,account:account(marketData)},
+      {pubkey:String(second),account:account(snapshotData(2n))}
+    ]})}),
+    getAccountInfo:()=>({send:async()=>({value:null})})
+  } as unknown as ConstructorParameters<typeof KitFinalizedAccountReader>[1];
+  const archivedReader=new KitFinalizedAccountReader('https://rpc.invalid',rpcWithRetiredFirst,archive);
+  assert.equal((await archivedReader.scan(programId)).accounts.length,3);
+  const archivedLatest={async get(id:string){return String(id)===String(second)?{ownerProgramId:programId,data:snapshotData(2n)}:null;},
+    async entries(){return [{address:String(second),ownerProgramId:programId,data:snapshotData(2n)}];}};
+  const latestMissingRpc={
+    getProgramAccounts:()=>({send:async()=>({context:{slot:79n},value:[{pubkey:marketAddress,account:account(marketData)},
+      {pubkey:String(first),account:account(snapshotData(1n))}]})}),
+    getAccountInfo:()=>({send:async()=>({value:null})})
+  } as unknown as ConstructorParameters<typeof KitFinalizedAccountReader>[1];
+  await assert.rejects(new KitFinalizedAccountReader('https://rpc.invalid',latestMissingRpc,archivedLatest).scan(programId),
+    /LATEST_SNAPSHOT_OFFCHAIN/);
 });

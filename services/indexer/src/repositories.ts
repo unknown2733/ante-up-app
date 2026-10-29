@@ -2,26 +2,35 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFile } from 'node:fs/promises';
 import { address, createSolanaRpc } from '@solana/kit';
 import { retryRpcRead } from './rpc-retry.ts';
-import { findSnapshotPda, getMarketDecoder, getSnapshotDecoder, MARKET_DISCRIMINATOR, SNAPSHOT_DISCRIMINATOR } from '../../../clients/chain/dist/index.js';
+import { ANTE_UP_PROGRAM_ADDRESS, findSnapshotPda, getMarketDecoder, getSnapshotDecoder, MARKET_DISCRIMINATOR, SNAPSHOT_DISCRIMINATOR } from '../../../clients/chain/dist/index.js';
 import type { ProofStatus, SnapshotCandidate } from '../../../contracts/types.ts';
 import { canonical, hash as canonicalHash } from '../../data/index.mjs';
 import { status as evidenceStatus } from '../../evidence/index.mjs';
 import type { ProofResolver, SnapshotResolver } from './generated-decoder.ts';
 import { snapshotViewFromGenerated } from './snapshot.ts';
 import type { StreamKey } from './sqlite.ts';
+import { TrustedSnapshotArchive } from './snapshot-archive.ts';
 
 const hex = /^[0-9a-f]{64}$/;
 export interface AccountBytes {ownerProgramId:string; data:Uint8Array}
-export interface FinalizedAccountReader {get(address: string): Promise<AccountBytes | null>}
+export interface FinalizedAccountReader {get(address: string): Promise<AccountBytes | null>;archive?:SnapshotArchiveReader}
 export interface ProgramAccountBytes extends AccountBytes {address:string}
 export interface FinalizedProgramAccountScanner {scan(programId:string):Promise<{slot:string;accounts:ProgramAccountBytes[]}>}
+export interface SnapshotArchiveReader {
+  get(address:string):Promise<AccountBytes|null>;
+  entries():Promise<ProgramAccountBytes[]>;
+}
 
 /** Finalized read; callers verify owner, PDA, discriminator and candidate hash. */
 export class KitFinalizedAccountReader implements FinalizedAccountReader {
   private readonly rpc: ReturnType<typeof createSolanaRpc>;
-  constructor(endpoint: string, rpc?: ReturnType<typeof createSolanaRpc>) {
+  readonly archive?: SnapshotArchiveReader;
+  constructor(endpoint: string, rpc?: ReturnType<typeof createSolanaRpc>, archive?: SnapshotArchiveReader) {
     if (!/^https?:\/\//.test(endpoint)) throw new Error('RPC_URL_REQUIRED');
     this.rpc = rpc ?? createSolanaRpc(endpoint);
+    const path=process.env.ANTE_UP_SNAPSHOT_ARCHIVE_PATH,sha=process.env.ANTE_UP_SNAPSHOT_ARCHIVE_SHA256;
+    if(Boolean(path)!==Boolean(sha))throw new Error('SNAPSHOT_ARCHIVE_CONFIG_INCOMPLETE');
+    this.archive=archive??(path&&sha?new TrustedSnapshotArchive(path,sha,String(ANTE_UP_PROGRAM_ADDRESS)):undefined);
   }
   async get(accountAddress: string): Promise<AccountBytes | null> {
     const response = await retryRpcRead(() => this.rpc.getAccountInfo(address(accountAddress),{commitment:'finalized',encoding:'base64'}).send());
@@ -37,6 +46,18 @@ export class KitFinalizedAccountReader implements FinalizedAccountReader {
       if (!Array.isArray(data) || data[1]!=='base64' || typeof data[0]!=='string') throw new Error('INVALID_ACCOUNT_DATA');
       return {address:String(row.pubkey),ownerProgramId:String(row.account.owner),data:Buffer.from(data[0],'base64')};
     });
+    const listed=new Map(accounts.map(account=>[account.address,account]));
+    const archived=await this.archive?.entries()??[];
+    const archiveByAddress=new Map<string,ProgramAccountBytes>();
+    for(const row of archived){
+      if(row.ownerProgramId!==programId||archiveByAddress.has(row.address))throw new Error('ARCHIVE_PROGRAM_MISMATCH');
+      archiveByAddress.set(row.address,row);
+      const current=listed.get(row.address);
+      if(current){
+        if(current.ownerProgramId!==row.ownerProgramId||!Buffer.from(current.data).equals(Buffer.from(row.data)))
+          throw new Error('ARCHIVE_CHAIN_MISMATCH');
+      }else accounts.push(row);
+    }
     // Some Devnet RPC account indexes omit older Snapshot PDAs while reporting a
     // newer finalized context slot. The immutable market sequence lets us
     // detect those holes and verify each missing PDA with a direct account read.
@@ -58,6 +79,17 @@ export class KitFinalizedAccountReader implements FinalizedAccountReader {
     for(const [market,latest] of markets){
       if(latest>1_000_000n)throw new Error('PROGRAM_SCAN_SEQUENCE_INVALID');
       const seen=snapshots.get(market)??new Set<string>();
+      // The current Snapshot must remain on chain. An archive never substitutes
+      // for the latest account used by live quotes and graduation.
+      if(latest>0n){
+        const [latestAddress]=await findSnapshotPda({market:address(market),sequence:latest},{programAddress:address(programId)});
+        if(archiveByAddress.has(String(latestAddress))&&!listed.has(String(latestAddress))){
+          const live=await this.get(String(latestAddress));
+          const archivedLatest=archiveByAddress.get(String(latestAddress))!;
+          if(!live||live.ownerProgramId!==programId||!Buffer.from(live.data).equals(Buffer.from(archivedLatest.data)))
+            throw new Error('LATEST_SNAPSHOT_OFFCHAIN');
+        }
+      }
       for(let sequence=1n;sequence<=latest;sequence++){
         if(seen.has(sequence.toString()))continue;
         if(++repaired>32)throw new Error('PROGRAM_SCAN_INCOMPLETE');
@@ -86,8 +118,10 @@ export class KitFinalizedAccountReader implements FinalizedAccountReader {
 export class SqliteEventRepositories implements SnapshotResolver, ProofResolver {
   private readonly db: DatabaseSync;
   private readonly accounts: FinalizedAccountReader;
-  constructor(path: string, accounts: FinalizedAccountReader) {
+  private readonly archive?: SnapshotArchiveReader;
+  constructor(path: string, accounts: FinalizedAccountReader, archive: SnapshotArchiveReader|undefined=accounts.archive) {
     this.accounts=accounts;
+    this.archive=archive;
     this.db = new DatabaseSync(path);
     this.db.exec(`PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;
       CREATE TABLE IF NOT EXISTS snapshot_candidates(cluster TEXT NOT NULL,program_id TEXT NOT NULL,market_address TEXT NOT NULL,sequence TEXT NOT NULL,payload_hash TEXT NOT NULL,candidate_json TEXT NOT NULL,PRIMARY KEY(cluster,program_id,market_address,sequence),UNIQUE(cluster,program_id,payload_hash));
@@ -153,7 +187,7 @@ export class SqliteEventRepositories implements SnapshotResolver, ProofResolver 
     const candidate = JSON.parse(row.candidate_json) as SnapshotCandidate;
     if (canonicalHash(candidate) !== payloadHash || candidate.marketId !== marketAddress) throw new Error('CANDIDATE_HASH_MISMATCH');
     const [snapshotAddress] = await findSnapshotPda({market:address(marketAddress),sequence:BigInt(sequence)},{programAddress:address(input.scope.programId)});
-    const account = await this.accounts.get(String(snapshotAddress));
+    const account = await this.accounts.get(String(snapshotAddress)) ?? await this.archive?.get(String(snapshotAddress));
     if (!account || account.ownerProgramId !== input.scope.programId || !Buffer.from(account.data.subarray(0,8)).equals(Buffer.from(SNAPSHOT_DISCRIMINATOR))) throw new Error('SNAPSHOT_ACCOUNT_UNAVAILABLE');
     const view = snapshotViewFromGenerated(getSnapshotDecoder().decode(account.data),String(snapshotAddress),account.ownerProgramId);
     return {marketId:marketAddress,candidate,account:view};

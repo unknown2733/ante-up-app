@@ -8,6 +8,7 @@ import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 import { buildArchive } from './export-snapshot-archive.mjs';
 import { verifyArchive } from './verify-snapshot-archive.mjs';
+import { TrustedSnapshotArchive } from '../services/indexer/src/snapshot-archive.ts';
 import { fixtureMarkets } from '../services/api/src/fixture.ts';
 import { snapshotViewFromGenerated, verifyPublishedSnapshot } from '../services/indexer/src/snapshot.ts';
 import { hash as canonicalHash } from '../services/data/index.mjs';
@@ -75,6 +76,10 @@ test('archive preserves only complete finalized, PDA-bound snapshots and never o
     const verifiedArchive = await verifyArchive({ archivePath: outPath, expectedSha256: trustedSha });
     assert.equal(verifiedArchive.snapshots, 1);
     assert.equal(verifiedArchive.integrity, 'ok');
+    const trusted = new TrustedSnapshotArchive(outPath, trustedSha, programId);
+    assert.equal((await trusted.entries()).length, 1);
+    assert.equal(Buffer.compare((await trusted.get(String(snapshotAddress))).data, Buffer.from(snapshotData)), 0);
+    await assert.rejects(new TrustedSnapshotArchive(outPath, '0'.repeat(64), programId).entries(), /ARCHIVE_FILE_HASH_MISMATCH/);
     await assert.rejects(verifyArchive({ archivePath: outPath, expectedSha256: '0'.repeat(64) }), /ARCHIVE_FILE_HASH_MISMATCH/);
     await assert.rejects(buildArchive({ ...input, create: true }), /EEXIST/);
     const bad = { async scan() { return { slot: '10', accounts: [
