@@ -62,6 +62,18 @@ Do not infer live service health or economic safety from a passing local test.
 
 ## Paid X market approval
 
+Before approving a newly registered market, use the read-only Devnet inspector
+to see its exact curve inventory, latest on-chain observation, and approval
+status. It opens no signer and makes no paid X request:
+
+```sh
+ANTE_UP_RPC_URL_FILE=/absolute/path/devnet-rpc.url ANTE_UP_APPROVED_X_MARKETS_PATH=/absolute/path/approved-x-markets.json node scripts/market-activation-preflight.mjs MARKET_PDA
+```
+
+This is a preliminary gate. The existing `graduate-market.mjs` finalized plan
+must still verify the full funding, liability, source freshness, and account
+conditions before any graduation transaction.
+
 All approved collectors also share one durable X spending ledger. Its limits
 are $10 per UTC day, $100 for historical initialization, and $150 total across
 all markets. Every paid request reserves its estimated cost before reaching X;
