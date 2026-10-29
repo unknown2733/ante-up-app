@@ -1,0 +1,10 @@
+[Unit]
+Description=Check approved Ante Up X post metrics for a due collection
+
+[Timer]
+OnCalendar=*-*-* *:00,15,30,45:00 UTC
+Persistent=true
+Unit=ante-up-reference-x.service
+
+[Install]
+WantedBy=timers.target

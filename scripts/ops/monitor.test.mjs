@@ -42,6 +42,14 @@ test('healthy observer accepts partial price coverage and makes only Devnet read
   assert.deepEqual(f.calls.map(c=>c.method),['getGenesisHash','getBalance']);assert.equal(f.calls[1].params[1].commitment,'finalized');
 });
 
+test('an evidence admission guard failure raises an operational alert',async t=>{
+  const f=await fixture(t);
+  f.config.services.push({name:'evidence',path:'health/evidence.json',maxAgeSeconds:180});
+  await f.save(join(f.config.stateDirectory,'health/evidence.json'),{at:now-1000,held:0,admissionGuard:'UNSAFE'});
+  const report=await collect(f.config,{now,fetcher:f.fetcher});
+  assert.ok(report.alerts.some(alert=>alert.id==='PROOF_ADMISSION_UNSAFE:evidence'));
+});
+
 test('an additional keyword is monitored from its own collection journal and shared finalized index',async t=>{
   const f=await fixture(t),extra='33333333333333333333333333333333';
   await mkdir(join(f.config.stateDirectory,'tariff'));

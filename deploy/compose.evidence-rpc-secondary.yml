@@ -1,0 +1,6 @@
+# Apply after compose.evidence.yml when the primary Devnet RPC is unavailable.
+# The secondary endpoint is kept in a private file on the host.
+services:
+  evidence:
+    volumes:
+      - ${ANTE_UP_SECRET_DIR:?Set secret directory}/devnet-rpc.secondary.url:/run/secrets/rpc.url:ro

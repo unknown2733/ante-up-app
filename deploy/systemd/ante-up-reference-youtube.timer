@@ -1,0 +1,10 @@
+[Unit]
+Description=Check approved Ante Up YouTube views for a due collection
+
+[Timer]
+OnCalendar=*-*-* *:05,20,35,50:00 UTC
+Persistent=true
+Unit=ante-up-reference-youtube.service
+
+[Install]
+WantedBy=timers.target

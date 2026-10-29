@@ -53,6 +53,7 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
       age(health.lastPollAt,900,'COLLECTION_STALE',service.name);
     if(service.name==='price-history'&&!(health.status==='OK'||health.status==='PARTIAL'&&health.valid>0&&health.readErrors===0))add('SERVICE_ERROR',service.name);
     if(service.name==='evidence'&&health.held>0)add('PROOF_WORKER_HELD','evidence','warning',{held:health.held});
+    if(service.name==='evidence'&&health.admissionGuard==='UNSAFE')add('PROOF_ADMISSION_UNSAFE','evidence');
   }
   await Promise.all((c.httpChecks??[]).map(async probe=>{
     try{const response=await fetcher(probe.url,{signal:AbortSignal.timeout(10000),redirect:'error'});check(response.ok,'HTTP_UNAVAILABLE');
