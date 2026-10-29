@@ -14,7 +14,7 @@ docker inspect ante-up-ops-monitor-1 --format '{{index .Config.Labels "com.docke
 docker inspect ante-up-ops-monitor-1 --format '{{.Config.Image}}' > "$scratch/image"
 IFS=',' read -r -a files < "$scratch/files"
 IFS=',' read -r -a env_files < "$scratch/env"
-args=(-p ante-up)
+args=(-p ante-up --profile ops)
 for file in "${env_files[@]}"; do args+=(--env-file "$file"); done
 for file in "${files[@]}"; do args+=(-f "$file"); done
 docker compose "${args[@]}" config --format json > "$scratch/old.json"
