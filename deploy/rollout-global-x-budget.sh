@@ -54,7 +54,7 @@ print(service,'CONFIG_DIFF_IMAGE_AND_GLOBAL_BUDGET_PATH_ONLY')
 PY
 done
 
-docker run --rm --user 1000:1000 -v "$state:/state:ro" "$image" +  node scripts/seed-global-x-budget.mjs --plan /state/global-x-budget.sqlite +  /state/live-smoke/collection.json /state/tariff/collection.json
+docker run --rm --user 1000:1000 -v "$state:/state:ro" "$image" node scripts/seed-global-x-budget.mjs --plan /state/global-x-budget.sqlite /state/live-smoke/collection.json /state/tariff/collection.json
 [[ "$mode" == --apply ]] || exit 0
 [[ ! -e "$state/global-x-budget.sqlite" ]] || { echo GLOBAL_X_BUDGET_ALREADY_INITIALIZED; exit 1; }
 
@@ -67,7 +67,7 @@ rollback() {
 }
 trap rollback ERR
 docker stop -t 60 ante-up-collector-1 ante-up-collector-tariff-1 > /dev/null
-docker run --rm --user 1000:1000 -v "$state:/state" "$image" +  node scripts/seed-global-x-budget.mjs --apply /state/global-x-budget.sqlite +  /state/live-smoke/collection.json /state/tariff/collection.json
+docker run --rm --user 1000:1000 -v "$state:/state" "$image" node scripts/seed-global-x-budget.mjs --apply /state/global-x-budget.sqlite /state/live-smoke/collection.json /state/tariff/collection.json
 
 for service in collector collector-tariff; do
   compose_args "$service" new
