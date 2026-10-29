@@ -1,6 +1,7 @@
 // Run behind flock -n -F /state/evidence.lock. One evidence writer; the
 // existing indexer is the only projection/cursor writer. No private data logs.
 import {spawn} from 'node:child_process';
+import {evidenceRetryDelaySeconds} from './evidence-retry-policy.mjs';
 import {join} from 'node:path';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {ReadOnlyProjection,readJson,durableJson,pendingRecords,evidenceScope} from '../services/evidence/worker-support.mjs';
@@ -84,7 +85,7 @@ try{
    const exitCode=await run(record.id);
    if(exitCode!==0)failedInPass=true;
    if(!preflight){state.attempts[record.id]={at:Math.floor(Date.now()/1000),exitCode,
-     retryAt:Math.floor(Date.now()/1000)+(exitCode===0?300:3600)};await durableJson(statePath,state);}
+     retryAt:Math.floor(Date.now()/1000)+evidenceRetryDelaySeconds(exitCode)};await durableJson(statePath,state);}
   }
   detail.state=detail.admissionGuard==='UNSAFE'?'ADMISSION_UNSAFE':'WAITING';detail.activeRecord=null;
   if(!preflight)await heartbeat('evidence',detail);

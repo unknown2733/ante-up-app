@@ -13,6 +13,7 @@ import {createReceiptVerifier} from '../services/evidence/receipt.mjs';
 import {createArweaveInclusionVerifier} from '../services/evidence/inclusion.mjs';
 import {createJournaledUpload,signedItemSize} from '../services/evidence/upload-journal.mjs';
 import {createTurboClient,encodeStorageContent,storageTags,quoteUploadCosts,retryTurboRead} from '../services/evidence/turbo.mjs';
+import {isTransientTurboRead,TURBO_READ_EXIT_CODE} from './evidence-retry-policy.mjs';
 import {FileCandidateRepository} from '../services/data/publisher.mjs';
 import {FileRawResponseRepository} from '../services/data/index.mjs';
 import {SqliteProjectionStore} from '../services/indexer/src/sqlite.ts';
@@ -165,5 +166,6 @@ try{
  // messages can contain endpoint URLs or credentials, so never print them.
  const location=(error.stack??'').match(/(?:\/app|\/work)\/[A-Za-z0-9_./-]+:\d+:\d+/)?.[0]??null;
  const code=typeof error.code==='string'&&/^[A-Z][A-Z0-9_]+$/.test(error.code)?error.code:null;
- console.error(JSON.stringify({errorClass:error.name??'Error',code,location}));process.exitCode=1;}
+ console.error(JSON.stringify({errorClass:error.name??'Error',code,location}));
+ process.exitCode=isTransientTurboRead(error)?TURBO_READ_EXIT_CODE:1;}
 finally{repositories?.close();projection?.close();}
