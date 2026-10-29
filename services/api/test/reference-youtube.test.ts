@@ -15,6 +15,7 @@ test('one approved YouTube statistics batch becomes three durable public observa
       calls++;
       const request = new URL(url);
       assert.equal(request.hostname, 'www.googleapis.com');
+      assert.equal(request.pathname, '/youtube/v3/videos:batchGetStats');
       assert.equal(request.searchParams.get('part'), 'statistics');
       assert.equal(request.searchParams.get('id')?.split(',').length, 3);
       assert.equal(request.searchParams.has('key'), false);

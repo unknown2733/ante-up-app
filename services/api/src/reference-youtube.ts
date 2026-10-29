@@ -7,12 +7,12 @@ import { ReferenceObservationStore } from './reference-observations.ts';
 
 const videos = platformReferences.filter(item => item.platform === 'YouTube');
 
-/** One bounded YouTube videos.list call for the exact approved preview videos. */
+/** One bounded YouTube statistics batch for the exact approved reference videos. */
 export async function collectYouTubeReferenceViews(input: {
   dbPath: string; apiKey: string; fetcher?: typeof fetch; nowMs?: () => number;
 }) {
   if (!input.apiKey || input.apiKey.length > 512) throw new Error('YOUTUBE_KEY_REQUIRED');
-  const url = new URL('https://www.googleapis.com/youtube/v3/videos');
+  const url = new URL('https://www.googleapis.com/youtube/v3/videos:batchGetStats');
   url.searchParams.set('part', 'statistics');
   url.searchParams.set('id', videos.map(item => new URL(item.subjectUrl).searchParams.get('v')).join(','));
   const response = await (input.fetcher ?? fetch)(url.toString(), {

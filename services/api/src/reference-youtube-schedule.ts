@@ -11,7 +11,7 @@ export type YouTubeCadence = 'reference' | 'oracle-prep';
 const POLICIES = {
   reference: { table: 'reference_youtube_requests', minIntervalMs: SIX_HOURS_MS, dailyCap: 4, rollingCap: 120 },
   // Five-minute timer with a small scheduling allowance. The daily cap keeps
-  // this preparation feed within 288 videos.list calls even after manual runs.
+  // this preparation feed within 288 statistics batch calls even after manual runs.
   'oracle-prep': { table: 'reference_youtube_oracle_prep_requests', minIntervalMs: 270_000,
     dailyCap: 288, rollingCap: 8_640 },
 } as const;
