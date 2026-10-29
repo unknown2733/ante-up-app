@@ -35,7 +35,9 @@ test('weekly trigger waits for data cutoff and never repeats an opened LP window
  assert.equal(weeklyDue(finance(),week+959).due,false);
  assert.equal(weeklyDue(finance(),week+960).reason,'EMPTY_RECOVERY');
  assert.equal(weeklyDue(finance({openPositions:1}),week+960).reason,'OBSERVED_SETTLEMENT');
- assert.throws(()=>weeklyDue(finance({openPositions:1}),week+86401),/WEEKLY_OBSERVED_DEADLINE_EXCEEDED/);
+ assert.equal(weeklyDue(finance({openPositions:1}),week+86401).reason,'OBSERVED_SETTLEMENT');
+ assert.equal(weeklyDue(finance({openPositions:1}),week+87300).reason,'OBSERVED_SETTLEMENT');
+ assert.throws(()=>weeklyDue(finance({openPositions:1}),week+87361),/WEEKLY_OBSERVED_DEADLINE_EXCEEDED/);
  assert.equal(weeklyDue(finance({currentMaturity:0n}),week+960).due,true);
  assert.equal(weeklyDue(finance({currentMaturity:0n,lastLpMaturity:BigInt(week),
   lpWindowStart:BigInt(week+970),lpWindowEnd:BigInt(week+1870)}),week+1900).reason,'LP_ALREADY_OPENED');

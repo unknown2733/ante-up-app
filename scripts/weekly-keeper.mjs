@@ -46,7 +46,10 @@ export function weeklyDue(finance,now,market=null){
  if(last>=week&&lpStart>=week)return {due:false,reason:'LP_ALREADY_OPENED'};
  if(maturity>0){
   if(now<maturity+960)return {due:false,reason:'WAIT_FOR_CUTOFF'};
-  if(open>0&&now>maturity+86_400)fail('WEEKLY_OBSERVED_DEADLINE_EXCEEDED');
+  // An outage may start as late as the 15-minute observation cutoff. Its
+  // 24-hour recovery deadline therefore falls after maturity + 24 hours.
+  // Keep the attempt window aligned with inWeeklyServiceWindow instead.
+  if(open>0&&now>maturity+86_400+960)fail('WEEKLY_OBSERVED_DEADLINE_EXCEEDED');
   return {due:true,reason:open>0?'OBSERVED_SETTLEMENT':'EMPTY_RECOVERY'};
  }
  if(week<=last||now<week+960)return {due:false,reason:'WAIT_FOR_WEEK'};
