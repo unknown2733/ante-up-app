@@ -8,12 +8,13 @@ import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 import { buildArchive } from './export-snapshot-archive.mjs';
 import { verifyArchive } from './verify-snapshot-archive.mjs';
+import { planSnapshotRetirement } from './plan-snapshot-retirement.mjs';
 import { TrustedSnapshotArchive } from '../services/indexer/src/snapshot-archive.ts';
 import { fixtureMarkets } from '../services/api/src/fixture.ts';
 import { snapshotViewFromGenerated, verifyPublishedSnapshot } from '../services/indexer/src/snapshot.ts';
 import { hash as canonicalHash } from '../services/data/index.mjs';
 import { AdmissionReason, AdmissionState, DataStatus, MarketPhase, findSnapshotPda,
-  getMarketEncoder, getSnapshotEncoder, getSnapshotDecoder, ANTE_UP_PROGRAM_ADDRESS } from '../clients/chain/dist/index.js';
+  getMarketEncoder, getMarketDecoder, getSnapshotEncoder, getSnapshotDecoder, ANTE_UP_PROGRAM_ADDRESS } from '../clients/chain/dist/index.js';
 
 const kit = createRequire(new URL('../clients/chain/package.json', import.meta.url))('@solana/kit');
 const GENESIS = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
@@ -80,6 +81,22 @@ test('archive preserves only complete finalized, PDA-bound snapshots and never o
     assert.equal((await trusted.entries()).length, 1);
     assert.equal(Buffer.compare((await trusted.get(String(snapshotAddress))).data, Buffer.from(snapshotData)), 0);
     await assert.rejects(new TrustedSnapshotArchive(outPath, '0'.repeat(64), programId).entries(), /ARCHIVE_FILE_HASH_MISMATCH/);
+    const laterMarket = getMarketEncoder().encode({ ...getMarketDecoder().decode(marketData), latestSequence: 2n });
+    const rpcAccount = data => ({ owner: programId, data: [Buffer.from(data).toString('base64'), 'base64'], lamports: 1991360n });
+    let snapshotPresent = true;
+    const rpc = { getGenesisHash: () => ({ send: async () => GENESIS }),
+      getAccountInfo: id => ({ send: async () => ({ value: String(id) === marketAddress
+        ? rpcAccount(laterMarket) : snapshotPresent && String(id) === String(snapshotAddress)
+          ? rpcAccount(snapshotData) : null }) }) };
+    const retirementInput = { archivePath: outPath, expectedSha256: trustedSha, rpc,
+      minAgeDays: 7, nowSeconds: Number(candidate.computedAt) + 8 * 86400 };
+    const retirementPlan = await planSnapshotRetirement(retirementInput);
+    assert.equal(retirementPlan.mode, 'READ_ONLY');
+    assert.equal(retirementPlan.eligibleByAge, 1);
+    assert.equal(retirementPlan.checkedOnChain, 1);
+    assert.equal(retirementPlan.batch[0].refundableLamports, '1991360');
+    snapshotPresent = false;
+    await assert.rejects(planSnapshotRetirement(retirementInput), /RETIRE_CANDIDATE_NOT_ON_CHAIN/);
     await assert.rejects(verifyArchive({ archivePath: outPath, expectedSha256: '0'.repeat(64) }), /ARCHIVE_FILE_HASH_MISMATCH/);
     await assert.rejects(buildArchive({ ...input, create: true }), /EEXIST/);
     const bad = { async scan() { return { slot: '10', accounts: [
