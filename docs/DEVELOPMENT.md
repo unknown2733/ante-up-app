@@ -144,3 +144,23 @@ node scripts/approve-paid-x-market.mjs --apply /absolute/path/approved-x-markets
 The apply step writes the registry atomically and is idempotent. It does not
 start a collector, buy data, publish observations, provide graduation capital,
 or open Pro trading. Those steps require their own chain and budget checks.
+
+## Finalized Snapshot archive preflight
+
+`scripts/export-snapshot-archive.mjs` creates a separate, immutable SQLite copy
+of every currently indexed Devnet Snapshot account. It compares the finalized
+program account, PDA, candidate hash and fields, and finalized indexer event.
+The source index remains read only. The output path must not exist.
+
+```sh
+node scripts/export-snapshot-archive.mjs --plan SOURCE_INDEX.sqlite OUTPUT_ARCHIVE.sqlite DEVNET_RPC_URL_FILE
+node scripts/export-snapshot-archive.mjs --create SOURCE_INDEX.sqlite OUTPUT_ARCHIVE.sqlite DEVNET_RPC_URL_FILE
+```
+
+The tool verifies the Devnet genesis, requires a complete sequence for each
+market, writes atomically, and stores a count and digest in the archive manifest.
+Keep the archive inside the encrypted backup scope and verify its SQLite
+integrity and offsite recovery before considering any account retirement.
+Creating this archive does not close onchain accounts, recover rent, or enable
+the indexer to replay events after a Snapshot account is closed. That requires
+a separately verified archive read path and a reviewed program upgrade.
