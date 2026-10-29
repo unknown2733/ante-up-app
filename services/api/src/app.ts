@@ -70,6 +70,7 @@ export function createApp(options: {
   admin?: AdminAuthorizer; transactions?: TransactionAdapter; operations?: OperationStore;
   liveStore?: LiveStore; chain?: OperationChain; programId?: string; financial?: FinancialReader; financialTransactions?: FinancialTransactionAdapter;
   finalizeRegistration?: (requestId:string)=>Promise<void>;
+  reconcileExpiredRegistrations?: ()=>Promise<void>;
   consumer?: ConsumerApiBindings;
   visitorSol?: VisitorSolFaucet;
   referenceObservations?: Pick<ReferenceObservationStore, 'latest' | 'history'>;
@@ -165,6 +166,7 @@ export function createApp(options: {
             if (existing.expiresAt <= asOf) return fail('REQUOTE_REQUIRED','financial quote expired',intent.requestId);
             return json(envelope({kind:'quote',quote:existing},asOf));
           }
+          if(intent.action==='registerMarket')await options.reconcileExpiredRegistrations?.();
           const market = intent.marketId ? (await read.markets(0)).map(validateMarket).find(m => m.id === intent.marketId) ?? null : null;
           if (intent.marketId && !market) return fail('INVALID_INPUT','market not found',intent.requestId);
           const quoted = await options.financial.quote(intent,market,asOf);

@@ -4,7 +4,7 @@ import { KitFinalizedAccountReader, SqliteEventRepositories, type FinalizedAccou
 import { SqliteFinalizedReadAdapter, type MarketRegistryEntry } from './live-read.ts';
 import { LiveStore } from './live-store.ts';
 import { KitBlockhashProvider, KitFreeTransactionAdapter, type BlockhashProvider } from './transaction.ts';
-import { KitOperationChain, type OperationChain } from './operation-chain.ts';
+import { KitOperationChain, reconcileLiveOperation, type OperationChain } from './operation-chain.ts';
 import type { SignatureVerifier } from './auth.ts';
 import type { FinancialReader, FinancialTransactionAdapter } from './financial.ts';
 import { FinalizedFinancialAccounts, FirstSliceFinancialReader } from './financial-chain.ts';
@@ -78,10 +78,19 @@ export function createLiveApp(config: {
       () => read.records(), namespace), notes), namespace };
     social = { notes, quotes, samples };
   }
+  const chain=config.chain??new KitOperationChain(config.rpcUrl);
   const app=createApp({mode:config.mode,programId:config.programId,read,transactions,liveStore,
-    chain:config.chain??new KitOperationChain(config.rpcUrl),verifier:config.verifier,financial:config.financial??firstSlice,
+    chain,verifier:config.verifier,financial:config.financial??firstSlice,
     financialTransactions:config.financialTransactions??new KitFirstSliceFinancialTransactionAdapter({state:financialState,reader:firstSlice,blockhashes,now}),
     finalizeRegistration:async requestId=>{await registrations.verifyAndFinalize(requestId,financialState);},now,consumer,
+    reconcileExpiredRegistrations:async()=>{
+      for(const requestId of registrations.expiredPending(now())){
+        try{
+          const operation=await reconcileLiveOperation(liveStore,chain,requestId,now());
+          if(operation.state==='FINALIZED')await registrations.verifyAndFinalize(requestId,financialState);
+        }catch{console.error('REGISTRATION_EXPIRY_RECONCILE_FAILED');}
+      }
+    },
     visitorSol:config.visitorSol,referenceObservations:referenceObservations??undefined});
   return {app,projection,repositories,liveStore,registrations,close() {
     social?.samples?.close();social?.quotes.close();social?.notes.close();referenceObservations?.close();

@@ -44,7 +44,7 @@ export class SqliteFinancialRegistrationStore {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const hasOperations=!!this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='live_operations'").get();
-      const expired=this.db.prepare(`SELECT request_id,market_address FROM financial_registrations WHERE state='PENDING' AND expires_at<=? ${hasOperations?'AND request_id NOT IN (SELECT request_id FROM live_operations)':''}`).all(now) as Array<{request_id:string;market_address:string}>;
+      const expired=this.db.prepare(`SELECT request_id,market_address FROM financial_registrations WHERE state='PENDING' AND expires_at<=? ${hasOperations?"AND NOT EXISTS (SELECT 1 FROM live_operations o WHERE o.request_id=financial_registrations.request_id AND o.state!='FAILED')":''}`).all(now) as Array<{request_id:string;market_address:string}>;
       for (const row of expired) {
         this.db.prepare('DELETE FROM financial_expressions WHERE request_id=?').run(row.request_id);
         this.db.prepare('DELETE FROM financial_registrations WHERE request_id=?').run(row.request_id);
@@ -71,6 +71,12 @@ export class SqliteFinancialRegistrationStore {
     if(!row)return null;
     const aliases=JSON.parse(row.aliases_json) as string[];
     return {address:row.market_address,seedHex:row.seed_hex,keyword:row.keyword,aliases,queryHash:row.query_hash,queryVersion:'1',expressions:[row.keyword,...aliases].sort()};
+  }
+  expiredPending(now:number,limit=5):string[] {
+    return (this.db.prepare(`SELECT r.request_id FROM financial_registrations r
+      JOIN live_operations o ON o.request_id=r.request_id
+      WHERE r.state='PENDING' AND r.expires_at<=? AND o.state!='FAILED'
+      ORDER BY r.expires_at ASC LIMIT ?`).all(now,limit) as Array<{request_id:string}>).map(row=>row.request_id);
   }
   markFinalized(requestId:string):void {this.db.prepare("UPDATE financial_registrations SET state='FINALIZED' WHERE request_id=?").run(requestId);}
   /** Recover a finalized registration even if the browser closed before reporting its signature. */

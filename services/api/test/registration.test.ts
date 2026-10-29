@@ -54,6 +54,29 @@ test('an explicitly occupied joined alias conflicts with another market keyword'
   store.close();
 });
 
+test('expired failed registration releases its keyword while an unresolved signed request keeps it reserved',async()=>{
+  const path=resolve(work,`${randomUUID()}.sqlite`),store=new SqliteFinancialRegistrationStore(path);
+  const failedId=randomUUID(),activeId=randomUUID();
+  const failed=await deriveRegistration(intent(failedId,'Dubai Chocolate',[]),programId);
+  const active=await deriveRegistration(intent(activeId,'New Artist',[]),programId);
+  store.reserve(failed,failedId,1030,1000);
+  store.reserve(active,activeId,1030,1000);
+  const db=new DatabaseSync(path);
+  db.exec('CREATE TABLE live_operations(request_id TEXT PRIMARY KEY,state TEXT,signature TEXT)');
+  db.prepare('INSERT INTO live_operations VALUES(?,?,?)').run(failedId,'FAILED',null);
+  db.prepare('INSERT INTO live_operations VALUES(?,?,?)').run(activeId,'UNKNOWN','signed-transaction');
+  db.close();
+  assert.deepEqual(store.expiredPending(1040),[activeId]);
+  const retryId=randomUUID(),retry=await deriveRegistration(intent(retryId,'Dubai Chocolate',[]),programId);
+  store.reserve(retry,retryId,1090,1040);
+  assert.equal(store.pending(failedId),null);
+  assert.equal(store.pending(retryId)?.address,retry.address);
+  const conflict=await deriveRegistration(intent(randomUUID(),'New Artist',[]),programId);
+  assert.throws(()=>store.reserve(conflict,randomUUID(),1090,1040),ExistingMarket);
+  assert.equal(store.pending(activeId)?.address,active.address);
+  store.close();
+});
+
 test('finalized chain accounts recover a registration after the browser closes, while failed requests are skipped',async()=>{
   const path=resolve(work,`${randomUUID()}.sqlite`),store=new SqliteFinancialRegistrationStore(path);
   const id=randomUUID(),entry=await deriveRegistration(intent(id,'New artist',[]),programId);
