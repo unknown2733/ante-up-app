@@ -1,0 +1,10 @@
+# Append after existing collector overlays. The state file is operator owned.
+services:
+  collector:
+    image: ante-up:${ANTE_UP_PAID_X_RELEASE:?Set approved collector image}
+    environment:
+      ANTE_UP_APPROVED_X_MARKETS_PATH: /state/approved-x-markets.json
+  collector-tariff:
+    image: ante-up:${ANTE_UP_PAID_X_RELEASE:?Set approved collector image}
+    environment:
+      ANTE_UP_APPROVED_X_MARKETS_PATH: /state/approved-x-markets.json

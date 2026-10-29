@@ -14,6 +14,7 @@ import {KitFinalizedRpc} from '../services/indexer/src/rpc.ts';
 import {GeneratedProgramEventDecoder} from '../services/indexer/src/generated-decoder.ts';
 import { heartbeat, checkStorage } from './runtime-status.mjs';
 import { collectorProjectionDbPath } from './collector-paths.mjs';
+import { assertPaidXApproved } from './paid-x-approvals.mjs';
 
 // Explicit paid-data opt-in. Files stay on the execution host; no secrets in argv.
 const required=name=>{if(!process.env[name])throw Error(`MISSING_${name}`);return process.env[name];};
@@ -40,6 +41,12 @@ try{
  config.directory=resolve(config.directory);await mkdir(config.directory,{recursive:true});
  const [market]=await sdk.findMarketPda({marketId:Uint8Array.from(Buffer.from(config.seedHex,'hex'))});
  if(market!==config.marketId)throw Error('MARKET_PDA_MISMATCH');
+ const {buildQuery}=await import('../services/data/index.mjs');
+ const {queryHashFor}=await import('../services/data/live.mjs');
+ const approvedMarket={marketId:market,seedHex:config.seedHex,queryHash:queryHashFor(buildQuery(config.expressions)),queryVersion:config.queryVersion};
+ const approvalPath=required('ANTE_UP_APPROVED_X_MARKETS_PATH');
+ const checkApproval=async()=>assertPaidXApproved(JSON.parse(await readFile(approvalPath,'utf8')),approvedMarket);
+ await checkApproval();
  config.token=(await readFile(required('X_BEARER_TOKEN_FILE'),'utf8')).trim();
  const publisher=await kit.createKeyPairSignerFromBytes(Uint8Array.from(JSON.parse(await readFile(required('ANTE_UP_PUBLISHER_KEYPAIR_FILE'),'utf8'))));
  const transport=sdk.createKitChainTransport(endpoint),programId=sdk.ANTE_UP_PROGRAM_ADDRESS;
@@ -59,8 +66,6 @@ try{
  // Validate the registered query and publisher before spending on a source call.
  const mapped={address:market,logicalId:config.logicalId,seedHex:config.seedHex,cluster:'devnet',programId};
  const context=await chain.readPublishContext(mapped);
- const {buildQuery}=await import('../services/data/index.mjs');
- const {queryHashFor}=await import('../services/data/live.mjs');
  if(context.queryVersion!==config.queryVersion||context.queryHash!==queryHashFor(buildQuery(config.expressions)))throw Error('QUERY_MISMATCH');
  const store=new FileCollectionState(join(config.directory,'collection.json'));
  const publisherRuntime={repository:new FileCandidateRepository(candidatePath),market:mapped,chain,publisherSigner:publisher};
@@ -78,6 +83,7 @@ try{
   }
   // Do not buy fresh data when the publisher cannot fund the next snapshots.
   if((await rpc.getBalance(publisher.address).send()).value<10_000_000n)throw Error('PUBLISHER_SOL_LOW');
+  await checkApproval();
   const result=await runLiveCycle({config,argv:['--execute','--publish',...(initial?['--initial']:[])],now,store,publisherRuntime});
   console.log(JSON.stringify(result));
   if(result.error==='BUDGET_EXHAUSTED')throw Error('BUDGET_EXHAUSTED');
