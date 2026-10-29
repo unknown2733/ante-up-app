@@ -16,7 +16,12 @@
   ],
   "httpChecks": [
     {"name": "api", "url": "http://api:8787/v1/markets", "expectMode": "devnet"},
-    {"name": "web", "url": "http://web:8080/"}
+    {"name": "consumer-markets", "url": "http://api:8787/v1/consumer/markets", "expectMode": "devnet"},
+    {"name": "consumer-leaderboard", "url": "http://api:8787/v1/consumer/leaderboard", "expectMode": "devnet"},
+    {"name": "reference", "url": "http://api:8787/v1/reference/latest", "expectMode": "devnet"},
+    {"name": "web", "url": "http://web:8080/"},
+    {"name": "web-markets", "url": "http://web:8080/markets"},
+    {"name": "web-docs", "url": "http://web:8080/docs"}
   ],
   "intervalSeconds": 60,
   "repeatSeconds": 3600,
