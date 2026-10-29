@@ -161,6 +161,18 @@ The tool verifies the Devnet genesis, requires a complete sequence for each
 market, writes atomically, and stores a count and digest in the archive manifest.
 Keep the archive inside the encrypted backup scope and verify its SQLite
 integrity and offsite recovery before considering any account retirement.
+Record the archive file's SHA-256 outside the archive, then independently read
+back every saved account, candidate and finalized event:
+
+```sh
+sha256sum OUTPUT_ARCHIVE.sqlite
+node scripts/verify-snapshot-archive.mjs OUTPUT_ARCHIVE.sqlite TRUSTED_SHA256
+```
+
+The verifier requires the separately recorded SHA-256 and checks SQLite
+integrity, per-account hashes, PDAs, candidate and event agreement, sequence
+continuity and the manifest digest. It reads the archive only. A successful
+readback does not yet prove that the live indexer can replay after closure.
 Creating this archive does not close onchain accounts, recover rent, or enable
 the indexer to replay events after a Snapshot account is closed. That requires
 a separately verified archive read path and a reviewed program upgrade.

@@ -5,7 +5,9 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
+import { createHash } from 'node:crypto';
 import { buildArchive } from './export-snapshot-archive.mjs';
+import { verifyArchive } from './verify-snapshot-archive.mjs';
 import { fixtureMarkets } from '../services/api/src/fixture.ts';
 import { snapshotViewFromGenerated, verifyPublishedSnapshot } from '../services/indexer/src/snapshot.ts';
 import { hash as canonicalHash } from '../services/data/index.mjs';
@@ -69,6 +71,11 @@ test('archive preserves only complete finalized, PDA-bound snapshots and never o
     assert.equal(archive.prepare('SELECT COUNT(*) AS n FROM snapshots').get().n, 1);
     assert.equal(Buffer.compare(archive.prepare('SELECT account_data FROM snapshots').get().account_data, Buffer.from(snapshotData)), 0);
     archive.close();
+    const trustedSha = createHash('sha256').update(await readFile(outPath)).digest('hex');
+    const verifiedArchive = await verifyArchive({ archivePath: outPath, expectedSha256: trustedSha });
+    assert.equal(verifiedArchive.snapshots, 1);
+    assert.equal(verifiedArchive.integrity, 'ok');
+    await assert.rejects(verifyArchive({ archivePath: outPath, expectedSha256: '0'.repeat(64) }), /ARCHIVE_FILE_HASH_MISMATCH/);
     await assert.rejects(buildArchive({ ...input, create: true }), /EEXIST/);
     const bad = { async scan() { return { slot: '10', accounts: [
       { address: marketAddress, ownerProgramId: programId, data: marketData } ] }; } };
@@ -82,5 +89,10 @@ test('archive preserves only complete finalized, PDA-bound snapshots and never o
     tampered.prepare('UPDATE snapshot_candidates SET candidate_json=?').run(JSON.stringify({ ...candidate, dataThrough: candidate.dataThrough + 1 }));
     tampered.close();
     await assert.rejects(buildArchive(input), /ARCHIVE_CANDIDATE_HASH_MISMATCH/);
+    const damaged = new DatabaseSync(outPath);
+    damaged.prepare('UPDATE snapshots SET account_data=?').run(Buffer.alloc(264));
+    damaged.close();
+    const damagedSha = createHash('sha256').update(await readFile(outPath)).digest('hex');
+    await assert.rejects(verifyArchive({ archivePath: outPath, expectedSha256: damagedSha }), /ARCHIVE_ACCOUNT_HASH_MISMATCH/);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
