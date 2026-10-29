@@ -24,6 +24,13 @@ const readRpc = fallbackUrl ? createRpcReadFailover(rpcUrl,fallbackUrl,{expected
   onFailover:()=>console.warn('RPC_READ_FAILOVER')}) : undefined;
 const store = new SqliteProjectionStore(resolve(dbPath));
 const repositories = new SqliteEventRepositories(resolve(dbPath),new KitFinalizedAccountReader(rpcUrl,readRpc));
+const safeFailure = (error: unknown): string => {
+  const message=error instanceof Error?error.message:'';
+  // Provider errors can include a credential-bearing RPC URL. Only emit a
+  // protocol code, or the exception class when no safe code is available.
+  return /^[A-Z][A-Z0-9_]+$/.test(message)?message:
+    error instanceof Error?error.name:'UNKNOWN';
+};
 try {
   const scope: StreamKey = {cluster,programId,address:programId};
   const candidatesPath = process.env.ANTE_UP_CANDIDATES_PATH ? resolve(process.env.ANTE_UP_CANDIDATES_PATH) : null;
@@ -58,15 +65,15 @@ try {
     if (!Number.isSafeInteger(interval) || interval < 1000 || interval > 300_000) throw new Error('INVALID_POLL_INTERVAL');
     while (true) {
       try { const result=await poller.pollOnce(scope); await heartbeat('indexer',result); console.log(JSON.stringify(result)); }
-      catch { console.error('INDEXER_POLL_FAILED'); }
+      catch (error) { console.error('INDEXER_POLL_FAILED',safeFailure(error)); }
       await new Promise(resolve => setTimeout(resolve, interval));
     }
   } else {
     console.log(JSON.stringify(await poller.pollOnce(scope)));
   }
-} catch {
+} catch (error) {
   // SDK errors can contain a provider URL with credentials in its path/query.
-  console.error('INDEXER_RUN_FAILED');
+  console.error('INDEXER_RUN_FAILED',safeFailure(error));
   process.exitCode = 1;
 } finally {
   store.close();
