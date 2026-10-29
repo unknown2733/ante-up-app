@@ -73,6 +73,26 @@ export class SqliteFinancialRegistrationStore {
     return {address:row.market_address,seedHex:row.seed_hex,keyword:row.keyword,aliases,queryHash:row.query_hash,queryVersion:'1',expressions:[row.keyword,...aliases].sort()};
   }
   markFinalized(requestId:string):void {this.db.prepare("UPDATE financial_registrations SET state='FINALIZED' WHERE request_id=?").run(requestId);}
+  /** Recover a finalized registration even if the browser closed before reporting its signature. */
+  async reconcilePending(accounts:FinalizedFinancialAccounts,limit=5):Promise<number> {
+    const hasOperations=!!this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='live_operations'").get();
+    const rows=(hasOperations
+      ? this.db.prepare(`SELECT r.request_id FROM financial_registrations r
+          LEFT JOIN live_operations o ON o.request_id=r.request_id
+          WHERE r.state='PENDING' AND (o.state IS NULL OR o.state!='FAILED')
+          ORDER BY CASE WHEN o.signature IS NOT NULL THEN 0 ELSE 1 END,r.expires_at DESC LIMIT ?`).all(limit)
+      : this.db.prepare("SELECT request_id FROM financial_registrations WHERE state='PENDING' ORDER BY expires_at DESC LIMIT ?").all(limit)) as Array<{request_id:string}>;
+    let finalized=0;
+    for(const row of rows){
+      try {if(await this.verifyAndFinalize(row.request_id,accounts))finalized++;}
+      catch(error){
+        // A missing finalized account means the wallet has not landed yet.
+        if(error instanceof Error && error.message==='FINANCIAL_ACCOUNT_UNAVAILABLE')continue;
+        throw error;
+      }
+    }
+    return finalized;
+  }
   async verifyAndFinalize(requestId:string,accounts:FinalizedFinancialAccounts):Promise<boolean> {
     const entry=this.pending(requestId);
     if (!entry)return false;

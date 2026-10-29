@@ -46,6 +46,7 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
   private readonly registrations: SqliteFinancialRegistrationStore | null;
   private marketCache: {atMs:number;value:MarketView[]} | null = null;
   private marketRead: Promise<MarketView[]> | null = null;
+  private registrationRecheckAt = 0;
   constructor(options: {mode:'localnet'|'devnet';programId:string;store:SqliteProjectionStore;
     repositories:SqliteEventRepositories;accounts:FinalizedAccountReader;registry:MarketRegistryEntry[];now:()=>number;
     financial?:FinalizedFinancialAccounts;registrations?:SqliteFinancialRegistrationStore}) {
@@ -67,6 +68,13 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
     } finally {if (this.marketRead===current) this.marketRead=null;}
   }
   private async readMarkets(): Promise<MarketView[]> {
+    // A wallet can land a registration and close the tab before submitting its
+    // signature to the API. Recheck a bounded set against finalized accounts.
+    if(this.registrations&&this.financial&&this.now()>=this.registrationRecheckAt){
+      this.registrationRecheckAt=this.now()+60;
+      try{await this.registrations.reconcilePending(this.financial);}
+      catch{console.error('REGISTRATION_RECONCILE_FAILED');}
+    }
     const snapshots=this.store.snapshots(this.mode,this.programId);
     const [admissionAddress]=await findAdmissionPda({programAddress:address(this.programId)});
     const admissionRaw=await this.accounts.get(String(admissionAddress));

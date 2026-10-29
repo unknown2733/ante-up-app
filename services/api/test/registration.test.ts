@@ -5,6 +5,8 @@ import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { deriveRegistration, ExistingMarket, SqliteFinancialRegistrationStore } from '../src/registration.ts';
 import { validateFinancialIntent } from '../src/financial.ts';
+import type { FinalizedFinancialAccounts } from '../src/financial-chain.ts';
+import { DatabaseSync } from 'node:sqlite';
 
 const work=resolve(import.meta.dirname,'../../../../work/d-registration-tests');
 mkdirSync(work,{recursive:true});
@@ -49,5 +51,29 @@ test('an explicitly occupied joined alias conflicts with another market keyword'
   store.reserve(first,firstId,1030,1000);
   const secondId=randomUUID(),second=await deriveRegistration(intent(secondId,'NewYork',[]),programId);
   assert.throws(()=>store.reserve(second,secondId,1030,1000),ExistingMarket);
+  store.close();
+});
+
+test('finalized chain accounts recover a registration after the browser closes, while failed requests are skipped',async()=>{
+  const path=resolve(work,`${randomUUID()}.sqlite`),store=new SqliteFinancialRegistrationStore(path);
+  const id=randomUUID(),entry=await deriveRegistration(intent(id,'New artist',[]),programId);
+  const failedId=randomUUID(),failed=await deriveRegistration(intent(failedId,'Old artist',[]),programId);
+  store.reserve(entry,id,1030,1000);store.reserve(failed,failedId,1030,1000);
+  const db=new DatabaseSync(path);
+  db.exec('CREATE TABLE live_operations(request_id TEXT PRIMARY KEY,state TEXT,signature TEXT)');
+  db.prepare('INSERT INTO live_operations VALUES(?,?,?)').run(failedId,'FAILED',null);
+  db.close();
+  let landed=false,lookups=0;
+  const accounts=({
+    async market(address:string){lookups++;if(!landed)throw Error('FINANCIAL_ACCOUNT_UNAVAILABLE');assert.equal(address,entry.address);
+      return {id:Buffer.from(entry.seedHex,'hex'),queryHash:Buffer.from(entry.queryHash,'hex'),queryVersion:1n};},
+    async financeMarket(address:string){return {market:address};}
+  }) as unknown as FinalizedFinancialAccounts;
+  assert.equal(await store.reconcilePending(accounts),0);
+  assert.deepEqual(store.finalized(),[]);
+  landed=true;
+  assert.equal(await store.reconcilePending(accounts),1);
+  assert.equal(lookups,2,'failed registration must not cause a chain read');
+  assert.deepEqual(store.finalized().map(m=>m.address),[entry.address]);
   store.close();
 });
