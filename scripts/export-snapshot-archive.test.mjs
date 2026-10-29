@@ -80,6 +80,8 @@ test('archive preserves only complete finalized, PDA-bound snapshots and never o
     const trusted = new TrustedSnapshotArchive(outPath, trustedSha, programId);
     assert.equal((await trusted.entries()).length, 1);
     assert.equal(Buffer.compare((await trusted.get(String(snapshotAddress))).data, Buffer.from(snapshotData)), 0);
+    (await trusted.get(String(snapshotAddress))).data.fill(0);
+    assert.equal(Buffer.compare((await trusted.get(String(snapshotAddress))).data, Buffer.from(snapshotData)), 0);
     await assert.rejects(new TrustedSnapshotArchive(outPath, '0'.repeat(64), programId).entries(), /ARCHIVE_FILE_HASH_MISMATCH/);
     const laterMarket = getMarketEncoder().encode({ ...getMarketDecoder().decode(marketData), latestSequence: 2n });
     const rpcAccount = data => ({ owner: programId, data: [Buffer.from(data).toString('base64'), 'base64'], lamports: 1991360n });

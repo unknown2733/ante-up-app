@@ -35,9 +35,11 @@ export class TrustedSnapshotArchive {
   }
   async get(accountAddress: string): Promise<AccountBytes | null> {
     const row = (await this.entriesMap()).get(accountAddress);
-    return row ? { ownerProgramId: row.ownerProgramId, data: row.data } : null;
+    return row ? { ownerProgramId: row.ownerProgramId, data: Uint8Array.from(row.data) } : null;
   }
   async entries(): Promise<ProgramAccountBytes[]> {
-    return [...(await this.entriesMap()).values()];
+    return [...(await this.entriesMap()).values()].map(row => ({
+      address: row.address, ownerProgramId: row.ownerProgramId, data: Uint8Array.from(row.data)
+    }));
   }
 }
