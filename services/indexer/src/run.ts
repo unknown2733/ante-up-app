@@ -7,6 +7,7 @@ import { SqliteProjectionStore, type StreamKey } from './sqlite.ts';
 import { GeneratedProgramEventDecoder } from './generated-decoder.ts';
 import { heartbeat } from '../../../scripts/runtime-status.mjs';
 import { KitFinalizedAccountReader, SqliteEventRepositories } from './repositories.ts';
+import { createRpcReadFailover } from './rpc-failover.ts';
 
 const cluster = process.env.ANTE_UP_CLUSTER;
 const programId = process.env.ANTE_UP_PROGRAM_ID;
@@ -16,8 +17,13 @@ const decoderPath = process.env.ANTE_UP_DECODER_MODULE;
 if ((cluster !== 'localnet' && cluster !== 'devnet') || !programId || !rpcUrl || !dbPath) {
   throw new Error('Set ANTE_UP_CLUSTER, ANTE_UP_PROGRAM_ID, ANTE_UP_RPC_URL, and ANTE_UP_INDEX_DB before RPC polling');
 }
+const fallbackUrl = process.env.ANTE_UP_RPC_FALLBACK_URL;
+const expectedGenesisHash = process.env.ANTE_UP_EXPECTED_GENESIS_HASH;
+if (fallbackUrl && (!expectedGenesisHash || cluster !== 'devnet')) throw new Error('RPC_FAILOVER_GENESIS_REQUIRED');
+const readRpc = fallbackUrl ? createRpcReadFailover(rpcUrl,fallbackUrl,{expectedGenesisHash,
+  onFailover:()=>console.warn('RPC_READ_FAILOVER')}) : undefined;
 const store = new SqliteProjectionStore(resolve(dbPath));
-const repositories = new SqliteEventRepositories(resolve(dbPath),new KitFinalizedAccountReader(rpcUrl));
+const repositories = new SqliteEventRepositories(resolve(dbPath),new KitFinalizedAccountReader(rpcUrl,readRpc));
 try {
   const scope: StreamKey = {cluster,programId,address:programId};
   const candidatesPath = process.env.ANTE_UP_CANDIDATES_PATH ? resolve(process.env.ANTE_UP_CANDIDATES_PATH) : null;
@@ -46,7 +52,7 @@ try {
     ? (await import(pathToFileURL(resolve(decoderPath)).href)).decoder
     : new GeneratedProgramEventDecoder({snapshots:repositories,proofs:repositories});
   if (!decoder || typeof decoder.decodeFinalized !== 'function') throw new Error('GENERATED_PROGRAM_DECODER_REQUIRED');
-  const poller = new FinalizedPoller(store, new KitFinalizedRpc(rpcUrl), decoder, 100, refresh);
+  const poller = new FinalizedPoller(store, new KitFinalizedRpc(rpcUrl,readRpc), decoder, 100, refresh);
   if (process.argv.includes('--follow')) {
     const interval = Number(process.env.ANTE_UP_POLL_INTERVAL_MS ?? '5000');
     if (!Number.isSafeInteger(interval) || interval < 1000 || interval > 300_000) throw new Error('INVALID_POLL_INTERVAL');

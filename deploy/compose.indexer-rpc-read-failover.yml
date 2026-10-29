@@ -1,0 +1,8 @@
+# The indexer's existing primary URL remains unchanged; the newer Devnet URL is a read-only backup.
+services:
+  indexer:
+    environment:
+      ANTE_UP_RPC_FALLBACK_URL_FILE: /run/secrets/rpc-backup.url
+      ANTE_UP_EXPECTED_GENESIS_HASH: EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG
+    volumes:
+      - ${ANTE_UP_SECRET_DIR:?Set secret directory}/devnet-rpc.secondary.url:/run/secrets/rpc-backup.url:ro
