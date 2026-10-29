@@ -12,12 +12,15 @@ trap 'rm -rf -- "$scratch"' EXIT
 docker inspect ante-up-ops-monitor-1 --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}' > "$scratch/files"
 docker inspect ante-up-ops-monitor-1 --format '{{index .Config.Labels "com.docker.compose.project.environment_file"}}' > "$scratch/env"
 docker inspect ante-up-ops-monitor-1 --format '{{.Config.Image}}' > "$scratch/image"
+running_image="$(cat "$scratch/image")"
+[[ "$running_image" == ante-up-ops:* ]] || { echo OPS_RUNNING_IMAGE_INVALID; exit 2; }
+old_release="${running_image#ante-up-ops:}"
 IFS=',' read -r -a files < "$scratch/files"
 IFS=',' read -r -a env_files < "$scratch/env"
 args=(-p ante-up --profile ops)
 for file in "${env_files[@]}"; do args+=(--env-file "$file"); done
 for file in "${files[@]}"; do args+=(-f "$file"); done
-docker compose "${args[@]}" config --format json > "$scratch/old.json"
+ANTE_UP_OPS_GLOBAL_X_RELEASE="$old_release" docker compose "${args[@]}" config --format json > "$scratch/old.json"
 next=("${args[@]}" -f "$release/deploy/compose.ops-global-x.yml")
 docker compose "${next[@]}" config --format json > "$scratch/new.json"
 python3 - "$scratch/old.json" "$scratch/new.json" "$scratch/image" "$image" <<'PY'
@@ -41,7 +44,7 @@ PY
 [[ "$mode" == --apply ]] || exit 0
 rollback() {
   echo OPS_GLOBAL_X_ROLLOUT_FAILED_ROLLING_BACK
-  docker compose "${args[@]}" up -d --no-deps "$service" || true
+  ANTE_UP_OPS_GLOBAL_X_RELEASE="$old_release" docker compose "${args[@]}" up -d --no-deps "$service" || true
 }
 trap rollback ERR
 docker compose "${next[@]}" up -d --no-deps "$service"
