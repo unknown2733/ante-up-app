@@ -116,6 +116,16 @@ test('state quota warns before the collector storage gate and fails at the cap',
   const full=await collect({...f.config,maxStateBytes:used},{now,fetcher:f.fetcher});
   assert.ok(full.alerts.some(a=>a.code==='STATE_LIMIT'));
 });
+test('active admission storage warns before its 80 percent gate',async t=>{
+  const f=await fixture(t);
+  const baseline=await collect({...f.config,activeStorage:[{name:'chips',path:'live-smoke',limitBytes:1}]},{now,fetcher:f.fetcher});
+  const used=baseline.metrics.activeStateBytes.chips;
+  const near=await collect({...f.config,activeStorage:[{name:'chips',path:'live-smoke',limitBytes:Math.ceil(used/0.75)}]},{now,fetcher:f.fetcher});
+  assert.ok(near.alerts.some(a=>a.id==='ACTIVE_STORAGE_NEAR_LIMIT:chips'));
+  const blocked=await collect({...f.config,activeStorage:[{name:'chips',path:'live-smoke',limitBytes:used}]},{now,fetcher:f.fetcher});
+  assert.ok(blocked.alerts.some(a=>a.id==='ACTIVE_STORAGE_ADMISSION_BLOCKED:chips'));
+  assert.throws(()=>validateConfig({...f.config,activeStorage:[{name:'chips',path:'../secrets',limitBytes:1}]}),/MONITOR_ACTIVE_STORAGE_INVALID/);
+});
 test('visitor SOL grant reservations warn before daily and total caps stop first-time visitors',async t=>{
   const f=await fixture(t),path=join(f.live,'index.sqlite.visitor-sol.sqlite');
   const db=new DatabaseSync(path);

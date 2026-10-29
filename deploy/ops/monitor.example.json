@@ -30,6 +30,10 @@
   "maxProofBacklog": 10,
   "minFreeBytes": 10737418240,
   "maxStateBytes": 5368709120,
+  "activeStorage": [
+    {"name": "chips-and-solana", "path": "live-smoke", "limitBytes": 5368709120},
+    {"name": "tariff", "path": "tariff", "limitBytes": 5368709120}
+  ],
   "budgetWarningPercent": 80,
   "xBudget": {"dailyMicros": 10000000, "totalMicros": 100000000, "estimatedRequestMicros": 1000},
   "proofBudget": {"dailyWinc": "60000000000", "totalWinc": "100000000000"},

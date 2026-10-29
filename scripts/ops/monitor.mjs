@@ -1,5 +1,5 @@
 // Read-only operational observer. No X requests, transaction sends or private keys.
-import {readFile, mkdir, readdir, stat, statfs} from 'node:fs/promises';
+import {readFile, mkdir, readdir, stat, statfs, lstat} from 'node:fs/promises';
 import {join, resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
@@ -19,6 +19,9 @@ export function validateConfig(c) {
   check(Array.isArray(c.services)&&c.services.length>0&&c.services.every(s=>safeRelative(s.path)&&typeof s.name==='string'&&/^[a-z0-9-]+$/.test(s.name)&&positive(s.maxAgeSeconds)),'MONITOR_SERVICES_INVALID');
   check(positive(c.pendingPublishMaxAgeSeconds)&&positive(c.proofMaxAgeSeconds)&&positive(c.maxProofBacklog)&&positive(c.repeatSeconds)&&positive(c.intervalSeconds)&&positive(c.minFreeBytes),'MONITOR_THRESHOLDS_INVALID');
   if(c.maxStateBytes!==undefined)check(positive(c.maxStateBytes),'MONITOR_STATE_LIMIT_INVALID');
+  if(c.activeStorage!==undefined)check(Array.isArray(c.activeStorage)&&c.activeStorage.every(s=>
+    typeof s.name==='string'&&/^[a-z0-9-]+$/.test(s.name)&&safeRelative(s.path)&&positive(s.limitBytes))&&
+    new Set(c.activeStorage.map(s=>s.name)).size===c.activeStorage.length,'MONITOR_ACTIVE_STORAGE_INVALID');
   check(positive(c.xBudget?.dailyMicros)&&positive(c.xBudget?.totalMicros)&&positive(c.xBudget?.estimatedRequestMicros),'MONITOR_X_BUDGET_INVALID');
   if(c.xBudget.ledgerPath!==undefined)
     check(safeRelative(c.xBudget.ledgerPath)&&positive(c.xBudget.initialMicros)&&
@@ -74,23 +77,36 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
     }catch{add('HTTP_UNAVAILABLE',probe.name);}
   }));
   try{const fs=await statfs(c.stateDirectory);metrics.freeBytes=fs.bavail*fs.bsize;if(metrics.freeBytes<c.minFreeBytes)add('DISK_LOW','state','critical',{freeBytes:metrics.freeBytes,minFreeBytes:c.minFreeBytes});}catch{add('INPUT_UNAVAILABLE','disk');}
+  async function usedBytes(directory){
+    if(!(await lstat(directory)).isDirectory())throw Error('UNEXPECTED_STATE_ENTRY');
+    let used=0;
+    for(const entry of await readdir(directory,{withFileTypes:true})){
+      const path=join(directory,entry.name);
+      if(entry.isDirectory())used+=await usedBytes(path);
+      else if(entry.isFile())used+=(await stat(path)).size;
+      else throw Error('UNEXPECTED_STATE_ENTRY');
+    }
+    return used;
+  }
   if(c.maxStateBytes!==undefined){
     try{
-      async function usedBytes(directory){
-        let used=0;
-        for(const entry of await readdir(directory,{withFileTypes:true})){
-          const path=join(directory,entry.name);
-          if(entry.isDirectory())used+=await usedBytes(path);
-          else if(entry.isFile())used+=(await stat(path)).size;
-          else throw Error('UNEXPECTED_STATE_ENTRY');
-        }
-        return used;
-      }
       metrics.stateBytes=await usedBytes(c.stateDirectory);
       const ratio=metrics.stateBytes/c.maxStateBytes;
       if(ratio>=1)add('STATE_LIMIT','state','critical',{usedBytes:metrics.stateBytes,maxStateBytes:c.maxStateBytes});
       else if(ratio>=0.8)add('STATE_NEAR_LIMIT','state','warning',{usedBytes:metrics.stateBytes,maxStateBytes:c.maxStateBytes});
     }catch{add('INPUT_UNAVAILABLE','state-usage');}
+  }
+  if(c.activeStorage){
+    metrics.activeStateBytes={};
+    for(const scope of c.activeStorage){
+      try{
+        const bytes=await usedBytes(join(c.stateDirectory,scope.path));
+        metrics.activeStateBytes[scope.name]=bytes;
+        const ratio=bytes/scope.limitBytes;
+        if(ratio>=0.8)add('ACTIVE_STORAGE_ADMISSION_BLOCKED',scope.name,'critical',{usedBytes:bytes,limitBytes:scope.limitBytes});
+        else if(ratio>=0.7)add('ACTIVE_STORAGE_NEAR_LIMIT',scope.name,'warning',{usedBytes:bytes,limitBytes:scope.limitBytes});
+      }catch{add('INPUT_UNAVAILABLE',`active-storage-${scope.name}`);}
+    }
   }
   const collection=await load(join(live,'collection.json'),'collection');
   for(const market of c.markets){
