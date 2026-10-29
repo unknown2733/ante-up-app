@@ -20,6 +20,7 @@ import {KitFinalizedAccountReader,SqliteEventRepositories} from '../services/ind
 import {FinalizedPoller} from '../services/indexer/src/poller.ts';
 import {KitFinalizedRpc} from '../services/indexer/src/rpc.ts';
 import {GeneratedProgramEventDecoder} from '../services/indexer/src/generated-decoder.ts';
+import {createEvidenceChain} from '../services/evidence/rpc-reads.mjs';
 
 const require=createRequire(new URL('../services/evidence/package.json',import.meta.url));
 const kit=require('@solana/kit'),sas=require('sas-lib');
@@ -38,8 +39,10 @@ try{
  const directory=required('ANTE_UP_LIVE_DIRECTORY'),out=join(directory,'evidence');if(!preflightOnly)await mkdir(out,{recursive:true});
  const reportOut=supervised?join(out,'reports',required('ANTE_UP_RECORD_ID')):out;
  if(!preflightOnly)await checkStorage(directory,{existingObligations:supervised&&process.env.ANTE_UP_EVIDENCE_AUTO_DISCOVER==='yes'});
- const endpoint=(await readFile(required('ANTE_UP_RPC_URL_FILE'),'utf8')).trim(),rpc=kit.createSolanaRpc(endpoint);
- if(await rpc.getGenesisHash().send()!=='EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG')throw Error('DEVNET_REQUIRED');
+ const endpoint=(await readFile(required('ANTE_UP_RPC_URL_FILE'),'utf8')).trim();
+ const backupFile=process.env.ANTE_UP_RPC_FALLBACK_URL_FILE;
+ const backupEndpoint=backupFile?(await readFile(backupFile,'utf8')).trim():null;
+ const {rpc,transport:baseTransport}=await createEvidenceChain(endpoint,backupEndpoint);
  const payer=await kit.createKeyPairSignerFromBytes(Uint8Array.from(await json(required('ANTE_UP_PAYER_KEYPAIR_FILE'))));
  const authority=await kit.createKeyPairSignerFromBytes(Uint8Array.from(await json(required('ANTE_UP_ISSUER_KEYPAIR_FILE'))));
  const uploadKey=await json(required('ANTE_UP_TURBO_KEY_FILE'));
@@ -54,7 +57,7 @@ try{
   balance:async()=>(await turbo.getBalance()).winc,send:uploadTransport});
  const uploadSigner=new ArweaveSigner(uploadKey);
  turbo.upload=createJournaledUpload({directory:receiptDirectory,signer:uploadSigner,uploadSignedDataItem:uploadTransport});
- const programId=chain.ANTE_UP_PROGRAM_ADDRESS,baseTransport=chain.createKitChainTransport(endpoint);
+ const programId=chain.ANTE_UP_PROGRAM_ADDRESS;
  const transport=supervised?journalTransport(baseTransport,join(out,'chain-submissions')):baseTransport;
  const marketVersionReader=createKitMarketVersionReader({transport,programId});
  const credentialName='Ante Up Devnet Evidence',schemaName='free-chip-result-v1';

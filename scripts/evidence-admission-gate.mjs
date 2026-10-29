@@ -9,6 +9,7 @@ import {admissionBudget} from '../services/evidence/intake.mjs';
 import {closeAdmissionOnce} from '../services/evidence/admission-gate.mjs';
 import {storagePressure} from './runtime-status.mjs';
 import {createTurboClient} from '../services/evidence/turbo.mjs';
+import {createEvidenceChain} from '../services/evidence/rpc-reads.mjs';
 
 const require=createRequire(new URL('../clients/chain/package.json',import.meta.url));
 const kit=require('@solana/kit');
@@ -16,8 +17,9 @@ const required=name=>{if(!process.env[name])throw Error(`MISSING_${name}`);retur
 try{
  const directory=required('ANTE_UP_LIVE_DIRECTORY'),evidence=join(directory,'evidence');
  const endpoint=(await readFile(required('ANTE_UP_RPC_URL_FILE'),'utf8')).trim();
- const rpc=kit.createSolanaRpc(endpoint),transport=chain.createKitChainTransport(endpoint);
- if(await rpc.getGenesisHash().send()!=='EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG')throw Error('DEVNET_REQUIRED');
+ const backupFile=process.env.ANTE_UP_RPC_FALLBACK_URL_FILE;
+ const backupEndpoint=backupFile?(await readFile(backupFile,'utf8')).trim():null;
+ const {transport}=await createEvidenceChain(endpoint,backupEndpoint);
  const [gate,config,ledger]=await Promise.all([chain.readFinalizedAdmission(transport),
   chain.readFinalizedConfig(transport),readJson(join(evidence,'budget.json'),{version:1,reservations:{}})]);
  const turbo=await createTurboClient({privateKey:JSON.parse(await readFile(required('ANTE_UP_TURBO_KEY_FILE'),'utf8'))});
