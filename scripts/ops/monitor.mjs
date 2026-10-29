@@ -37,6 +37,9 @@ export function validateConfig(c) {
   if(c.referenceKworb)
     check(safeRelative(c.referenceKworb.ledgerPath)&&positive(c.referenceKworb.maxAgeSeconds),
       'MONITOR_REFERENCE_KWORB_INVALID');
+  if(c.referenceYouTube)
+    check(safeRelative(c.referenceYouTube.ledgerPath)&&positive(c.referenceYouTube.maxAgeSeconds),
+      'MONITOR_REFERENCE_YOUTUBE_INVALID');
   check(Array.isArray(c.wallets)&&c.wallets.length>0&&c.wallets.every(w=>typeof w.role==='string'&&/^[a-z0-9-]+$/.test(w.role)&&address(w.address)&&DECIMAL.test(w.minLamports)),'MONITOR_WALLETS_INVALID');
   check(new Set(c.markets.map(m=>m.id)).size===c.markets.length&&new Set(c.wallets.map(w=>w.role)).size===c.wallets.length&&new Set(c.services.map(s=>s.name)).size===c.services.length,'DUPLICATE_MONITOR_SCOPE');
   check(typeof c.rpcUrlFile==='string','MONITOR_RPC_REQUIRED');
@@ -216,6 +219,21 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
         if(row.status!=='SUCCESS')add('REFERENCE_COLLECTION_FAILED','kworb','critical',{status:row.status,errorCode:row.error_code??null});
       }
     }catch{add('INPUT_UNAVAILABLE','kworb');}
+    finally{referenceDb?.close();}
+  }
+  if(c.referenceYouTube){
+    let referenceDb;
+    try{
+      referenceDb=new DatabaseSync(join(c.stateDirectory,c.referenceYouTube.ledgerPath),{readOnly:true});
+      referenceDb.exec('PRAGMA busy_timeout=3000');
+      const row=referenceDb.prepare('SELECT attempted_at_ms,status,error_code FROM reference_youtube_oracle_prep_requests ORDER BY attempted_at_ms DESC,id DESC LIMIT 1').get();
+      if(!row)add('REFERENCE_COLLECTION_MISSING','youtube');
+      else{
+        metrics.youtubeLastRun={attemptedAtMs:row.attempted_at_ms,status:row.status};
+        age(Math.floor(row.attempted_at_ms/1000),c.referenceYouTube.maxAgeSeconds,'REFERENCE_COLLECTION_STALE','youtube');
+        if(row.status!=='SUCCESS')add('REFERENCE_COLLECTION_FAILED','youtube','critical',{status:row.status,errorCode:row.error_code??null});
+      }
+    }catch{add('INPUT_UNAVAILABLE','youtube');}
     finally{referenceDb?.close();}
   }
   try{

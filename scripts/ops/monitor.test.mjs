@@ -59,6 +59,24 @@ test('dated Spotify reference collector has a bounded success and failure alert'
   assert.throws(()=>validateConfig({...f.config,referenceKworb:{ledgerPath:'../secret',maxAgeSeconds:86400}}),
     /MONITOR_REFERENCE_KWORB_INVALID/);
 });
+test('five-minute YouTube collector alerts on stale or failed real observations',async t=>{
+  const f=await fixture(t);
+  f.config.referenceYouTube={ledgerPath:'live-smoke/index.sqlite',maxAgeSeconds:900};
+  const db=new DatabaseSync(f.dbPath);
+  try{
+    db.exec('CREATE TABLE reference_youtube_oracle_prep_requests (id INTEGER PRIMARY KEY, attempted_at_ms INTEGER, status TEXT, error_code TEXT)');
+    db.prepare('INSERT INTO reference_youtube_oracle_prep_requests VALUES (1,?,?,NULL)').run(now-60_000,'SUCCESS');
+  }finally{db.close();}
+  assert.deepEqual((await collect(f.config,{now,fetcher:f.fetcher})).alerts,[]);
+  const failed=new DatabaseSync(f.dbPath);
+  try{failed.prepare('INSERT INTO reference_youtube_oracle_prep_requests VALUES (2,?,?,?)').run(now-30_000,'FAILED','YOUTUBE_PROVIDER_HTTP_429');}
+  finally{failed.close();}
+  assert.ok((await collect(f.config,{now,fetcher:f.fetcher})).alerts.some(a=>a.id==='REFERENCE_COLLECTION_FAILED:youtube'));
+  const stale=await collect(f.config,{now:now+1_800_000,fetcher:f.fetcher});
+  assert.ok(stale.alerts.some(a=>a.id==='REFERENCE_COLLECTION_STALE:youtube'));
+  assert.throws(()=>validateConfig({...f.config,referenceYouTube:{ledgerPath:'../secret',maxAgeSeconds:900}}),
+    /MONITOR_REFERENCE_YOUTUBE_INVALID/);
+});
 
 test('an evidence admission guard failure raises an operational alert',async t=>{
   const f=await fixture(t);
