@@ -1,0 +1,8 @@
+# Append to the running ops-monitor stack after staging
+# /ops-config/monitor.global-x.json with the shared ledger path.
+services:
+  ops-monitor:
+    image: ante-up-ops:${ANTE_UP_OPS_GLOBAL_X_RELEASE:?Set reviewed monitor image}
+    command: [flock, -n, -F, /ops-state/monitor.lock, node, scripts/ops/monitor.mjs, --config, /ops-config/monitor.global-x.json, --follow, --deliver]
+    healthcheck:
+      test: [CMD, node, scripts/ops/monitor.mjs, --config, /ops-config/monitor.global-x.json, --health]
