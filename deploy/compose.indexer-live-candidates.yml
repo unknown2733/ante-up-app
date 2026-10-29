@@ -1,0 +1,7 @@
+# The indexer must import the immutable candidate journal for every market
+# that may publish indexed observations. Keep all existing historical paths
+# when approving a new paid-X market; omitting one stalls finalized replay.
+services:
+  indexer:
+    environment:
+      ANTE_UP_EXTRA_CANDIDATES_PATHS: '["/state/financial-qa-20261013/candidates.json","/state/financial-demo-20261013/candidates.json","/state/liquidity-demo-20261013/candidates.json","/state/tariff/candidates.json"]'
