@@ -8,6 +8,7 @@ import { GeneratedProgramEventDecoder } from './generated-decoder.ts';
 import { heartbeat } from '../../../scripts/runtime-status.mjs';
 import { KitFinalizedAccountReader, SqliteEventRepositories } from './repositories.ts';
 import { createRpcReadFailover } from './rpc-failover.ts';
+import { approvedCandidatePaths } from './approved-candidate-paths.ts';
 
 const cluster = process.env.ANTE_UP_CLUSTER;
 const programId = process.env.ANTE_UP_PROGRAM_ID;
@@ -39,10 +40,13 @@ try {
   if (!Array.isArray(extraPaths) || extraPaths.length > 8 || extraPaths.some(p => typeof p !== 'string' || !p.trim())) {
     throw new Error('INVALID_EXTRA_CANDIDATES_PATHS');
   }
-  const candidatePaths = [...new Set([...(candidatesPath ? [candidatesPath] : []), ...extraPaths.map(p => resolve(p as string))])];
+  const staticCandidatePaths = [...new Set([...(candidatesPath ? [candidatesPath] : []), ...extraPaths.map(p => resolve(p as string))])];
+  const approvalRegistryPath=process.env.ANTE_UP_APPROVED_X_MARKETS_PATH;
   const proofsPath = process.env.ANTE_UP_PROOFS_PATH ? resolve(process.env.ANTE_UP_PROOFS_PATH) : null;
   const importedFiles=new Map<string,string>();
   const refresh = async (key: StreamKey) => {
+    const candidatePaths=[...new Set([...staticCandidatePaths,
+      ...(await approvedCandidatePaths(approvalRegistryPath)).map(path=>resolve(path))])];
     for (const [path, importFile] of [
       ...candidatePaths.map(path => [path, (file: string) => repositories.importCandidateFile(file,key)] as const),
       [proofsPath, (file: string) => repositories.importProofFile(file,key)],

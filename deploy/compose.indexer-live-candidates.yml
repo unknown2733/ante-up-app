@@ -4,4 +4,5 @@
 services:
   indexer:
     environment:
+      ANTE_UP_APPROVED_X_MARKETS_PATH: /state/approved-x-markets.json
       ANTE_UP_EXTRA_CANDIDATES_PATHS: '["/state/financial-qa-20261013/candidates.json","/state/financial-demo-20261013/candidates.json","/state/liquidity-demo-20261013/candidates.json","/state/tariff/candidates.json"]'

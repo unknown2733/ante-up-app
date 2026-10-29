@@ -7,7 +7,7 @@ import {buildQuery} from '../services/data/index.mjs';
 const marketId='CyYjBcb4LyuyLN1Akaf2eXXJV5GhFUkaPNb7caLCuHN6';
 const seedHex='c9ab2789eb8c5b6c54611086d77164f07b81f1e4ebb448db15787f9a3915ed32';
 const queryHash=createHash('sha256').update(buildQuery(['tariff'])).digest('hex');
-const config={marketId,seedHex,expressions:['tariff'],queryVersion:'1',
+const config={marketId,seedHex,directory:'/state/tariff',expressions:['tariff'],queryVersion:'1',
   estimatedCostMicros:5000,initialEstimatedCostMicros:10000,
   initialLimitMicros:1000000,dailyLimitMicros:1500000,totalLimitMicros:47000000};
 const market={id:Buffer.from(seedHex,'hex'),queryHash:Buffer.from(queryHash,'hex'),queryVersion:1n};
@@ -17,6 +17,7 @@ test('matching finalized market is ready for operator review without approving i
   const result=verifyCandidate({marketId,config,market,registry});
   assert.equal(result.state,'READY_FOR_OPERATOR_REVIEW');
   assert.equal(result.approvedCount,0);
+  assert.equal(result.candidatePath,'/state/tariff/candidates.json');
   assert.equal(registry.markets.length,0);
 });
 

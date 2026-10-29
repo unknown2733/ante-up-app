@@ -141,6 +141,13 @@ node scripts/approve-paid-x-market.mjs --plan /absolute/path/approved-x-markets.
 node scripts/approve-paid-x-market.mjs --apply /absolute/path/approved-x-markets.json /absolute/path/collection-config.json
 ```
 
+The collection config must contain its container state directory (for example,
+`/state/tariff`). The approval stores that market's candidate journal path.
+The live indexer reads newly approved paths on each poll; keep the deployed
+`compose.indexer-live-candidates.yml` overlay for older approvals that lack
+this field. An approved collector must not publish until the indexer is
+healthy and can read its candidate journal.
+
 The apply step writes the registry atomically and is idempotent. It does not
 start a collector, buy data, publish observations, provide graduation capital,
 or open Pro trading. Those steps require their own chain and budget checks.

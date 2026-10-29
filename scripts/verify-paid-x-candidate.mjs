@@ -8,7 +8,7 @@ import {buildQuery} from '../services/data/index.mjs';
 import {queryHashFor} from '../services/data/live.mjs';
 import {KitFinalizedAccountReader} from '../services/indexer/src/repositories.ts';
 import {FinalizedFinancialAccounts} from '../services/api/src/financial-chain.ts';
-import {validatePaidXRegistry} from './paid-x-approvals.mjs';
+import {candidatePathForDirectory,validatePaidXRegistry} from './paid-x-approvals.mjs';
 
 const kit=createRequire(new URL('../clients/chain/package.json',import.meta.url))('@solana/kit');
 const DEVNET_GENESIS='EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
@@ -17,6 +17,7 @@ const safe=error=>String(error?.message??error).replace(/https?:\/\/[^\s"'<>]+/g
 
 export function verifyCandidate({marketId,config,market,registry}) {
   validatePaidXRegistry(registry);
+  const candidatePath=candidatePathForDirectory(config.directory);
   if(!kit.isAddress(marketId)||config.marketId!==marketId||
       !/^[a-f0-9]{64}$/.test(config.seedHex??'')||config.queryVersion!=='1')
     throw Error('CANDIDATE_CONFIG_INVALID');
@@ -39,7 +40,7 @@ export function verifyCandidate({marketId,config,market,registry}) {
   if(!current&&registry.markets.length>=registry.maxMarkets)throw Error('PAID_X_APPROVAL_LIMIT');
   return {state:current?'ALREADY_APPROVED':'READY_FOR_OPERATOR_REVIEW',marketId,
     approvedCount:registry.markets.length,maxMarkets:registry.maxMarkets,
-    queryHash:onchainHash,queryVersion:onchainVersion,readOnly:true,
+    queryHash:onchainHash,queryVersion:onchainVersion,candidatePath,readOnly:true,
     note:'This check does not approve spending, start collection, publish data, or graduate a market.'};
 }
 

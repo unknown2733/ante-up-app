@@ -18,3 +18,8 @@ test('six markets or duplicate approvals fail closed',()=>{
   assert.throws(()=>assertPaidXApproved({...registry,markets:Array.from({length:6},(_,i)=>({...market,marketId:market.marketId.slice(0,-1)+String(i+1),queryHash:String(i+1).repeat(64)}))},market),/PAID_X_APPROVAL_INVALID/);
   assert.throws(()=>assertPaidXApproved({...registry,markets:[market,market]},market),/PAID_X_APPROVAL_INVALID/);
 });
+
+test('approved candidate handoff stays inside one state market directory',()=>{
+  assert.doesNotThrow(()=>assertPaidXApproved({...registry,markets:[{...market,candidatePath:'/state/solana/candidates.json'}]},market));
+  assert.throws(()=>assertPaidXApproved({...registry,markets:[{...market,candidatePath:'/state/../secrets/candidates.json'}]},market),/PAID_X_APPROVAL_INVALID/);
+});

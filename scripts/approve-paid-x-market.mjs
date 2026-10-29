@@ -4,7 +4,7 @@ import {isAbsolute} from 'node:path';
 import {findMarketPda} from '../clients/chain/dist/index.js';
 import {buildQuery} from '../services/data/index.mjs';
 import {queryHashFor} from '../services/data/live.mjs';
-import {assertPaidXApproved,validatePaidXRegistry} from './paid-x-approvals.mjs';
+import {assertPaidXApproved,candidatePathForDirectory,validatePaidXRegistry} from './paid-x-approvals.mjs';
 
 const [mode,registryPath,configPath]=process.argv.slice(2);
 if(!['--plan','--apply'].includes(mode) || !registryPath || !configPath ||
@@ -19,10 +19,12 @@ async function candidate(){
     throw Error('APPROVAL_BUDGET_INVALID');
   if(typeof config.seedHex!=='string' || !/^[a-f0-9]{64}$/.test(config.seedHex) ||
       config.queryVersion!=='1')throw Error('APPROVAL_CONFIG_INVALID');
+  const candidatePath=candidatePathForDirectory(config.directory);
   const [address]=await findMarketPda({marketId:Uint8Array.from(Buffer.from(config.seedHex,'hex'))});
   if(String(address)!==config.marketId)throw Error('APPROVAL_MARKET_PDA_MISMATCH');
   return {marketId:config.marketId,seedHex:config.seedHex,
-    queryHash:queryHashFor(buildQuery(config.expressions)),queryVersion:config.queryVersion};
+    queryHash:queryHashFor(buildQuery(config.expressions)),queryVersion:config.queryVersion,
+    candidatePath};
 }
 
 function nextRegistry(registry,entry){

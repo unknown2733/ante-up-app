@@ -13,6 +13,7 @@ test('operator plans, applies and idempotently reads back one bounded paid X app
     writeFileSync(registryPath,JSON.stringify({schemaVersion:1,maxMarkets:5,markets:[]}));
     writeFileSync(configPath,JSON.stringify({
       marketId:'CyYjBcb4LyuyLN1Akaf2eXXJV5GhFUkaPNb7caLCuHN6',
+      directory:'/state/tariff',
       seedHex:'c9ab2789eb8c5b6c54611086d77164f07b81f1e4ebb448db15787f9a3915ed32',
       queryVersion:'1',expressions:['tariff'],estimatedCostMicros:5000,
       initialEstimatedCostMicros:10000,initialLimitMicros:1000000,
@@ -29,6 +30,8 @@ test('operator plans, applies and idempotently reads back one bounded paid X app
     result=run('--apply');
     assert.equal(result.status,0,result.stderr);
     assert.equal(JSON.parse(result.stdout).state,'ALREADY_APPROVED');
-    assert.equal(JSON.parse(readFileSync(registryPath,'utf8')).markets.length,1);
+    const saved=JSON.parse(readFileSync(registryPath,'utf8'));
+    assert.equal(saved.markets.length,1);
+    assert.equal(saved.markets[0].candidatePath,'/state/tariff/candidates.json');
   }finally{rmSync(dir,{recursive:true,force:true});}
 });

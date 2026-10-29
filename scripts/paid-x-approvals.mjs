@@ -1,5 +1,12 @@
 const HEX=/^[a-f0-9]{64}$/;
 const ADDRESS=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const CANDIDATE_PATH=/^\/state\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/candidates\.json$/;
+
+export function candidatePathForDirectory(directory) {
+  const path=typeof directory==='string'?`${directory}/candidates.json`:'';
+  if(!CANDIDATE_PATH.test(path))throw Error('APPROVAL_CANDIDATE_PATH_INVALID');
+  return path;
+}
 
 /**
  * Paid X collection is an operator decision. The state file is the only
@@ -13,6 +20,7 @@ export function validatePaidXRegistry(registry) {
   for(const item of registry.markets){
     if(!item || !ADDRESS.test(item.marketId) || !HEX.test(item.seedHex) ||
         !HEX.test(item.queryHash) || item.queryVersion!=='1' ||
+        (item.candidatePath!==undefined && !CANDIDATE_PATH.test(item.candidatePath)) ||
         ids.has(item.marketId) || hashes.has(item.queryHash))
       throw Error('PAID_X_APPROVAL_INVALID');
     ids.add(item.marketId);hashes.add(item.queryHash);
