@@ -34,6 +34,10 @@
     "dailyCapLamports": "400000000",
     "totalCapLamports": "800000000"
   },
+  "referenceKworb": {
+    "ledgerPath": "live-smoke/index.sqlite",
+    "maxAgeSeconds": 129600
+  },
   "rpcUrlFile": "/run/secrets/rpc.url",
   "wallets": [
     {"role": "publisher", "address": "8qfbLii5YBfJiHoLGBNozyJnLFA4knBymTCtK9pP4mHH", "minLamports": "10000000"},

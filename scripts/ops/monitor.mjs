@@ -31,6 +31,9 @@ export function validateConfig(c) {
       BigInt(v.grantLamports)>0n&&BigInt(v.grantLamports)<=BigInt(v.dailyCapLamports)&&BigInt(v.dailyCapLamports)<=BigInt(v.totalCapLamports),
       'MONITOR_VISITOR_FAUCET_INVALID');
   }
+  if(c.referenceKworb)
+    check(safeRelative(c.referenceKworb.ledgerPath)&&positive(c.referenceKworb.maxAgeSeconds),
+      'MONITOR_REFERENCE_KWORB_INVALID');
   check(Array.isArray(c.wallets)&&c.wallets.length>0&&c.wallets.every(w=>typeof w.role==='string'&&/^[a-z0-9-]+$/.test(w.role)&&address(w.address)&&DECIMAL.test(w.minLamports)),'MONITOR_WALLETS_INVALID');
   check(new Set(c.markets.map(m=>m.id)).size===c.markets.length&&new Set(c.wallets.map(w=>w.role)).size===c.wallets.length&&new Set(c.services.map(s=>s.name)).size===c.services.length,'DUPLICATE_MONITOR_SCOPE');
   check(typeof c.rpcUrlFile==='string','MONITOR_RPC_REQUIRED');
@@ -183,6 +186,21 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
       budget(total,c.visitorFaucet.totalCapLamports,'visitor-sol-total',BigInt(c.visitorFaucet.grantLamports));
     }catch(error){add(error.message==='VISITOR_LEDGER_INVALID'?'INPUT_INVALID':'INPUT_UNAVAILABLE','visitor-sol');}
     finally{grantDb?.close();}
+  }
+  if(c.referenceKworb){
+    let referenceDb;
+    try{
+      referenceDb=new DatabaseSync(join(c.stateDirectory,c.referenceKworb.ledgerPath),{readOnly:true});
+      referenceDb.exec('PRAGMA busy_timeout=3000');
+      const row=referenceDb.prepare('SELECT attempted_at_ms,status,error_code FROM reference_kworb_requests ORDER BY attempted_at_ms DESC,id DESC LIMIT 1').get();
+      if(!row)add('REFERENCE_COLLECTION_MISSING','kworb');
+      else{
+        metrics.kworbLastRun={attemptedAtMs:row.attempted_at_ms,status:row.status};
+        age(Math.floor(row.attempted_at_ms/1000),c.referenceKworb.maxAgeSeconds,'REFERENCE_COLLECTION_STALE','kworb');
+        if(row.status!=='SUCCESS')add('REFERENCE_COLLECTION_FAILED','kworb','critical',{status:row.status,errorCode:row.error_code??null});
+      }
+    }catch{add('INPUT_UNAVAILABLE','kworb');}
+    finally{referenceDb?.close();}
   }
   try{
     const endpoint=(await readFile(c.rpcUrlFile,'utf8')).trim();check(/^https?:\/\//.test(endpoint),'INVALID_RPC_URL');

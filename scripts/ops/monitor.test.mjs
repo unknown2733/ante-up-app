@@ -43,6 +43,23 @@ test('healthy observer accepts partial price coverage and makes only Devnet read
   assert.deepEqual(f.calls.map(c=>c.method),['getGenesisHash','getBalance']);assert.equal(f.calls[1].params[1].commitment,'finalized');
 });
 
+test('dated Spotify reference collector has a bounded success and failure alert',async t=>{
+  const f=await fixture(t);
+  f.config.referenceKworb={ledgerPath:'live-smoke/index.sqlite',maxAgeSeconds:36*3600};
+  const db=new DatabaseSync(f.dbPath);
+  try{
+    db.exec('CREATE TABLE reference_kworb_requests (id INTEGER PRIMARY KEY, attempted_at_ms INTEGER, status TEXT, error_code TEXT)');
+    db.prepare('INSERT INTO reference_kworb_requests VALUES (1,?,?,NULL)').run(now-60_000,'SUCCESS');
+  }finally{db.close();}
+  assert.deepEqual((await collect(f.config,{now,fetcher:f.fetcher})).alerts,[]);
+  const failed=new DatabaseSync(f.dbPath);
+  try{failed.prepare('INSERT INTO reference_kworb_requests VALUES (2,?,?,?)').run(now-30_000,'FAILED','KWORB_PROVIDER_HTTP_500');}
+  finally{failed.close();}
+  assert.ok((await collect(f.config,{now,fetcher:f.fetcher})).alerts.some(a=>a.id==='REFERENCE_COLLECTION_FAILED:kworb'));
+  assert.throws(()=>validateConfig({...f.config,referenceKworb:{ledgerPath:'../secret',maxAgeSeconds:86400}}),
+    /MONITOR_REFERENCE_KWORB_INVALID/);
+});
+
 test('an evidence admission guard failure raises an operational alert',async t=>{
   const f=await fixture(t);
   f.config.services.push({name:'evidence',path:'health/evidence.json',maxAgeSeconds:180});
