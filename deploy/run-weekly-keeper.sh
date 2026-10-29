@@ -4,7 +4,7 @@
 set -eu
 STATE=/srv/ante-up/builds/service-state
 SECRETS=/srv/ante-up/secrets
-IMAGE=ante-up:weekly-keeper-v1
+IMAGE=${ANTE_UP_KEEPER_IMAGE:-ante-up:weekly-keeper-v1}
 exec 9>"$STATE/keeper-auto/weekly.lock"
 flock -n 9 || exit 0
 
