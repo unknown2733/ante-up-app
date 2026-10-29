@@ -66,9 +66,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const markets=JSON.parse(await readFile(resolve(registryPath),'utf8')) as MarketRegistryEntry[];
     if (!Array.isArray(markets)) throw new Error('INVALID_MARKET_REGISTRY');
     const priceDbPath=process.env.ANTE_UP_PRICE_DB;
-    const visitorSol = mode === 'devnet' ? await createVisitorSolRuntime({endpoint:rpcUrl,
+    const rpcReadFallbackUrl=mode==='devnet' ? process.env.ANTE_UP_RPC_FALLBACK_URL : undefined;
+    const visitorSol = mode === 'devnet' ? await createVisitorSolRuntime({endpoint:rpcUrl,readFallbackEndpoint:rpcReadFallbackUrl,
       dbPath:resolve(`${dbPath}.visitor-sol.sqlite`),env:process.env}) : null;
-    const live=createLiveApp({mode,programId,rpcUrl,dbPath:resolve(dbPath),markets,
+    const live=createLiveApp({mode,programId,rpcUrl,rpcReadFallbackUrl,dbPath:resolve(dbPath),markets,
       priceDbPath:priceDbPath ? resolve(priceDbPath) : undefined,
       visitorSol:visitorSol?.faucet});
     const server=createApiServer(live.app);

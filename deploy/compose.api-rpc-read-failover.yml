@@ -1,0 +1,8 @@
+# Apply after the primary API RPC override. Only read methods can fail over.
+# The original Devnet RPC remains a private, independently validated backup.
+services:
+  api:
+    environment:
+      ANTE_UP_RPC_FALLBACK_URL_FILE: /run/secrets/rpc-backup.url
+    volumes:
+      - ${ANTE_UP_SECRET_DIR:?Set secret directory}/devnet-rpc.url:/run/secrets/rpc-backup.url:ro

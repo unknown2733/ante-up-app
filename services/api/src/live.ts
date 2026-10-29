@@ -19,10 +19,12 @@ import { openPriceHistoryReadStore } from './consumer-price-sampler.ts';
 import { ConsumerNoteService, createConsumerSocialProjection, createFinalizedFreeActionLookup, SqliteNotePersistence } from './consumer-social.ts';
 import type { VisitorSolFaucet } from './visitor-faucet.ts';
 import { ReferenceObservationStore } from './reference-observations.ts';
+import { createRpcReadFailover } from '../../indexer/src/rpc-failover.ts';
+import { DEVNET_GENESIS } from './visitor-faucet.ts';
 
 /** Explicit live construction; passing deterministic readers/providers performs no network calls. */
 export function createLiveApp(config: {
-  mode:'localnet'|'devnet';programId:string;rpcUrl:string;dbPath:string;markets:MarketRegistryEntry[];
+  mode:'localnet'|'devnet';programId:string;rpcUrl:string;rpcReadFallbackUrl?:string;dbPath:string;markets:MarketRegistryEntry[];
   /** Optional dedicated sampler DB. If absent at boot, history remains sparse until restart. */
   priceDbPath?:string;
   now?:()=>number;accounts?:FinalizedAccountReader;blockhashes?:BlockhashProvider;chain?:OperationChain;
@@ -33,17 +35,21 @@ export function createLiveApp(config: {
   visitorSol?:VisitorSolFaucet;
 }) {
   const now=config.now??(()=>Math.floor(Date.now()/1000));
-  const accounts=config.accounts??new KitFinalizedAccountReader(config.rpcUrl);
+  const readRpc=config.rpcReadFallbackUrl
+    ? createRpcReadFailover(config.rpcUrl,config.rpcReadFallbackUrl,{expectedGenesisHash:DEVNET_GENESIS,
+      onFailover:()=>console.warn('RPC_READ_FAILOVER')})
+    : null;
+  const accounts=config.accounts??new KitFinalizedAccountReader(config.rpcUrl,readRpc??undefined);
   const projection=new SqliteProjectionStore(config.dbPath);
   const repositories=new SqliteEventRepositories(config.dbPath,accounts);
   const liveStore=new LiveStore(config.dbPath);
   const registrations=new SqliteFinancialRegistrationStore(config.dbPath);
   const financialState=new FinalizedFinancialAccounts({cluster:config.mode,programId:config.programId,accounts});
-  const clock=new KitConfirmedFinancialClock(config.rpcUrl,{now});
+  const clock=new KitConfirmedFinancialClock(config.rpcUrl,{now,rpc:readRpc??undefined});
   const firstSlice=new FirstSliceFinancialReader(financialState,registrations,now,config.financialClock??(()=>clock.read()));
   const read=new SqliteFinalizedReadAdapter({mode:config.mode,programId:config.programId,store:projection,
     repositories,accounts,registry:config.markets,financial:financialState,registrations,now});
-  const blockhashes=config.blockhashes??new KitBlockhashProvider(config.rpcUrl);
+  const blockhashes=config.blockhashes??new KitBlockhashProvider(config.rpcUrl,readRpc??undefined);
   const transactions=new KitFreeTransactionAdapter({cluster:config.mode,programId:config.programId,read,
     blockhashes,now,nextRecordNonce:config.nextRecordNonce});
   let social: {
@@ -78,7 +84,7 @@ export function createLiveApp(config: {
       () => read.records(), namespace), notes), namespace };
     social = { notes, quotes, samples };
   }
-  const chain=config.chain??new KitOperationChain(config.rpcUrl);
+  const chain=config.chain??new KitOperationChain(config.rpcUrl,readRpc??undefined);
   const app=createApp({mode:config.mode,programId:config.programId,read,transactions,liveStore,
     chain,verifier:config.verifier,financial:config.financial??firstSlice,
     financialTransactions:config.financialTransactions??new KitFirstSliceFinancialTransactionAdapter({state:financialState,reader:firstSlice,blockhashes,now}),

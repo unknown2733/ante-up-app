@@ -4,6 +4,7 @@ import { AccountRole, address, appendTransactionMessageInstruction, blockhash, c
   getSignatureFromTransaction, getTransactionEncoder, setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash, signTransactionWithSigners, type KeyPairSigner } from '@solana/kit';
 import { SqliteSolFaucetLedger, VisitorSolFaucet, DEVNET_GENESIS, type SolFaucetPolicy, type SolFaucetRpc } from './visitor-faucet.ts';
+import { createRpcReadFailover } from '../../indexer/src/rpc-failover.ts';
 
 const SYSTEM_PROGRAM = address('11111111111111111111111111111111');
 const LAMPORTS_PER_SOL = 1_000_000_000n;
@@ -35,9 +36,12 @@ export function transferInstruction(source: KeyPairSigner, destination: string, 
 
 /** A dedicated, capped funder signs one transfer. Persist its signature before broadcasting. */
 export async function createVisitorSolRuntime(input: {
-  endpoint: string; dbPath: string; env: NodeJS.ProcessEnv; nowMs?: () => number;
+  endpoint: string; readFallbackEndpoint?: string; dbPath: string; env: NodeJS.ProcessEnv; nowMs?: () => number;
 }) {
-  const rpc = createSolanaRpc(input.endpoint);
+  const rpc = input.readFallbackEndpoint
+    ? createRpcReadFailover(input.endpoint,input.readFallbackEndpoint,{expectedGenesisHash:DEVNET_GENESIS,
+      onFailover:()=>console.warn('RPC_READ_FAILOVER')})
+    : createSolanaRpc(input.endpoint);
   const enabled = input.env.ANTE_UP_VISITOR_SOL_ENABLED === 'true';
   const policy: SolFaucetPolicy = {
     enabled,

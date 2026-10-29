@@ -1,7 +1,7 @@
 /** Retry only read-only RPC calls rejected by a short-lived provider rate limit. */
 export function isRpcRateLimited(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /\b429\b|too many requests|rate limit(?:ed)?/i.test(message);
+  return /\b429\b|too many requests|rate limit(?:ed)?|max usage reached/i.test(message);
 }
 
 export async function retryRpcRead<T>(read: () => Promise<T>, wait: (ms: number) => Promise<void> = ms => new Promise(resolve => setTimeout(resolve, ms))): Promise<T> {
