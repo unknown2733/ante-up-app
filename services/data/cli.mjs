@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { FileCollectionState, XCountsHttpAdapter, runInitialArchive, runRegularPoll, runGapFill } from './live.mjs';
 import { FileCandidateRepository, publishSnapshot, publishSourceInvalidOutage,
   reconcilePublications } from './publisher.mjs';
-import { getAdmissionGateIntent } from './outage.mjs';
+import { getAdmissionGateIntent, markSourceStale } from './outage.mjs';
 import { FileRawResponseRepository } from './index.mjs';
 import { createKitPublisherChain } from './kit.mjs';
 
@@ -27,9 +27,30 @@ export function latestSettledBucketEnd(now) {
   return Math.floor((now - 60) / 300) * 300;
 }
 
+export async function persistObservedStaleness(store,marketId,now,collection=null) {
+  // Record an observed stale gap even when an earlier failed request is still
+  // in backoff or the local paid-data budget prevents another HTTP attempt.
+  collection??=await store.read();
+  const existing=collection.markets?.[marketId];
+  if(existing?.recoveryState){
+    const before=JSON.stringify({timeline:existing.outageTimeline,
+      outageStartAt:existing.recoveryState.outageStartAt,
+      emergencyAt:existing.recoveryState.emergencyAt,
+      admission:existing.recoveryState.admission});
+    markSourceStale(existing,marketId,now);
+    const after=JSON.stringify({timeline:existing.outageTimeline,
+      outageStartAt:existing.recoveryState.outageStartAt,
+      emergencyAt:existing.recoveryState.emergencyAt,
+      admission:existing.recoveryState.admission});
+    if(after!==before){await store.write(collection);return true;}
+  }
+  return false;
+}
+
 export async function runLiveCycle({config,argv,now,store,transport,publisherRuntime=null,beforeSourceRequest}) {
   store??=new FileCollectionState(join(config.directory,'collection.json'));
   transport??=new XCountsHttpAdapter({bearerToken:config.token});
+  await persistObservedStaleness(store,config.marketId,now);
   let pendingPublication=null;
   if (argv.includes('--publish')) {
     if (!publisherRuntime) throw new Error('PUBLISH_RUNTIME_REQUIRED');

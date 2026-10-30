@@ -3,7 +3,7 @@ import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { readStateJson, writeStateJson } from './state-json.mjs';
 import { buildQuery, ingestCounts, replay, FileRawResponseRepository, HISTORY_MINUTES } from './index.mjs';
-import { markSourceInvalid, updateOutageTimeline } from './outage.mjs';
+import { markSourceInvalid, markSourceStale, updateOutageTimeline } from './outage.mjs';
 
 const check = (condition, code = 'INVALID_INPUT') => { if (!condition) throw new Error(code); };
 export const queryHashFor = query => createHash('sha256').update(query, 'utf8').digest('hex');
@@ -169,6 +169,9 @@ export async function runRegularPoll({ store, rawDirectory, transport, marketId,
     market.lastPollAt=originalLastPollAt;
     if(stage==='parse-source' && knownMarket){
       markSourceInvalid(market,marketId,now,{rawHash:validationRawHash,batchId:key});
+      state.markets[marketId]=market;
+    } else if(stage==='transport' && knownMarket){
+      markSourceStale(market,marketId,now);
       state.markets[marketId]=market;
     }
     state.batches[key] = {id:key,state:'FAILED',rawHash:validationRawHash,chargedMicros:estimatedCostMicros,attempts,

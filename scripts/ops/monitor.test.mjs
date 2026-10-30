@@ -82,6 +82,30 @@ test('dated Spotify reference collector has a bounded success and failure alert'
   assert.throws(()=>validateConfig({...f.config,referenceKworb:{ledgerPath:'../secret',maxAgeSeconds:86400}}),
     /MONITOR_REFERENCE_KWORB_INVALID/);
 });
+
+test('a successful Kworb fetch cannot hide an old source report',async t=>{
+  const f=await fixture(t);
+  f.config.referenceKworb={ledgerPath:'live-smoke/index.sqlite',maxAgeSeconds:36*3600,
+    maxReportAgeSeconds:7*86400,slugs:['track-A','track-b']};
+  const db=new DatabaseSync(f.dbPath);
+  try{
+    db.exec('CREATE TABLE reference_kworb_requests (id INTEGER PRIMARY KEY, attempted_at_ms INTEGER, status TEXT, error_code TEXT)');
+    db.exec('CREATE TABLE reference_observations (slug TEXT, kind TEXT, provider TEXT, observed_at_ms INTEGER)');
+    db.prepare('INSERT INTO reference_kworb_requests VALUES (1,?,?,NULL)').run(now-60_000,'SUCCESS');
+    db.prepare('INSERT INTO reference_observations VALUES (?,?,?,?)').run('track-A','SPOTIFY_STREAMS','Kworb',now-9*86400_000);
+    db.prepare('INSERT INTO reference_observations VALUES (?,?,?,?)').run('track-b','SPOTIFY_STREAMS','Kworb',now-86400_000);
+  }finally{db.close();}
+  const stale=await collect(f.config,{now,fetcher:f.fetcher});
+  assert.ok(stale.alerts.some(a=>a.id==='REFERENCE_REPORT_STALE:track-A'&&a.severity==='warning'));
+  assert.ok(!stale.alerts.some(a=>a.id==='REFERENCE_REPORT_STALE:track-b'));
+  assert.equal(stale.metrics.kworbLastRun.status,'SUCCESS');
+  const updated=new DatabaseSync(f.dbPath);
+  try{updated.prepare('INSERT INTO reference_observations VALUES (?,?,?,?)').run('track-A','SPOTIFY_STREAMS','Kworb',now-86400_000);}
+  finally{updated.close();}
+  assert.ok(!(await collect(f.config,{now,fetcher:f.fetcher})).alerts.some(a=>a.code==='REFERENCE_REPORT_STALE'));
+  assert.throws(()=>validateConfig({...f.config,referenceKworb:{...f.config.referenceKworb,slugs:['track-A','track-A']}}),
+    /MONITOR_REFERENCE_KWORB_INVALID/);
+});
 test('five-minute YouTube collector alerts on stale or failed real observations',async t=>{
   const f=await fixture(t);
   f.config.referenceYouTube={ledgerPath:'live-smoke/index.sqlite',maxAgeSeconds:900};

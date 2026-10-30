@@ -9,6 +9,8 @@ import {KitFinalizedAccountReader} from '../services/indexer/src/repositories.ts
 import {isRpcRateLimited} from '../services/indexer/src/rpc-retry.ts';
 import {FinalizedFinancialAccounts} from '../services/api/src/financial-chain.ts';
 import {readFrozenSettlement} from '../services/keeper/src/candidate.ts';
+import {FileCollectionState} from '../services/data/live.mjs';
+import {selectOutageForEpoch} from '../services/data/outage.mjs';
 
 const exec=promisify(execFile);
 const kit=createRequire(new URL('../clients/chain/package.json',import.meta.url))('@solana/kit');
@@ -51,7 +53,7 @@ export function validityRecoveryDue(finance,market,now){
    BigInt(finance.lpGeneration)!==BigInt(market.validityGeneration);
 }
 
-export function weeklyDue(finance,now,market=null){
+export function weeklyDue(finance,now,market=null,settlement=null){
  if(!Number.isSafeInteger(now)||now<0)fail('WEEKLY_TIME_INVALID');
  const maturity=asInt(finance.currentMaturity),cycle=asInt(finance.currentCycle);
  const last=asInt(finance.lastLpMaturity),open=asInt(finance.openPositions);
@@ -59,6 +61,18 @@ export function weeklyDue(finance,now,market=null){
  if(cycle<1||lpEnd<lpStart)fail('WEEKLY_STATE_INVALID');
  const week=monday(now);
  if(validityRecoveryDue(finance,market,now))return {due:true,reason:'EMPTY_RECOVERY'};
+ const accepted=settlement?.value;
+ if(maturity>now && accepted && asInt(accepted.maturityAt)===maturity &&
+   asInt(accepted.eligibleAt)<maturity && asInt(accepted.acceptedAt)>lpStart)
+   return {due:true,reason:'OBSERVED_SETTLEMENT'};
+ // An open position may need the documented 24-hour emergency close before
+ // the scheduled Monday maturity. This is only a wakeup: the observed
+ // collection incident and finalized snapshot must still freeze successfully.
+ if(maturity>now && open>0 && market?.latestDataThrough!==undefined){
+  const through=asInt(market.latestDataThrough);
+  if(through>0 && through<=now && now>=through+600+86_400)
+    return {due:true,reason:'OBSERVED_SETTLEMENT'};
+ }
  if(last>=week&&lpStart>=week)return {due:false,reason:'LP_ALREADY_OPENED'};
  if(maturity>0){
   if(now<maturity+960)return {due:false,reason:'WAIT_FOR_CUTOFF'};
@@ -132,14 +146,36 @@ export async function resolveWeeklyScope(market,finance,env,run=command){
   configPath:join(destination,'observed-config.json')};
 }
 
-export async function runWeeklyPass({now,markets,accounts,env,execute=false,run=command}){
+export async function missedObservedDeadline(active,marketId,now,
+  readCollection=path=>new FileCollectionState(path).read()){
+ const config=await readJson(active.configPath);
+ if(!withinState(config.collectionPath)||config.marketId!==marketId)
+  fail('WEEKLY_COLLECTION_SCOPE_MISMATCH');
+ const collection=await readCollection(config.collectionPath);
+ const entry=collection.markets?.[marketId];
+ if(!entry)return false;
+ const incident=selectOutageForEpoch(entry,marketId,{epochStartedAt:active.scope.epochStartedAt,
+   maturityAt:active.scope.maturityAt,now});
+ return !!incident && incident.startedAt+86_400<=now &&
+   (incident.recoveredAt===null||incident.recoveredAt>incident.startedAt+86_400);
+}
+
+export async function runWeeklyPass({now,markets,accounts,env,execute=false,run=command,
+  outageDue=missedObservedDeadline}){
  const output=[];
  for(const market of markets){
   try{
    const [finance,chainMarket]=await Promise.all([accounts.financeMarket(market.marketId),accounts.market(market.marketId)]);
-   const due=weeklyDue(finance,now,chainMarket);
+   const settlement=asInt(finance.currentMaturity)>now && accounts.settlement?
+     await accounts.settlement(market.marketId,finance.currentCycle):null;
+   let due=weeklyDue(finance,now,chainMarket,settlement),active=null;
+   if(!due.due && asInt(finance.currentMaturity)>now && asInt(finance.openPositions)>0){
+    active=await resolveWeeklyScope(market,finance,env,run);
+    if(await outageDue(active,market.marketId,now))
+      due={due:true,reason:'OBSERVED_SETTLEMENT'};
+   }
    if(!due.due){output.push({marketId:market.marketId,state:'idle',reason:due.reason});continue;}
-   const active=await resolveWeeklyScope(market,finance,env,run);
+   active??=await resolveWeeklyScope(market,finance,env,run);
    if(BigInt(active.scope.epoch)!==finance.currentCycle)fail('WEEKLY_SCOPE_CYCLE_MISMATCH');
    if(due.reason==='OBSERVED_SETTLEMENT'){
     const frozen=await readFrozenSettlement(join(active.directory,'settlements.json'),active.scope);
@@ -203,8 +239,8 @@ async function main(){
  const config=await readJson(path),markets=validateWeeklyMarkets(config);
  const now=Math.floor(Date.now()/1000);
  const weekly=inWeeklyServiceWindow(now);
- // Cron invokes every two minutes for maturity. Check validity resets every ten
- // minutes outside that window to avoid exhausting the shared Devnet RPC.
+ // Cron invokes every two minutes for maturity. Outside that window, check
+ // validity resets and 24-hour observed outage deadlines every ten minutes.
  const recoveryTick=inValidityRecoveryTick(now)||args.includes('--preflight');
  if(!weekly&&!recoveryTick)return;
  const completion={week:monday(now),marketIds:markets.map(m=>m.marketId).sort()};
@@ -227,7 +263,10 @@ async function main(){
   ANTE_UP_RPC_URL_FILE:selected.source==='fallback'?fallbackFile:secret};
  const result=weekly&&!weeklyComplete?
    await runWeeklyPass({now,markets,accounts,env,execute}):
-   await runValidityRecoveryPass({now,markets,accounts,env,execute});
+   recoveryTick?[
+     ...await runWeeklyPass({now,markets,accounts,env,execute}),
+     ...await runValidityRecoveryPass({now,markets,accounts,env,execute})
+   ]:[];
  for(const row of result)console.log(JSON.stringify(row));
  if(weekly&&!weeklyComplete&&execute&&result.every(row=>row.state==='idle'&&row.reason==='LP_ALREADY_OPENED')){
   await mkdir(dirname(config.completionPath),{recursive:true,mode:0o750});
