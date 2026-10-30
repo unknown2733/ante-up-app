@@ -46,9 +46,9 @@ export function mergeReferenceHistory(base: MarketHistory, observations: Referen
   const series: ConsumerSeries = { ...base.series[0], source: market.source, points,
     gaps: points.slice(1).flatMap((point, i) => point.atMs - points[i].atMs > DAY
       ? [{ fromMs: points[i].atMs, toMs: point.atMs }] : []) };
-  // A new dated report can still leave only a handful of measured points. Keep the
-  // optional preview in its own evidence lane until there is usable source history.
-  const preview = all.length < 7 ? createIllustrativeHistory(market, base.period) : null;
+  // A single measured point has no trend. Remove the optional preview as soon as
+  // a second dated observation makes a measured trend possible.
+  const preview = all.length < 2 ? createIllustrativeHistory(market, base.period) : null;
   return { ...base, market, source: market.source, series: preview ? [series, preview] : [series], actions: [] };
 }
 

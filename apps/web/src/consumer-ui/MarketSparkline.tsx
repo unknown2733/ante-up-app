@@ -11,8 +11,9 @@ const dateLabel = (atMs: number) => new Date(atMs).toLocaleDateString('en-US', {
 export function sparklineModel(market: ConsumerMarket, history?: MarketHistory) {
   if (!history || history.market.id !== market.id || history.source.mode !== market.source.mode) return null;
   const preference = market.source.mode === 'LIVE' ? pricePreference : activityPreference;
-  const series = history.series.find(candidate => candidate.evidence === 'ILLUSTRATIVE' && candidate.source.mode === history.source.mode)
-    ?? preference.map(kind => history.series.find(candidate => candidate.kind === kind && candidate.source.mode === history.source.mode && candidate.points.length > 0)).find(Boolean);
+  const series = preference.map(kind => history.series.find(candidate => candidate.kind === kind &&
+    candidate.evidence !== 'ILLUSTRATIVE' && candidate.source.mode === history.source.mode && candidate.points.length > 1)).find(Boolean)
+    ?? history.series.find(candidate => candidate.evidence === 'ILLUSTRATIVE' && candidate.source.mode === history.source.mode);
   if (!series) return null;
   const observed = series.points.map(point => ({ atMs: point.atMs, value: Number(point.value) }))
     .filter(point => Number.isFinite(point.atMs) && Number.isFinite(point.value) && point.atMs <= series.source.asOfMs)

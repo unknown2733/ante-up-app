@@ -72,7 +72,7 @@ export function createReferenceConsumerReadApi(): ConsumerReadApi {
         points: item.series.points.filter(point => point.atMs >= start),
         gaps: item.series.gaps.filter(gap => gap.fromMs >= start) } : item.series;
       // Eligibility uses full source coverage, never a short selected period.
-      const illustrative = item.series.points.length < 4 ? createIllustrativeHistory(item.market, period) : null;
+      const illustrative = item.series.points.length < 2 ? createIllustrativeHistory(item.market, period) : null;
       const history: MarketHistory = { market: item.market, period, source: item.market.source,
         series: illustrative ? [series, illustrative] : [series], actions: [] };
       return copy(history);
