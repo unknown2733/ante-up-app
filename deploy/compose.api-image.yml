@@ -1,0 +1,3 @@
+services:
+  api:
+    image: ante-up:${ANTE_UP_API_IMAGE_RELEASE:?Set reviewed API image tag}

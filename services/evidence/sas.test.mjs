@@ -94,7 +94,7 @@ test('SAS adapter checks semantic packet and archived manifest before SDK issue 
   const {payload,packet,archived}=fixture(), bytes=canonical(payload), digest=hash(payload);
   const manifestRef={contentHash:digest,arweaveItemId:'manifest',parentTransactionId:'parent'};
   archived.set('manifest',bytes);
-  let account={exists:false,address:'attestation-address'},sends=0,semanticCalls=0,suppliedPacket=packet;
+  let account={exists:false,address:'attestation-address'},sends=0,semanticCalls=0,archiveReads=0,suppliedPacket=packet;
   const sdk={
     async deriveAttestationPda(){return ['attestation-address',1];},
     async fetchMaybeAttestation(){return account;},
@@ -109,11 +109,12 @@ test('SAS adapter checks semantic packet and archived manifest before SDK issue 
       data:{credential:'credential',schema:'schema',signer:'issuer',data:instruction.input.data,
         expiry:BigInt(Math.floor(Date.now()/1000)+3600)}};return {finalized:true};},
     semanticPacketProvider:async()=>{semanticCalls++;return suppliedPacket;},chainVerifier:async()=>true,
-    storage:{fetch:async ref=>archived.get(ref.arweaveItemId)},expiryAt:async()=>Math.floor(Date.now()/1000)+3600,sdk});
+    storage:{fetch:async ref=>{archiveReads++;return archived.get(ref.arweaveItemId);}},expiryAt:async()=>Math.floor(Date.now()/1000)+3600,sdk});
   const first=await adapter.issue('proof:r1:original',digest,manifestRef,payload);
   assert.deepEqual(first,{sasId:'attestation-address',finalized:true}); assert.equal(sends,1);
   assert.deepEqual(await adapter.issue('proof:r1:original',digest,manifestRef,payload),first);
-  assert.equal(sends,1); assert(semanticCalls>=2);
+  assert.equal(sends,1); assert.equal(semanticCalls,1);
+  assert.equal(archiveReads,payload.evidence.length+1);
   await assert.rejects(()=>adapter.issue('proof:r1:original','0'.repeat(64),manifestRef,payload),/INVALID_EVIDENCE/);
   const forged=structuredClone(payload), unrelated=canonical({kind:'note',text:'unrelated'});
   archived.set('unrelated',unrelated);

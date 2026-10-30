@@ -80,6 +80,10 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
     const admissionRaw=await this.accounts.get(String(admissionAddress));
     if (!admissionRaw || admissionRaw.ownerProgramId!==this.programId || !Buffer.from(admissionRaw.data.subarray(0,8)).equals(Buffer.from(ADMISSION_DISCRIMINATOR))) throw new Error('FINALIZED_ADMISSION_UNAVAILABLE');
     const admission=getAdmissionDecoder().decode(admissionRaw.data);
+    if(admission.fundedOpenCount>admission.fundedOpenCap) throw new Error('FINALIZED_ADMISSION_CAP_INVALID');
+    const freeChipCapacity={fundedCap:admission.fundedOpenCap.toString(),
+      fundedUsed:admission.fundedOpenCount.toString(),
+      fundedRemaining:(admission.fundedOpenCap-admission.fundedOpenCount).toString()};
     const recent=admission.recent.filter((at:bigint)=>at>0n && BigInt(this.now())-at<86_400n).length;
     const freeEntry:Capability=admission.fundedOpenCount>=admission.fundedOpenCap ? {allowed:false,reason:'BUDGET_EXHAUSTED',detail:'FUNDED_PROOF_CAP'}
       : !admission.open ? {allowed:false,reason:'ENTRY_PAUSED'}
@@ -138,7 +142,7 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
       }
       result.push({id:entry.address,keyword:entry.keyword,aliases:entry.aliases,phase,dataStatus,epochPhase,supported:true,
         ...(entry.dataProvenance==='SYNTHETIC_QA'?{dataProvenance:'SYNTHETIC_QA' as const}:{}),
-        chain:{cluster:this.mode,programId:this.programId,address:entry.address},snapshot,anchor,price,
+        chain:{cluster:this.mode,programId:this.programId,address:entry.address},snapshot,anchor,price,freeChipCapacity,
         capabilities:{...financialCaps,curveBuy:{allowed:phase==='CURVE',reason:phase==='CURVE'?null:'WRONG_PHASE'},curveSell:{allowed:phase==='CURVE',reason:phase==='CURVE'?null:'WRONG_PHASE'},
           openFree:entry.dataProvenance==='SYNTHETIC_QA'?{allowed:false,reason:'ENTRY_PAUSED'}:freeEntry,
           closeFree:{allowed:true,reason:null}}});

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as k from '@solana/kit';
 import {LiveStore} from '../src/live-store.ts';
-import {KitOperationChain,reconcileLiveOperation} from '../src/operation-chain.ts';
+import {BoundedOperationReconciler,KitOperationChain,reconcileLiveOperation} from '../src/operation-chain.ts';
 const wallet=await k.generateKeyPairSigner();
 const ix={programAddress:k.address('11111111111111111111111111111111'),data:Uint8Array.of(1),accounts:[{address:wallet.address,role:k.AccountRole.WRITABLE_SIGNER}]};
 const tx=k.compileTransaction(k.appendTransactionMessageInstruction(ix,k.setTransactionMessageLifetimeUsingBlockhash({blockhash:k.blockhash('11111111111111111111111111111111'),lastValidBlockHeight:10n},k.setTransactionMessageFeePayer(wallet.address,k.createTransactionMessage({version:0})))));
@@ -67,5 +67,22 @@ test('a discovered verified receipt repairs an earlier unsigned expiry classific
   store.markExpiredUnlanded('expiry-test');
   const result=await reconcileLiveOperation(store,{get:async()=>null,discover:async()=>[{signature,receipt}]},'expiry-test',101);
   assert.equal(result.state,'FINALIZED');assert.equal(result.signature,signature);assert.equal(result.error,null);
+ }finally{store.close();}
+});
+
+test('slow unsigned history returns promptly and later recheck uses the same safe scan',async()=>{
+ const store=fixture();let release!:(rows:any[])=>void,discoverCalls=0;
+ const history=new Promise<any[]>(resolve=>{release=resolve;});
+ const chain={get:async()=>null,discover:async()=>{discoverCalls++;return [];},expiredHistory:async()=>history};
+ try{
+  const reader=new BoundedOperationReconciler(store,chain,()=>101,5);
+  const first=await reader.read('expiry-test');
+  assert.equal(first.state,'AWAITING_SIGNATURE');
+  const second=reader.read('expiry-test');
+  release([]);
+  const settled=await second;
+  assert.equal(settled.state,'FAILED');
+  assert.equal(settled.error?.code,'REQUOTE_REQUIRED');
+  assert.equal(discoverCalls,1);
  }finally{store.close();}
 });

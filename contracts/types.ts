@@ -44,6 +44,8 @@ export interface MarketView {
   epochPhase: EpochPhase | null; supported: boolean; chain: ChainRef | null;
   snapshot: PublishedSnapshot | null; anchor: PriceAnchor | null;
   price: { kind: 'curve' | 'indexed'; atoms: UInt; executable: boolean } | null;
+  /** Public, global on-chain admission capacity. It is shared across markets. */
+  freeChipCapacity?: { fundedCap: UInt; fundedUsed: UInt; fundedRemaining: UInt };
   capabilities: Partial<Record<Action, Capability>>;
 }
 export interface RecordPoint {
