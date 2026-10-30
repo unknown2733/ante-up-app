@@ -129,7 +129,14 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
     const marketCollection=market.collectionDirectory
       ? await load(join(c.stateDirectory,market.collectionDirectory,'collection.json'),`collection-${market.id}`)
       : collection;
-    if(marketCollection)age(marketCollection.markets?.[market.id]?.lastPollAt,market.collectionMaxAgeSeconds,'COLLECTION_STALE',market.id);
+    if(marketCollection){
+      age(marketCollection.markets?.[market.id]?.lastPollAt,market.collectionMaxAgeSeconds,'COLLECTION_STALE',market.id);
+      const capped=Object.values(marketCollection.batches??{}).some(batch=>
+        batch?.state==='FAILED'&&batch.error==='X_SPEND_CAP_REACHED'&&
+        typeof batch.id==='string'&&batch.id.includes(market.id)&&
+        Number.isSafeInteger(batch.retryAt)&&batch.retryAt>=at-3600);
+      if(capped)add('X_PROVIDER_SPEND_CAP',market.id);
+    }
   }
   const day=new Date(now).toISOString().slice(0,10);
   function budget(value,limit,scope,next=0n){

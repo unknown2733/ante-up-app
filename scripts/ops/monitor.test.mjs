@@ -43,6 +43,20 @@ test('healthy observer accepts partial price coverage and makes only Devnet read
   assert.deepEqual(f.calls.map(c=>c.method),['getGenesisHash','getBalance']);assert.equal(f.calls[1].params[1].commitment,'finalized');
 });
 
+test('a current X spending-cap failure is distinct from an unrelated HTTP 403',async t=>{
+  const f=await fixture(t),path=join(f.live,'collection.json');
+  const state=JSON.parse(await readFile(path,'utf8'));
+  const id=`${market}:1:${at-300}`;
+  state.batches[id]={id,state:'FAILED',error:'X_SPEND_CAP_REACHED',retryAt:at+3600};
+  await f.save(path,state);
+  const capped=await collect(f.config,{now,fetcher:f.fetcher});
+  assert.ok(capped.alerts.some(alert=>alert.id===`X_PROVIDER_SPEND_CAP:${market}`));
+  state.batches[id].error='X_HTTP_403';
+  await f.save(path,state);
+  const unknown=await collect(f.config,{now,fetcher:f.fetcher});
+  assert.ok(!unknown.alerts.some(alert=>alert.code==='X_PROVIDER_SPEND_CAP'));
+});
+
 test('publisher snapshot rent warning scales with approved market count and remaining runway',async t=>{
   const f=await fixture(t);
   f.config.snapshotFunding={rentLamports:'1991360',reserveLamports:'500000000',

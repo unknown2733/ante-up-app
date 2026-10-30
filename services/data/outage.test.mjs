@@ -50,6 +50,22 @@ test('HTTP failure preserves stale onset without treating the response as invali
   }finally{await rm(directory,{recursive:true,force:true});}
 });
 
+test('a validated catch-up at the stale threshold records a zero-duration incident',()=>{
+  const market={outageTimeline:[],recoveryState:{dataThrough:end,
+    outageStartAt:null,emergencyAt:null,admission:{state:'OPEN',recoveryCount:2,reason:null}}};
+  const incident=markSourceStale(market,marketId,end+600);
+  assert.equal(incident.startedAt,end+600);
+  const result={candidate:{dataThrough:end+300,dataStatus:'VALID',reason:null},
+    state:{outageStartAt:null,emergencyAt:null}};
+  updateOutageTimeline(market,marketId,result,
+    {at:end+600,replayEnd:end+300,historyStart:start});
+  assert.equal(market.outageTimeline[0].recoveredAt,end+600);
+  assert.equal(market.recoveryState.outageStartAt,null);
+  assert.equal(selectOutageForEpoch(market,marketId,{epochStartedAt:end-86400,
+    maturityAt:end+7200,now:end+600}),null);
+  validateOutageTimeline(marketId,market.outageTimeline);
+});
+
 test('stale incident is durable while a failed paid request is still in backoff',async()=>{
  const directory=await mkdtemp(join(process.cwd(),'ante-outage-backoff-'));
  try{
