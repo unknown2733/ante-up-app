@@ -154,6 +154,23 @@ or open Pro trading. Those steps require their own chain and budget checks.
 
 ## Finalized Snapshot archive preflight
 
+Before deploying a program binary that adds Snapshot retirement, calculate its
+actual Devnet ProgramData extension and temporary upload buffer funding. This
+check reads the finalized upgrade authority, binary hash, rent, and payer
+balance; it never loads a signer or sends a transaction:
+
+```sh
+node scripts/preflight-program-upgrade.mjs \
+  /absolute/path/ante_up.so TRUSTED_SBF_SHA256 \
+  /absolute/path/devnet-rpc.url DEPLOYER_ADDRESS
+```
+
+The result's `peakRequiredLamports` includes a 0.1 SOL fee reserve.
+`FUNDED_FOR_ESTIMATE` is a funding preflight, not permission to upgrade or
+retire accounts. Re-run it against the exact binary immediately before the
+program extension and deployment. Keep the temporary upload buffer, signer
+files, and RPC URL outside the public repository.
+
 `scripts/export-snapshot-archive.mjs` creates a separate, immutable SQLite copy
 of every currently indexed Devnet Snapshot account. It compares the finalized
 program account, PDA, candidate hash and fields, and finalized indexer event.
