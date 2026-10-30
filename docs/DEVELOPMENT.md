@@ -169,8 +169,11 @@ reads the existing reference observation database without writing to it or
 calling a provider. For cumulative YouTube views and X post likes it checks
 whether every five-minute bucket in the last 28 days has a reading, the latest
 reading is under ten minutes old, and adjacent cumulative values do not fall.
-It reports missing buckets and downward revisions separately. Spotify's dated
-third-party reports are explicitly outside this five-minute check.
+It verifies that each selected reading still matches its stored raw response
+SHA-256; YouTube readings must also match the approved video ID and official
+provider. Missing buckets, downward revisions, and invalid evidence are
+reported separately. Spotify's dated third-party reports are explicitly
+outside this five-minute check.
 
 `SOURCE_COVERAGE_COMPLETE` is only a source-data prerequisite. It is **not** a
 market approval, an activity formula, an oracle publication, or permission to
