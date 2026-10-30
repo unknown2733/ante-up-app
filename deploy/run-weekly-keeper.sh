@@ -12,11 +12,13 @@ flock -n 9 || exit 0
 if docker run --rm --user 1000:1000 \
   -v "$STATE:/state" \
   -v "$SECRETS/devnet-rpc.secondary.url:/run/secrets/rpc.url:ro" \
+  -v "$SECRETS/devnet-rpc.url:/run/secrets/rpc.fallback.url:ro" \
   -v "$SECRETS/devnet-publisher.json:/run/secrets/publisher.json:ro" \
   -v "$SECRETS/devnet-keeper.json:/run/secrets/keeper.json:ro" \
   -e ANTE_UP_WEEKLY_KEEPER_ENABLED=yes \
   -e ANTE_UP_WEEKLY_KEEPER_MARKETS=/state/keeper-auto/markets.json \
   -e ANTE_UP_RPC_URL_FILE=/run/secrets/rpc.url \
+  -e ANTE_UP_RPC_FALLBACK_URL_FILE=/run/secrets/rpc.fallback.url \
   -e ANTE_UP_PUBLISHER_KEYPAIR_FILE=/run/secrets/publisher.json \
   -e ANTE_UP_KEEPER_KEYPAIR_FILE=/run/secrets/keeper.json \
   "$IMAGE" node scripts/weekly-keeper.mjs --execute \

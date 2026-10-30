@@ -6,6 +6,7 @@ import {join,dirname,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createRequire} from 'node:module';
 import {KitFinalizedAccountReader} from '../services/indexer/src/repositories.ts';
+import {isRpcRateLimited} from '../services/indexer/src/rpc-retry.ts';
 import {FinalizedFinancialAccounts} from '../services/api/src/financial-chain.ts';
 import {readFrozenSettlement} from '../services/keeper/src/candidate.ts';
 
@@ -18,6 +19,21 @@ const fail=code=>{throw Error(code);};
 const asInt=value=>{const n=Number(value);if(!Number.isSafeInteger(n)||n<0)fail('WEEKLY_STATE_INVALID');return n;};
 const withinState=path=>typeof path==='string'&&path.startsWith('/state/')&&!path.includes('..');
 const scrub=message=>String(message).replace(/https?:\/\/[^\s]+/g,'[RPC_REDACTED]').slice(-500);
+/** Select exactly one RPC before any signer is opened. Never switch a signed attempt. */
+export async function selectWeeklyRpc(primaryEndpoint,fallbackEndpoint,rpcFactory=kit.createSolanaRpc){
+ if(!/^https:\/\//.test(primaryEndpoint))fail('WEEKLY_RPC_URL_INVALID');
+ if(fallbackEndpoint&&(!/^https:\/\//.test(fallbackEndpoint)||fallbackEndpoint===primaryEndpoint))
+  fail('WEEKLY_FALLBACK_RPC_URL_INVALID');
+ const genesis=async endpoint=>rpcFactory(endpoint).getGenesisHash().send();
+ try{
+  if(await genesis(primaryEndpoint)!==GENESIS)fail('WEEKLY_DEVNET_REQUIRED');
+  return {endpoint:primaryEndpoint,source:'primary'};
+ }catch(error){
+  if(!isRpcRateLimited(error)||!fallbackEndpoint)throw error;
+  if(await genesis(fallbackEndpoint)!==GENESIS)fail('WEEKLY_FALLBACK_DEVNET_MISMATCH');
+  return {endpoint:fallbackEndpoint,source:'fallback'};
+ }
+}
 export const inWeeklyServiceWindow=now=>Number.isSafeInteger(now)&&now>=monday(now)+960&&
   now<=monday(now)+86_400+960;
 // The X publisher runs on five-minute boundaries. Check validity recovery
@@ -197,14 +213,18 @@ async function main(){
  });
  const weeklyComplete=!args.includes('--preflight')&&previous&&exact(previous,completion);
  if(weekly&&weeklyComplete&&!recoveryTick)return;
- const endpoint=(await readFile(secret,'utf8')).trim();
- if(!/^https:\/\//.test(endpoint)||await kit.createSolanaRpc(endpoint).getGenesisHash().send()!==GENESIS)
-  fail('WEEKLY_DEVNET_REQUIRED');
+ const fallbackFile=process.env.ANTE_UP_RPC_FALLBACK_URL_FILE;
+ const [primaryEndpoint,fallbackEndpoint]=await Promise.all([
+  readFile(secret,'utf8').then(value=>value.trim()),
+  fallbackFile?readFile(fallbackFile,'utf8').then(value=>value.trim()):Promise.resolve(null)]);
+ const selected=await selectWeeklyRpc(primaryEndpoint,fallbackEndpoint);
+ const endpoint=selected.endpoint;
  if(execute&&(!process.env.ANTE_UP_PUBLISHER_KEYPAIR_FILE||!process.env.ANTE_UP_KEEPER_KEYPAIR_FILE))
   fail('WEEKLY_SIGNERS_REQUIRED');
  const accounts=new FinalizedFinancialAccounts({cluster:'devnet',programId:PROGRAM,
   accounts:new KitFinalizedAccountReader(endpoint)});
- const env={...process.env,ANTE_UP_RPC_URL:endpoint};
+ const env={...process.env,ANTE_UP_RPC_URL:endpoint,
+  ANTE_UP_RPC_URL_FILE:selected.source==='fallback'?fallbackFile:secret};
  const result=weekly&&!weeklyComplete?
    await runWeeklyPass({now,markets,accounts,env,execute}):
    await runValidityRecoveryPass({now,markets,accounts,env,execute});

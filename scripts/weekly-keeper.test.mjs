@@ -4,7 +4,7 @@ import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {weeklyDue,inWeeklyServiceWindow,inValidityRecoveryTick,validityRecoveryDue,validateWeeklyMarkets,resolveWeeklyScope,
-  runWeeklyPass,runValidityRecoveryPass} from './weekly-keeper.mjs';
+  runWeeklyPass,runValidityRecoveryPass,selectWeeklyRpc} from './weekly-keeper.mjs';
 
 const program='FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr';
 const marketId='CyYjBcb4LyuyLN1Akaf2eXXJV5GhFUkaPNb7caLCuHN6';
@@ -18,6 +18,29 @@ const scope={cluster:'devnet',programId:program,marketId,epoch:'3',epochStartedA
   maturityAt:week,queryHash:'a'.repeat(64),queryVersion:'1',configVersion:'20',anchor};
 const observed={marketId,epoch:'3',maturityAt:week,source:'X_COUNTS',synthetic:false,
   collectionPath:'/state/tariff/collection.json',graduationSignature:'1'.repeat(88)};
+const devnetGenesis='EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
+
+test('weekly RPC selection only switches before signing on a rate-limited identity read',async()=>{
+ const primary='https://primary.example',fallback='https://fallback.example',calls=[];
+ const rpcFactory=endpoint=>({getGenesisHash:()=>({send:async()=>{
+  calls.push(endpoint);
+  if(endpoint===primary)throw Error('HTTP 429');
+  return devnetGenesis;
+ }})});
+ assert.deepEqual(await selectWeeklyRpc(primary,fallback,rpcFactory),
+  {endpoint:fallback,source:'fallback'});
+ assert.deepEqual(calls,[primary,fallback]);
+ const healthy=await selectWeeklyRpc(primary,fallback,endpoint=>({getGenesisHash:()=>({
+  send:async()=>{calls.push(endpoint);return devnetGenesis;}})}));
+ assert.deepEqual(healthy,{endpoint:primary,source:'primary'});
+ assert.equal(calls.at(-1),primary);
+ await assert.rejects(selectWeeklyRpc(primary,fallback,endpoint=>({getGenesisHash:()=>({
+  send:async()=>endpoint===primary?'other-cluster':devnetGenesis})})),/WEEKLY_DEVNET_REQUIRED/);
+ await assert.rejects(selectWeeklyRpc(primary,fallback,endpoint=>({getGenesisHash:()=>({
+  send:async()=>{if(endpoint===primary)throw Error('HTTP 429');return 'other-cluster';}})})),
+ /WEEKLY_FALLBACK_DEVNET_MISMATCH/);
+ await assert.rejects(selectWeeklyRpc(primary,null,rpcFactory),/429/);
+});
 async function fixture(){
  const root=await mkdtemp(join(tmpdir(),'ante-weekly-keeper-'));
  const base=join(root,'initial');await mkdir(base);

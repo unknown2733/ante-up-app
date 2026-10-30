@@ -70,6 +70,16 @@ set a market price or settle a position.
 Devnet deployment requires explicit operator setup and current chain checks.
 Do not infer live service health or economic safety from a passing local test.
 
+The weekly Devnet Keeper's host wrapper mounts two private RPC URL files. It
+checks the primary endpoint's genesis before opening a signer; only an HTTP 429
+at that initial read permits the secondary endpoint, whose Devnet genesis is
+then checked. The selected endpoint is fixed for that invocation and passed
+to scope derivation, observed candidate preparation, and the instruction
+runner. An unknown submitted transaction remains in the attempt journal and
+is reconciled; no signed transaction is replayed to the other endpoint.
+The secondary file is optional for local read-only testing. Keep both URLs
+outside the repository and validate the host wrapper before enabling cron.
+
 ## Paid X market approval
 
 Before approving a newly registered market, use the read-only Devnet inspector
