@@ -20,15 +20,15 @@ const base64Account = value => {
 };
 
 export async function planSnapshotRetirement({ archivePath, expectedSha256, rpcFile, minAgeDays,
-  limit = 8, onlyAddress, completedAddresses = new Set(),
+  limit = 8, onlyAddress, completedScopes = new Map(),
   nowSeconds = Math.floor(Date.now() / 1000), rpc: injectedRpc }) {
   check(Number.isSafeInteger(minAgeDays) && minAgeDays >= 7 && minAgeDays <= 365 &&
     Number.isSafeInteger(limit) && limit >= 1 && limit <= 16 &&
     Number.isSafeInteger(nowSeconds) && nowSeconds > 0, 'RETIRE_PLAN_BOUNDS_INVALID');
   check(onlyAddress === undefined || kit.isAddress(onlyAddress), 'RETIRE_ADDRESS_INVALID');
-  check(completedAddresses instanceof Set && [...completedAddresses].every(address => kit.isAddress(address)),
-    'RETIRE_COMPLETED_ADDRESSES_INVALID');
-  check(onlyAddress === undefined || !completedAddresses.has(onlyAddress), 'RETIRE_ADDRESS_ALREADY_COMPLETED');
+  check(completedScopes instanceof Map && [...completedScopes.keys()].every(address => kit.isAddress(address)),
+    'RETIRE_COMPLETED_SCOPES_INVALID');
+  check(onlyAddress === undefined || !completedScopes.has(onlyAddress), 'RETIRE_ADDRESS_ALREADY_COMPLETED');
   const verified = await verifyArchive({ archivePath, expectedSha256 });
   const endpoint = injectedRpc ? null : (await readFile(rpcFile, 'utf8')).trim();
   check(injectedRpc || /^https:\/\//.test(endpoint), 'DEVNET_RPC_REQUIRED');
@@ -38,6 +38,12 @@ export async function planSnapshotRetirement({ archivePath, expectedSha256, rpcF
   let rows;
   try { rows = db.prepare('SELECT market,sequence,address,account_data FROM snapshots').all(); }
   finally { db.close(); }
+  const archivedByAddress = new Map(rows.map(row => [row.address, row]));
+  for (const [address, scope] of completedScopes) {
+    const row = archivedByAddress.get(address);
+    check(row && scope?.market === row.market && scope?.sequence === row.sequence,
+      'RETIRE_COMPLETED_SCOPE_MISMATCH');
+  }
   const markets = new Map();
   for (const market of new Set(rows.map(row => row.market))) {
     const response = await retryRpcRead(() => rpc.getAccountInfo(kit.address(market),
@@ -54,7 +60,7 @@ export async function planSnapshotRetirement({ archivePath, expectedSha256, rpcF
   }).filter(row => Number.isSafeInteger(row.publishedAt) && row.publishedAt > 0 &&
     BigInt(row.sequence) < row.latestSequence && nowSeconds - row.publishedAt >= minAgeSeconds)
     .sort((a, b) => a.publishedAt - b.publishedAt || a.address.localeCompare(b.address));
-  const remaining = eligible.filter(row => !completedAddresses.has(row.address));
+  const remaining = eligible.filter(row => !completedScopes.has(row.address));
   const selected = onlyAddress ? remaining.filter(row => row.address === onlyAddress) : remaining.slice(0, limit);
   check(!onlyAddress || selected.length === 1, 'RETIRE_ADDRESS_NOT_ELIGIBLE');
   const batch = [];

@@ -17,7 +17,7 @@ const fingerprint = scope => createHash('sha256').update(JSON.stringify(scope)).
 /** A finalized journal may skip a previously retired account in an immutable archive. */
 export async function completedRetirements(journalDir) {
   const entries = await readdir(journalDir, { withFileTypes: true });
-  const completed = new Set();
+  const completed = new Map();
   for (const entry of entries) {
     if (!entry.name.endsWith('.json')) continue;
     const address = entry.name.slice(0, -5);
@@ -33,7 +33,7 @@ export async function completedRetirements(journalDir) {
       SHA256.test(scope.archiveSha256) && SHA256.test(scope.backupSha256) &&
       journal.fingerprint === fingerprint(scope) && SIGNATURE.test(journal.signature),
     'RETIRE_BATCH_JOURNAL_INVALID');
-    completed.add(address);
+    completed.set(address, { market: scope.market, sequence: scope.sequence });
   }
   return completed;
 }
@@ -43,13 +43,13 @@ export async function planRetirementBatch({ journalDir, archivePath, expectedSha
   check(Number.isSafeInteger(limit) && limit >= 1 && limit <= 16,
     'RETIRE_BATCH_LIMIT_INVALID');
   check(SHA256.test(expectedSha256 ?? ''), 'RETIRE_BATCH_ARCHIVE_HASH_INVALID');
-  const completedAddresses = await completedRetirements(journalDir);
+  const completedScopes = await completedRetirements(journalDir);
   const selection = await plan({ archivePath, expectedSha256, rpcFile, minAgeDays: 7, limit,
-    nowSeconds, completedAddresses });
+    nowSeconds, completedScopes });
   const addresses = selection?.batch?.map(item => item.address);
   check(selection?.mode === 'READ_ONLY' && selection.archiveSha256 === expectedSha256 &&
     Array.isArray(addresses) && addresses.length <= limit &&
-    addresses.every(address => kit.isAddress(address) && !completedAddresses.has(address)) &&
+    addresses.every(address => kit.isAddress(address) && !completedScopes.has(address)) &&
     selection.batch.every(item => kit.isAddress(item.market) &&
       /^(?:[1-9][0-9]*)$/.test(item.sequence)) &&
     new Set(addresses).size === addresses.length, 'RETIRE_BATCH_PLAN_INVALID');

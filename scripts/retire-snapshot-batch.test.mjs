@@ -23,9 +23,9 @@ test('only finalized, scope-bound journals exclude immutable archived snapshots'
     state: 'FINALIZED' };
   try {
     await writeFile(path, JSON.stringify(journal));
-    assert.deepEqual([...await completedRetirements(dir)], [address]);
+    assert.deepEqual([...await completedRetirements(dir)], [[address, { market: another, sequence: '1' }]]);
     let completed;
-    const plan = async input => { completed = input.completedAddresses; return {
+    const plan = async input => { completed = input.completedScopes; return {
       mode: 'READ_ONLY', archiveSha256: scope.archiveSha256, batch: [] }; };
     await planRetirementBatch({ journalDir: dir, archivePath: 'archive',
       expectedSha256: scope.archiveSha256, rpcFile: 'rpc', plan });
