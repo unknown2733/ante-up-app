@@ -2,6 +2,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {createHash} from 'node:crypto';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {deriveCumulativeIntervals} from '../services/data/cumulative-intervals.mjs';
 
 const FIVE_MINUTES=300_000;
 const TWENTY_EIGHT_DAYS=28*86_400_000;
@@ -90,9 +91,14 @@ export function inspectReferenceStore(dbPath,{nowMs=Date.now()}={}){
       const cadenceSource=kind==='YOUTUBE_VIEWS'||kind==='X_LIKES';
       const coverage=cadenceSource?analyzeCumulativeCoverage(rows,{nowMs}):null;
       const evidence=cadenceSource?verifyCumulativeEvidence(rows,slug):null;
+      const intervalKinds=cadenceSource
+        ?deriveCumulativeIntervals(rows).intervals.reduce((counts,interval)=>{
+          counts[interval.kind]++;return counts;
+        },{OBSERVED_DELTA:0,GAP:0,DOWNWARD_REVISION:0,REVISION_RECOVERY:0})
+        :null;
       const checked=coverage&&evidence&&!evidence.evidenceValid
         ?{...coverage,status:'SOURCE_EVIDENCE_INVALID',readyForFiveMinuteDerivation:false}:coverage;
-      return {slug,kind,requiredCadence:'5m',evidence,coverage:checked??{
+      return {slug,kind,requiredCadence:'5m',evidence,intervalKinds,coverage:checked??{
         status:'UNSUPPORTED_SOURCE_CADENCE',
         coverageComplete:false,readyForFiveMinuteDerivation:false}};
     });

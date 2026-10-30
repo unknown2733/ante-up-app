@@ -16,18 +16,36 @@ export function deriveCumulativeIntervals(readings,{bucketMs=300_000}={}){
   }
   const selected=[...byBucket.values()].sort((a,b)=>a.bucket-b.bucket);
   const intervals=[];
+  // After a provider lowers a cumulative counter, later positive differences
+  // may merely undo the correction. Do not label them as new activity until
+  // a reading has crossed the last known pre-correction value.
+  let revisionBaseline=null;
   for(let i=1;i<selected.length;i++){
     const from=selected[i-1],to=selected[i];
     const base={fromAtMs:from.observedAtMs,toAtMs:to.observedAtMs,
       durationMs:to.observedAtMs-from.observedAtMs,
       fromRawSha256:from.rawSha256??null,toRawSha256:to.rawSha256??null};
-    if(to.bucket-from.bucket!==bucketMs){
-      intervals.push({...base,kind:'GAP',deltaCount:null});continue;
-    }
     const change=BigInt(to.value)-BigInt(from.value);
-    intervals.push(change<0n?{...base,kind:'DOWNWARD_REVISION',deltaCount:null,
-      revisionMagnitude:(-change).toString()}:
-      {...base,kind:'OBSERVED_DELTA',deltaCount:change.toString()});
+    if(change<0n){
+      const prior=BigInt(from.value);
+      if(revisionBaseline===null||prior>revisionBaseline)revisionBaseline=prior;
+    }
+    if(to.bucket-from.bucket!==bucketMs){
+      intervals.push({...base,kind:'GAP',deltaCount:null});
+      if(revisionBaseline!==null&&BigInt(to.value)>revisionBaseline)revisionBaseline=null;
+      continue;
+    }
+    if(change<0n){
+      intervals.push({...base,kind:'DOWNWARD_REVISION',deltaCount:null,
+        revisionMagnitude:(-change).toString()});continue;
+    }
+    if(revisionBaseline!==null){
+      intervals.push({...base,kind:'REVISION_RECOVERY',deltaCount:null,
+        revisionBaselineCount:revisionBaseline.toString()});
+      if(BigInt(to.value)>revisionBaseline)revisionBaseline=null;
+      continue;
+    }
+    intervals.push({...base,kind:'OBSERVED_DELTA',deltaCount:change.toString()});
   }
   return {selectedReadings:selected.length,intervals};
 }
