@@ -171,6 +171,21 @@ retire accounts. Re-run it against the exact binary immediately before the
 program extension and deployment. Keep the temporary upload buffer, signer
 files, and RPC URL outside the public repository.
 
+Before retiring a Snapshot account, rehearse its disappearance from RPC reads
+against the trusted archive. The rehearsal fetches the still-live finalized
+account, checks its bytes against the archive, hides that one address from an
+in-memory RPC wrapper, and requires the complete program scan to recover it.
+It neither closes an account nor signs a transaction:
+
+```sh
+node scripts/simulate-retired-snapshot-read.mjs \
+  /absolute/path/snapshots.sqlite TRUSTED_ARCHIVE_SHA256 \
+  /absolute/path/devnet-rpc.url SNAPSHOT_ADDRESS
+```
+
+A passing rehearsal does not replace the later finalized retirement and live
+indexer readback. The current Snapshot must remain on chain.
+
 `scripts/export-snapshot-archive.mjs` creates a separate, immutable SQLite copy
 of every currently indexed Devnet Snapshot account. It compares the finalized
 program account, PDA, candidate hash and fields, and finalized indexer event.
