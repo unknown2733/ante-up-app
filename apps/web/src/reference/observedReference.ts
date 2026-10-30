@@ -54,6 +54,7 @@ export function mergeReferenceHistory(base: MarketHistory, observations: Referen
 
 export function createObservedReferenceReadApi(baseUrl: string, fetcher: typeof fetch = fetch): ConsumerReadApi {
   const origin = baseUrl.replace(/\/$/, '');
+  const latestBySlug = new Map<string, ReferenceObservation>();
   async function read(path: string): Promise<ReferenceObservation[]> {
     const response = await fetcher(`${origin}/v1/reference/${path}`, { cache: 'no-store' });
     if (!response.ok) throw new Error(`Reference observations unavailable (${response.status}).`);
@@ -68,9 +69,10 @@ export function createObservedReferenceReadApi(baseUrl: string, fetcher: typeof 
     async listMarkets() {
       const base = await referenceConsumerReadApi.listMarkets();
       let latest: ReferenceObservation[];
-      try { latest = await read('latest'); } catch { return base; }
-      const bySlug = new Map(latest.map(item => [item.slug, item]));
-      return base.map(market => mergeReferenceMarket(market, bySlug.get(market.id.slice(PREFIX.length))));
+      try { latest = await read('latest'); } catch { latestBySlug.clear(); return base; }
+      latestBySlug.clear();
+      for (const item of latest) latestBySlug.set(item.slug, item);
+      return base.map(market => mergeReferenceMarket(market, latestBySlug.get(market.id.slice(PREFIX.length))));
     },
     async getHistory(id, period) {
       const base = await referenceConsumerReadApi.getHistory(id, period);
@@ -81,7 +83,12 @@ export function createObservedReferenceReadApi(baseUrl: string, fetcher: typeof 
       // the bounded observation journal before clipping relative to its latest date.
       const sinceMs = 0;
       try { observations = await read(`history/${encodeURIComponent(slug)}?sinceMs=${sinceMs}`); }
-      catch { return base; }
+      catch {
+        // Explore may already have a fresh public count when a parallel history
+        // request fails. Keep that observed point in the fallback chart.
+        const latest = latestBySlug.get(slug);
+        return latest ? mergeReferenceHistory(base, [latest]) : base;
+      }
       return mergeReferenceHistory(base, observations);
     },
   };
