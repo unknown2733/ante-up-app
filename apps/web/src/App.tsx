@@ -8,6 +8,7 @@ import { currentWalletContext, walletClient, walletCluster, WalletConnectPrompt,
 import type { FreeOutcome, FreeProgress, FreeRequest, FreeReview } from './liveFree';
 import { FinancialFaucet, FinancialMarket, FinancialRegistration, PrivateFinancialPanel } from './Financial';
 import { displayConsumerError } from './consumer-ui/copy';
+import { marketStatusView } from './marketStatus';
 import type { ConsumerAction, ConsumerMarket, ConsumerMode, ConsumerNote, ConsumerPeriod, ConsumerSeriesKind, MarketHistory } from '../../../contracts/consumer';
 import { ConsumerShell, MarketDiscovery, ActionTabs, mergeConsumerMarkets } from './consumer-ui';
 import type { ActionTab, ConsumerRoute } from './consumer-ui';
@@ -75,7 +76,6 @@ function useRetainedData<T>(load: () => Promise<{ data: T }>, identity: string, 
 }
 
 const marketName = (id: string) => ({ 'm-attention': 'attention', 'm-meme': 'meme', 'm-outage': 'outage', 'm-signal': 'signal', 'm-wait': 'moment', 'fixture:sol': 'solana', 'fixture:unready': 'unready' })[id as 'm-attention'] || id;
-const statusText = { PREPARING: 'Preparing data', VALID: 'Data current', LOW_ACTIVITY: 'Low activity', OUTAGE: 'Data unavailable' };
 const phaseText = { CURVE: 'Bonding curve', GRADUATION_WAIT: 'Graduation pending', INDEXED: 'Index market' };
 function date(seconds: number | null) { return seconds ? new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC', hour12: false }).format(seconds * 1000) + ' UTC' : '—'; }
 function percent(value: { numerator: string; denominator: string } | null, digits = 1) {
@@ -233,6 +233,7 @@ function MarketPage({ id, refresh, changed, mode, section = 'call', compact = fa
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const m = market.value;
+  const status = m ? marketStatusView(m) : null;
   const open = profile.value?.openRecords.find((record) => record.marketId === id);
   async function mutate() {
     if (!m || market.loading || market.error || profile.loading || profile.error) return;
@@ -252,8 +253,9 @@ function MarketPage({ id, refresh, changed, mode, section = 'call', compact = fa
   const duplicate = !open && profile.value?.openRecords.some((record) => record.marketId === m.id);
   return <div className={`page${compact ? ' au-order-page' : ''}`}>
     {refreshBlocked && <Notice tone={market.error ? 'red' : 'blue'}>{market.error ? <><span>Could not verify the latest market data. New actions are blocked. {market.error}</span> <button type="button" className="button button-dark" onClick={() => setMarketRetry(value => value + 1)}>Retry market data</button></> : 'Refreshing market data. New actions are temporarily blocked.'}</Notice>}
-    {compact && <div className="au-order-context"><div className="tag-row"><Tag tone="blue">{phaseText[m.phase]}</Tag><Tag tone={m.dataStatus === 'VALID' ? 'green' : 'orange'}>{statusText[m.dataStatus]}</Tag>{!m.supported && <Tag tone="orange">Data coverage pending</Tag>}</div>{section !== 'call' && <div className="au-order-price"><span>{m.price?.kind === 'curve' ? 'Curve quote' : 'Index reference'}</span><strong>{m.price ? `${atoms(m.price.atoms)} tUSD` : 'Unavailable'}</strong><small>Final price confirmed in your quote</small></div>}{section === 'liquidity' && <p className="tiny muted">Reference price and vault NAV are separate. Load your balances below for current vault NAV and shares.</p>}</div>}
-    {!compact && <><div className="detail-title"><span className="eyebrow blue-text">MARKET</span><div className="tag-row"><Tag tone="blue">{phaseText[m.phase]}</Tag><Tag tone={m.dataStatus === 'VALID' ? 'green' : m.dataStatus === 'OUTAGE' ? 'red' : 'orange'}>{statusText[m.dataStatus]}</Tag>{!m.supported && <Tag tone="orange">Data coverage pending</Tag>}</div></div>
+    {status?.delayed && <Notice tone="red">A current verified index price is unavailable. Paid quotes resume after the index is verified again. Chips stay available; taking one back now may record N/A.</Notice>}
+    {compact && <div className="au-order-context"><div className="tag-row"><Tag tone="blue">{phaseText[m.phase]}</Tag><Tag tone={status!.tone}>{status!.label}</Tag>{!m.supported && <Tag tone="orange">Data coverage pending</Tag>}</div>{section !== 'call' && <div className="au-order-price"><span>{m.price?.kind === 'curve' ? 'Curve quote' : 'Index reference'}</span><strong>{m.price ? `${atoms(m.price.atoms)} tUSD` : 'Unavailable'}</strong><small>Final price confirmed in your quote</small></div>}{section === 'liquidity' && <p className="tiny muted">Reference price and vault NAV are separate. Load your balances below for current vault NAV and shares.</p>}</div>}
+    {!compact && <><div className="detail-title"><span className="eyebrow blue-text">MARKET</span><div className="tag-row"><Tag tone="blue">{phaseText[m.phase]}</Tag><Tag tone={status!.tone}>{status!.label}</Tag>{!m.supported && <Tag tone="orange">Data coverage pending</Tag>}</div></div>
     <div className="detail-grid"><div className="metric-card primary-metric"><span className="eyebrow">{m.price?.kind === 'curve' ? 'Curve quote' : 'Index reference'}</span><strong>{m.price ? atoms(m.price.atoms) : '—'}<small>{m.price ? ' tUSD' : ''}</small></strong><p>{isFixture ? 'Sample reference · not an execution price' : m.price?.executable ? 'Published snapshot · rechecked at execution' : 'Reference only · unavailable for execution'}</p></div><div className="metric-card"><span className="eyebrow">Fixed price cap</span><strong>{m.anchor ? `${atoms(m.anchor.maxPriceAtoms)} tUSD` : '—'}</strong><p>{m.anchor ? 'Graduation anchor' : 'Before graduation / no anchor'}</p></div></div>
     <div className="comparison-strip"><div><span>Attention change since chip placement</span><strong>{open ? 'Chip active' : 'See activity'}</strong></div><div><span>Weekly price change</span><strong>No data</strong></div><div><span>My trade P&L</span><strong>No P&L data</strong></div></div></>}
     {section === 'call' && <section className="detail-panel au-chip-panel"><p className="au-chip-subject">{marketDisplayTitle(m.keyword)} · 1 chip · Free participation</p><div className="section-head"><div><span className="eyebrow orange-text">CHIPS</span><h2>{open ? 'Your chip is active' : 'Place a chip'}</h2></div><span className="au-chip-count" aria-label={`${profile.value?.openRecords.length ?? 'Unknown'} of 3 active chips`}><span aria-hidden="true">◉</span> {profile.value?.openRecords.length ?? '—'} / 3 active</span></div><p>{open ? 'Take back your chip to finalize the attention result and free up this chip.' : 'Place a chip on this keyword and take it back later. The result tracks attention change, not a cash payout.'}</p>
