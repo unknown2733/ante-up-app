@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { FileCollectionState, XCountsHttpAdapter, runInitialArchive, runRegularPoll, runGapFill } from './live.mjs';
 import { FileCandidateRepository, publishSnapshot, publishSourceInvalidOutage,
   reconcilePublications } from './publisher.mjs';
-import { getAdmissionGateIntent } from './outage.mjs';
+import { getAdmissionGateIntent, markSourceStale } from './outage.mjs';
 import { FileRawResponseRepository } from './index.mjs';
 import { createKitPublisherChain } from './kit.mjs';
 
@@ -30,6 +30,21 @@ export function latestSettledBucketEnd(now) {
 export async function runLiveCycle({config,argv,now,store,transport,publisherRuntime=null,beforeSourceRequest}) {
   store??=new FileCollectionState(join(config.directory,'collection.json'));
   transport??=new XCountsHttpAdapter({bearerToken:config.token});
+  // Record an observed stale gap even when an earlier failed request is still
+  // in backoff or the local paid-data budget prevents another HTTP attempt.
+  const collection=await store.read(),existing=collection.markets?.[config.marketId];
+  if(existing?.recoveryState){
+    const before=JSON.stringify({timeline:existing.outageTimeline,
+      outageStartAt:existing.recoveryState.outageStartAt,
+      emergencyAt:existing.recoveryState.emergencyAt,
+      admission:existing.recoveryState.admission});
+    markSourceStale(existing,config.marketId,now);
+    const after=JSON.stringify({timeline:existing.outageTimeline,
+      outageStartAt:existing.recoveryState.outageStartAt,
+      emergencyAt:existing.recoveryState.emergencyAt,
+      admission:existing.recoveryState.admission});
+    if(after!==before)await store.write(collection);
+  }
   let pendingPublication=null;
   if (argv.includes('--publish')) {
     if (!publisherRuntime) throw new Error('PUBLISH_RUNTIME_REQUIRED');
