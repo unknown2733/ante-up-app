@@ -12,9 +12,10 @@ async function main(){
  const [pda]=await chain.findAdmissionPda(),a=chain.getAdmissionDecoder().decode((await t.getFinalizedAccount(pda)).data);
  const clock=await t.getFinalizedAccount(kit.address('SysvarC1ock11111111111111111111111111111111'));
  const chainNow=Buffer.from(clock.data).readBigInt64LE(32),recent=a.recent.filter(at=>at>0n&&chainNow-at<86400n).length;
- const blockers=[];if(!a.open)blockers.push('OPERATOR_PAUSED');if(a.outstanding>=200)blockers.push('GLOBAL_OUTSTANDING_LIMIT');if(recent>=100)blockers.push('GLOBAL_DAILY_LIMIT');
+ const blockers=[];if(!a.open)blockers.push('OPERATOR_PAUSED');if(a.fundedOpenCount>=a.fundedOpenCap)blockers.push('FUNDED_PROOF_CAP');if(a.outstanding>=200)blockers.push('GLOBAL_OUTSTANDING_LIMIT');if(recent>=100)blockers.push('GLOBAL_DAILY_LIMIT');
  const finance=(await chain.readFinalizedFinanceConfig(t)).data;
- const report={readOnly:true,cluster:'devnet',chainNow,admission:{address:pda,open:a.open,outstanding:a.outstanding,recent24h:recent,blockers},financeConfig:finance,markets:[]};
+ const report={readOnly:true,cluster:'devnet',chainNow,admission:{address:pda,open:a.open,outstanding:a.outstanding,recent24h:recent,
+  fundedOpenCap:a.fundedOpenCap,fundedOpenCount:a.fundedOpenCount,fundedOpensRemaining:a.fundedOpenCap-a.fundedOpenCount,blockers},financeConfig:finance,markets:[]};
  for(const market of process.argv.slice(2)){
   const fm=(await chain.readFinalizedFinanceMarket(t,kit.address(market))).data;
   const raw=await t.getFinalizedAccount(kit.address(market));const m=chain.getMarketDecoder().decode(raw.data);
