@@ -1,8 +1,8 @@
 [Unit]
-Description=Check Ante Up Spotify reference streams once daily
+Description=Check Ante Up Spotify reference streams after the daily budget resets
 
 [Timer]
-OnCalendar=*-*-* 02:40:00 UTC
+OnCalendar=*-*-* 02,06,10,14,18,22:40:00 UTC
 Persistent=true
 Unit=ante-up-reference-kworb.service
 
