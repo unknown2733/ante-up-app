@@ -30,11 +30,13 @@ test('finalized market and global admission permit free entry before numeric dat
   assert.equal(market.snapshot,null);
   assert.equal(market.dataStatus,'PREPARING');
   assert.equal(market.capabilities.openFree?.allowed,true);
+  assert.deepEqual(market.freeChipCapacity,{fundedCap:'1',fundedUsed:'0',fundedRemaining:'1'});
   assert.equal((await read.markets())[0],market);
   assert.equal(accountReads,2,'public market read should reuse the verified snapshot');
   fundedOpenCount=1n;
   const exhausted=(await read.markets(0))[0];
   assert.deepEqual(exhausted.capabilities.openFree,{allowed:false,reason:'BUDGET_EXHAUSTED',detail:'FUNDED_PROOF_CAP'});
+  assert.deepEqual(exhausted.freeChipCapacity,{fundedCap:'1',fundedUsed:'1',fundedRemaining:'0'});
   assert.equal(validateMarket(exhausted),exhausted);
   open=false;
   assert.deepEqual((await read.markets(0))[0].capabilities.openFree,

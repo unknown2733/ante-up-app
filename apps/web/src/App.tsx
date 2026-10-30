@@ -257,7 +257,15 @@ function MarketPage({ id, refresh, changed, mode, section = 'call', compact = fa
     <div className="detail-grid"><div className="metric-card primary-metric"><span className="eyebrow">{m.price?.kind === 'curve' ? 'Curve quote' : 'Index reference'}</span><strong>{m.price ? atoms(m.price.atoms) : '—'}<small>{m.price ? ' tUSD' : ''}</small></strong><p>{isFixture ? 'Sample reference · not an execution price' : m.price?.executable ? 'Published snapshot · rechecked at execution' : 'Reference only · unavailable for execution'}</p></div><div className="metric-card"><span className="eyebrow">Fixed price cap</span><strong>{m.anchor ? `${atoms(m.anchor.maxPriceAtoms)} tUSD` : '—'}</strong><p>{m.anchor ? 'Graduation anchor' : 'Before graduation / no anchor'}</p></div></div>
     <div className="comparison-strip"><div><span>Attention change since chip placement</span><strong>{open ? 'Chip active' : 'See activity'}</strong></div><div><span>Weekly price change</span><strong>No data</strong></div><div><span>My trade P&L</span><strong>No P&L data</strong></div></div></>}
     {section === 'call' && <section className="detail-panel au-chip-panel"><p className="au-chip-subject">{marketDisplayTitle(m.keyword)} · 1 chip · Free participation</p><div className="section-head"><div><span className="eyebrow orange-text">CHIPS</span><h2>{open ? 'Your chip is active' : 'Place a chip'}</h2></div><span className="au-chip-count" aria-label={`${profile.value?.openRecords.length ?? 'Unknown'} of 3 active chips`}><span aria-hidden="true">◉</span> {profile.value?.openRecords.length ?? '—'} / 3 active</span></div><p>{open ? 'Take back your chip to finalize the attention result and free up this chip.' : 'Place a chip on this keyword and take it back later. The result tracks attention change, not a cash payout.'}</p>
-      <details className="au-chip-rules" open={compact ? undefined : true}><summary>Chip limits</summary><div className="rule-list"><div><span>Active chips</span><strong>{profile.value?.openRecords.length ?? '—'} / 3</strong></div><div><span>Per market</span><strong>Maximum one</strong></div><div><span>New placements</span><strong>6 per wallet / 24 h · 100 total</strong></div></div></details>
+      <details className="au-chip-rules" open={compact ? undefined : true}>
+        <summary>Chip limits</summary>
+        <div className="rule-list">
+          <div><span>Active chips</span><strong>{profile.value?.openRecords.length ?? '—'} / 3</strong></div>
+          <div><span>Per market</span><strong>Maximum one</strong></div>
+          <div><span>New placements</span><strong>6 per wallet · 100 globally / 24 h</strong></div>
+          {m.freeChipCapacity && <div><span>Shared entry slots left</span><strong>{m.freeChipCapacity.fundedRemaining} / {m.freeChipCapacity.fundedCap}</strong></div>}
+        </div>
+      </details>
       {m.dataStatus === 'LOW_ACTIVITY' && <Notice tone="orange">Activity is low. Chips remain available; new paid trades are paused.</Notice>}
       {m.dataStatus === 'OUTAGE' && <Notice tone="red">You can still place or take back a chip while data is unavailable. Taking it back now may record N/A.</Notice>}
       {m.dataStatus === 'PREPARING' && <Notice tone="orange">The index is preparing. A missing entry reference will not be backfilled.</Notice>}

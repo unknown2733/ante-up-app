@@ -32,6 +32,13 @@ const oneOf = <T extends string>(v: unknown, values: readonly T[], name: string)
 
 export function validateMarket(v: unknown): MarketView {
   const m = object(v);
+  if(m.freeChipCapacity!==undefined){
+    const capacity=object(m.freeChipCapacity);
+    const cap=BigInt(uint(capacity.fundedCap,'market.freeChipCapacity.fundedCap'));
+    const used=BigInt(uint(capacity.fundedUsed,'market.freeChipCapacity.fundedUsed'));
+    const remaining=BigInt(uint(capacity.fundedRemaining,'market.freeChipCapacity.fundedRemaining'));
+    if(used>cap || remaining!==cap-used) throw new InputError('market.freeChipCapacity inconsistent');
+  }
   if(m.dataProvenance!==undefined)oneOf(m.dataProvenance,['SYNTHETIC_QA'] as const,'market.dataProvenance');
   string(m.id, 'market.id'); string(m.keyword, 'market.keyword');
   if (!Array.isArray(m.aliases) || !m.aliases.every(x => typeof x === 'string')) throw new InputError('market.aliases invalid');
