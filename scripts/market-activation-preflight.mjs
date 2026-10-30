@@ -1,5 +1,6 @@
 // Read-only Devnet market activation snapshot. No signer, paid source call, or transaction.
 import {createRequire} from 'node:module';
+import {DatabaseSync} from 'node:sqlite';
 import {readFile,stat} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -10,14 +11,39 @@ import {candidatePathForDirectory,validatePaidXRegistry} from './paid-x-approval
 import {verifyCandidate} from './verify-paid-x-candidate.mjs';
 import {buildQuery} from '../services/data/index.mjs';
 import {queryHashFor} from '../services/data/live.mjs';
+import {DEFAULT_GLOBAL_X_LIMITS} from '../services/data/global-budget.mjs';
 
 const kit=createRequire(new URL('../clients/chain/package.json',import.meta.url))('@solana/kit');
 const CORRECT_GENESIS='EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
 const UNIT=1_000_000n,CURVE_CAP=1_000n*UNIT,MIN_RESERVE=1_100n*UNIT;
 const safe=error=>String(error?.message??error).replace(/https?:\/\/[^\s"'<>]+/g,'[RPC_URL_REDACTED]').slice(0,180);
 
+/** The collector's shared X ledger is read without creating or reserving a request. */
+export function inspectGlobalBudget(path,{day,costMicros,kind}){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(day??'')||
+      !Number.isSafeInteger(costMicros)||costMicros<=0||
+      !['initial','regular'].includes(kind))throw Error('GLOBAL_X_PREFLIGHT_ARGS_INVALID');
+  const db=new DatabaseSync(path,{readOnly:true});
+  try{
+    const row=db.prepare(`SELECT COALESCE(SUM(estimated_cost_micros),0) total,
+      COALESCE(SUM(CASE WHEN day=? THEN estimated_cost_micros ELSE 0 END),0) daily,
+      COALESCE(SUM(CASE WHEN kind='initial' THEN estimated_cost_micros ELSE 0 END),0) initial
+      FROM x_spend`).get(day);
+    if(![row?.total,row?.daily,row?.initial].every(value=>Number.isSafeInteger(value)&&value>=0))
+      throw Error('GLOBAL_X_PREFLIGHT_LEDGER_INVALID');
+    const limits=DEFAULT_GLOBAL_X_LIMITS;
+    const available=row.total+costMicros<=limits.totalLimitMicros&&
+      row.daily+costMicros<=limits.dailyLimitMicros&&
+      (kind!=='initial'||row.initial+costMicros<=limits.initialLimitMicros);
+    return {status:available?'READY':'EXHAUSTED',kind,estimatedCostMicros:costMicros,
+      remainingTotalMicros:Math.max(0,limits.totalLimitMicros-row.total),
+      remainingDailyMicros:Math.max(0,limits.dailyLimitMicros-row.daily),
+      remainingInitialMicros:Math.max(0,limits.initialLimitMicros-row.initial)};
+  }finally{db.close();}
+}
+
 export function collectorReadiness({marketId,market,snapshot,registry,config,candidates,nowSeconds,
-  globalBudgetPresent=false}) {
+  globalBudget={status:'NOT_CHECKED'}}) {
   validatePaidXRegistry(registry);
   const approved=registry.markets.find(item=>item.marketId===marketId);
   const legacyBudget=approved && config.initialEstimatedCostMicros===undefined &&
@@ -51,13 +77,14 @@ export function collectorReadiness({marketId,market,snapshot,registry,config,can
   const fresh=identityMatched && Number.isSafeInteger(dataThrough) &&
     dataThrough<=nowSeconds && nowSeconds-dataThrough<600;
   return {configState:verified.state,budgetMode:legacyBudget?'GLOBAL_LEDGER':'PER_MARKET_AND_GLOBAL',
-    globalBudgetPresent,approved:verified.state==='ALREADY_APPROVED',
+    globalBudgetPresent:!['MISSING','NOT_CHECKED'].includes(globalBudget.status),
+    globalBudget,approved:verified.state==='ALREADY_APPROVED',
     approvedPathMatches,
     candidatePath:verified.candidatePath,latestCandidatePresent:!!entry,
     latestCandidateFinalized:published?.finality==='finalized',
     snapshotIdentityMatched:identityMatched,latestDataFresh:fresh,
     collectorFeedReady:verified.state==='ALREADY_APPROVED' && approvedPathMatches &&
-      globalBudgetPresent && fresh};
+      globalBudget.status==='READY' && fresh};
 }
 
 export async function readActivation({marketId,endpoint,approvalPath,collectionConfigPath,
@@ -86,13 +113,19 @@ export async function readActivation({marketId,endpoint,approvalPath,collectionC
       let candidates=null;
       try{candidates=JSON.parse(await readFile(candidatePath,'utf8'));}
       catch(error){if(error?.code!=='ENOENT')throw error;}
-      let globalBudgetPresent=false;
+      let globalBudget={status:'MISSING'};
       if(globalBudgetPath){
-        try{globalBudgetPresent=(await stat(globalBudgetPath)).isFile();}
+        try{
+          if((await stat(globalBudgetPath)).isFile())
+            globalBudget=inspectGlobalBudget(globalBudgetPath,{
+              day:new Date(nowSeconds*1000).toISOString().slice(0,10),
+              costMicros:entry?config.estimatedCostMicros:config.initialEstimatedCostMicros,
+              kind:entry?'regular':'initial'});
+        }
         catch(error){if(error?.code!=='ENOENT')throw error;}
       }
       collection=collectorReadiness({marketId,market,snapshot,registry,config,candidates,
-        globalBudgetPresent,nowSeconds});
+        globalBudget,nowSeconds});
     }
   }
   const sold=finance.curveSold,reserve=finance.curveReserve;
@@ -111,7 +144,7 @@ export async function readActivation({marketId,endpoint,approvalPath,collectionC
         market.admission.state===chain.AdmissionState.Open,
       paidXApproved:paidXApproval==='APPROVED'
     },
-    note:'A complete graduation plan still checks source freshness, support balance, liability, and on-chain account identities.'
+    note:'The X ledger check covers internal reservations only. Provider spend caps and a complete graduation plan require separate checks.'
   };
 }
 

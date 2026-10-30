@@ -90,6 +90,14 @@ status. It opens no signer and makes no paid X request:
 ANTE_UP_RPC_URL_FILE=/absolute/path/devnet-rpc.url ANTE_UP_APPROVED_X_MARKETS_PATH=/absolute/path/approved-x-markets.json node scripts/market-activation-preflight.mjs MARKET_PDA
 ```
 
+For a collector feed check, also set `ANTE_UP_COLLECTION_CONFIG` to the
+market's collection JSON and `ANTE_UP_GLOBAL_X_BUDGET_DB` to the shared
+SQLite ledger. The inspector reads the next regular or initial request cost
+against the same daily, initial, and total limits as the collector. A ledger
+file alone does not mean the next paid request is affordable. The report's
+`globalBudget` covers internal reservations; it cannot verify the X
+provider's separate spend cap.
+
 This is a preliminary gate. The existing `graduate-market.mjs` finalized plan
 must still verify the full funding, liability, source freshness, and account
 conditions before any graduation transaction. A Devnet `--execute` run also
