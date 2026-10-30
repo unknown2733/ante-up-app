@@ -41,9 +41,15 @@ test('an unknown first retirement stops the batch before signing another account
   const dir = await mkdtemp(join(tmpdir(), 'ante-up-retire-batch-stop-'));
   try {
     let preparedCount = 0, signedCount = 0;
+    const pilotScope = { ...scope, address: programId };
+    await writeFile(join(dir, `${programId}.json`), JSON.stringify({ version: 1,
+      scope: pilotScope, fingerprint: fingerprint(pilotScope),
+      signature: '3oa9T4w8VWWph2kYSevdGCRfPFcagJ7LzdNAvcusXqoftwBC6qLeB3of98bMY3YffVbiU3wsQvWLwcndehDPCa2P',
+      state: 'FINALIZED' }));
     const result = await executeRetirementBatch({ journalDir: dir, archivePath: 'archive',
       expectedSha256: scope.archiveSha256, rpcFile: 'rpc', signerFile: 'publisher',
       adminSignerFile: 'admin', limit: 2, pilotAcknowledged: true,
+      pilotAddress: programId, pilotStatus: async () => ({ state: 'FINALIZED' }),
       plan: async () => ({ mode: 'READ_ONLY', archiveSha256: scope.archiveSha256,
         batch: [{ address, market: another, sequence: '1' },
           { address: another, market: address, sequence: '2' }] }),
@@ -77,4 +83,22 @@ test('multi-account execution requires a separately verified pilot', async () =>
   await assert.rejects(executeRetirementBatch({ journalDir: 'unused', archivePath: 'archive',
     expectedSha256: scope.archiveSha256, rpcFile: 'rpc', signerFile: 'publisher',
     adminSignerFile: 'admin', limit: 2 }), /RETIRE_BATCH_PILOT_REQUIRED/);
+});
+
+test('an unknown pilot result prevents any new batch signatures', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ante-up-retire-batch-pilot-'));
+  try {
+    const journal = { version: 1, scope, fingerprint: fingerprint(scope),
+      signature: '3oa9T4w8VWWph2kYSevdGCRfPFcagJ7LzdNAvcusXqoftwBC6qLeB3of98bMY3YffVbiU3wsQvWLwcndehDPCa2P',
+      state: 'FINALIZED' };
+    await writeFile(join(dir, `${address}.json`), JSON.stringify(journal));
+    let planned = false;
+    await assert.rejects(executeRetirementBatch({ journalDir: dir, archivePath: 'archive',
+      expectedSha256: scope.archiveSha256, rpcFile: 'rpc', signerFile: 'publisher',
+      adminSignerFile: 'admin', limit: 2, pilotAcknowledged: true,
+      pilotAddress: address, pilotStatus: async () => ({ state: 'UNKNOWN' }),
+      plan: async () => { planned = true; return { batch: [] }; } }),
+    /RETIRE_BATCH_PILOT_NOT_FINALIZED/);
+    assert.equal(planned, false);
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });

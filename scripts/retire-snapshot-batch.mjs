@@ -5,7 +5,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { planSnapshotRetirement } from './plan-snapshot-retirement.mjs';
-import { prepareSnapshotRetirement, retireSnapshot } from './retire-snapshot.mjs';
+import { loadRetirementStatus, prepareSnapshotRetirement, retireSnapshot } from './retire-snapshot.mjs';
 
 const kit = createRequire(new URL('../clients/chain/package.json', import.meta.url))('@solana/kit');
 const PROGRAM = 'FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr';
@@ -59,12 +59,21 @@ export async function planRetirementBatch({ journalDir, archivePath, expectedSha
 /** Stops immediately on an unknown or failed transaction; never signs a second one. */
 export async function executeRetirementBatch({ journalDir, archivePath, expectedSha256, rpcFile,
   offhostReceiptPath, backupResultPath, backupCopyReceiptPath, backupDrillReportPath,
-  signerFile, adminSignerFile, limit = 1, pilotAcknowledged = false, nowSeconds,
+  signerFile, adminSignerFile, limit = 1, pilotAcknowledged = false,
+  pilotAddress, nowSeconds,
   plan = planSnapshotRetirement, prepare = prepareSnapshotRetirement,
-  retire = retireSnapshot }) {
+  retire = retireSnapshot, pilotStatus = loadRetirementStatus }) {
   check(typeof signerFile === 'string' && typeof adminSignerFile === 'string' &&
     signerFile.length > 0 && adminSignerFile.length > 0, 'RETIRE_BATCH_SIGNERS_REQUIRED');
   check(limit === 1 || pilotAcknowledged === true, 'RETIRE_BATCH_PILOT_REQUIRED');
+  if (limit > 1) {
+    check(kit.isAddress(pilotAddress ?? ''), 'RETIRE_BATCH_PILOT_ADDRESS_REQUIRED');
+    const completed = await completedRetirements(journalDir);
+    check(completed.has(pilotAddress), 'RETIRE_BATCH_PILOT_JOURNAL_REQUIRED');
+    const status = await pilotStatus({ rpcFile, address: pilotAddress,
+      journalPath: join(journalDir, `${pilotAddress}.json`) });
+    check(status.state === 'FINALIZED', 'RETIRE_BATCH_PILOT_NOT_FINALIZED');
+  }
   const selection = await planRetirementBatch({ journalDir, archivePath,
     expectedSha256, rpcFile, limit, nowSeconds, plan });
   const results = [];
@@ -115,7 +124,8 @@ async function main(mode, env) {
     backupDrillReportPath: env.ANTE_UP_RETIRE_BACKUP_DRILL_REPORT,
     signerFile: env.ANTE_UP_RETIRE_PUBLISHER_KEYPAIR_FILE,
     adminSignerFile: env.ANTE_UP_RETIRE_ADMIN_KEYPAIR_FILE,
-    pilotAcknowledged: env.ANTE_UP_RETIRE_PILOT_VERIFIED === 'YES' });
+    pilotAcknowledged: env.ANTE_UP_RETIRE_PILOT_VERIFIED === 'YES',
+    pilotAddress: env.ANTE_UP_RETIRE_PILOT_ADDRESS });
   console.log(JSON.stringify(result));
   if (result.state === 'STOPPED') process.exitCode = 2;
 }

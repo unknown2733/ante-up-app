@@ -317,7 +317,10 @@ node scripts/retire-snapshot-batch.mjs --execute
 
 `ANTE_UP_RETIRE_BATCH_LIMIT` is bounded to 1–16. More than one account per
 invocation also requires `ANTE_UP_RETIRE_PILOT_VERIFIED=YES`, which the operator
-must set only after the finalized first closure and live indexer readback.
+must set only after the finalized first closure and live indexer readback, and
+`ANTE_UP_RETIRE_PILOT_ADDRESS` naming that account. The runner checks that its
+finalized journal exists and reconfirms its signature and account absence on
+Devnet before signing a multi-account batch.
 Each result must be finalized before the next account is signed; an unknown or
 failed result stops the batch. This source tool is not an enabled production
 schedule. Renewal of the recent backup and off-host receipt, real Devnet
