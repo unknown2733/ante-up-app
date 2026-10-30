@@ -174,8 +174,10 @@ third-party reports are explicitly outside this five-minute check.
 
 `SOURCE_COVERAGE_COMPLETE` is only a source-data prerequisite. It is **not** a
 market approval, an activity formula, an oracle publication, or permission to
-offer financial trades. A five-minute change in a cumulative total gives an
-exact interval total, but does not reveal its minute-by-minute distribution.
+offer financial trades. `services/data/cumulative-intervals.mjs` preserves the
+exact count change and actual timestamps between adjacent readings; polling
+times may drift, so this is not an exact calendar five-minute activity bucket.
+It does not reveal minute-by-minute distribution.
 Do not fill missing minutes or treat a provider's downward revision as negative
 activity. The separate financial formula and correction policy must be fixed
 and verified before these reference subjects can become executable markets.
