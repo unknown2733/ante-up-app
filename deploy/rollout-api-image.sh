@@ -13,14 +13,19 @@ docker inspect ante-up-api-1 --format '{{index .Config.Labels "com.docker.compos
 docker inspect ante-up-api-1 --format '{{index .Config.Labels "com.docker.compose.project.environment_file"}}' > "$scratch/env"
 running_image="$(docker inspect ante-up-api-1 --format '{{.Config.Image}}')"
 [[ "$running_image" == ante-up:* ]] || { echo API_RUNNING_IMAGE_UNEXPECTED; exit 1; }
-archive_image="$(docker inspect ante-up-indexer-1 --format '{{.Config.Image}}')"
-[[ "$archive_image" == ante-up:* ]] || { echo ARCHIVE_IMAGE_UNEXPECTED; exit 1; }
-export ANTE_UP_SNAPSHOT_ARCHIVE_RELEASE="${archive_image#ante-up:}"
-while IFS= read -r item; do export "$item"; done < <(
+export ANTE_UP_SNAPSHOT_ARCHIVE_RELEASE="${running_image#ante-up:}"
+archive_path=
+while IFS= read -r item; do
+  case "$item" in
+    ANTE_UP_SNAPSHOT_ARCHIVE_PATH=*) archive_path="${item#*=}" ;;
+    ANTE_UP_SNAPSHOT_ARCHIVE_SHA256=*) export "$item" ;;
+  esac
+done < <(
   docker inspect ante-up-api-1 | jq -r '.[0].Config.Env[] |
-    select(startswith("ANTE_UP_SNAPSHOT_ARCHIVE_BASENAME=") or
+    select(startswith("ANTE_UP_SNAPSHOT_ARCHIVE_PATH=") or
            startswith("ANTE_UP_SNAPSHOT_ARCHIVE_SHA256="))'
 )
+export ANTE_UP_SNAPSHOT_ARCHIVE_BASENAME="${archive_path##*/}"
 : "${ANTE_UP_SNAPSHOT_ARCHIVE_BASENAME:?Missing active archive basename}"
 : "${ANTE_UP_SNAPSHOT_ARCHIVE_SHA256:?Missing active archive hash}"
 IFS=',' read -r -a files < "$scratch/files"

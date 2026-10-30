@@ -15,6 +15,23 @@ docker inspect ante-up-web-1 --format '{{.Config.Image}}' > "$scratch/image"
 running_image="$(cat "$scratch/image")"
 [[ "$running_image" == ante-up:* ]] || { echo WEB_RUNNING_IMAGE_UNEXPECTED; exit 1; }
 running_release="${running_image#ante-up:}"
+archive_image="$(docker inspect ante-up-api-1 --format '{{.Config.Image}}')"
+[[ "$archive_image" == ante-up:* ]] || { echo WEB_ARCHIVE_IMAGE_UNEXPECTED; exit 1; }
+export ANTE_UP_SNAPSHOT_ARCHIVE_RELEASE="${archive_image#ante-up:}"
+archive_path=
+while IFS= read -r item; do
+  case "$item" in
+    ANTE_UP_SNAPSHOT_ARCHIVE_PATH=*) archive_path="${item#*=}" ;;
+    ANTE_UP_SNAPSHOT_ARCHIVE_SHA256=*) export "$item" ;;
+  esac
+done < <(
+  docker inspect ante-up-api-1 | jq -r '.[0].Config.Env[] |
+    select(startswith("ANTE_UP_SNAPSHOT_ARCHIVE_PATH=") or
+           startswith("ANTE_UP_SNAPSHOT_ARCHIVE_SHA256="))'
+)
+export ANTE_UP_SNAPSHOT_ARCHIVE_BASENAME="${archive_path##*/}"
+: "${ANTE_UP_SNAPSHOT_ARCHIVE_BASENAME:?Missing active archive basename}"
+: "${ANTE_UP_SNAPSHOT_ARCHIVE_SHA256:?Missing active archive hash}"
 IFS=',' read -r -a files < "$scratch/files"
 IFS=',' read -r -a env_files < "$scratch/env"
 args=(-p ante-up)
