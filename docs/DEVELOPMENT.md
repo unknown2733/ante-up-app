@@ -162,6 +162,24 @@ The apply step writes the registry atomically and is idempotent. It does not
 start a collector, buy data, publish observations, provide graduation capital,
 or open Pro trading. Those steps require their own chain and budget checks.
 
+## Reference data coverage preflight
+
+`node scripts/reference-coverage-preflight.mjs /absolute/path/index.sqlite`
+reads the existing reference observation database without writing to it or
+calling a provider. For cumulative YouTube views and X post likes it checks
+whether every five-minute bucket in the last 28 days has a reading, the latest
+reading is under ten minutes old, and adjacent cumulative values do not fall.
+It reports missing buckets and downward revisions separately. Spotify's dated
+third-party reports are explicitly outside this five-minute check.
+
+`SOURCE_COVERAGE_COMPLETE` is only a source-data prerequisite. It is **not** a
+market approval, an activity formula, an oracle publication, or permission to
+offer financial trades. A five-minute change in a cumulative total gives an
+exact interval total, but does not reveal its minute-by-minute distribution.
+Do not fill missing minutes or treat a provider's downward revision as negative
+activity. The separate financial formula and correction policy must be fixed
+and verified before these reference subjects can become executable markets.
+
 ## Finalized Snapshot archive preflight
 
 `scripts/export-snapshot-archive.mjs` creates a separate, immutable SQLite copy
