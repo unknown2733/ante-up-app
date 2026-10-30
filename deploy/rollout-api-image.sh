@@ -13,7 +13,11 @@ docker inspect ante-up-api-1 --format '{{index .Config.Labels "com.docker.compos
 docker inspect ante-up-api-1 --format '{{index .Config.Labels "com.docker.compose.project.environment_file"}}' > "$scratch/env"
 running_image="$(docker inspect ante-up-api-1 --format '{{.Config.Image}}')"
 [[ "$running_image" == ante-up:* ]] || { echo API_RUNNING_IMAGE_UNEXPECTED; exit 1; }
-export ANTE_UP_SNAPSHOT_ARCHIVE_RELEASE="${running_image#ante-up:}"
+running_release="${running_image#ante-up:}"
+# The previous rollout override remains in Compose's file list. Resolve it
+# against the actually running release before comparing configurations.
+export ANTE_UP_API_IMAGE_RELEASE="$running_release"
+export ANTE_UP_SNAPSHOT_ARCHIVE_RELEASE="$running_release"
 archive_path=
 while IFS= read -r item; do
   case "$item" in
