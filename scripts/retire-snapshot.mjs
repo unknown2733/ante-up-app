@@ -9,6 +9,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import * as chain from '../clients/chain/dist/index.js';
 import { planSnapshotRetirement } from './plan-snapshot-retirement.mjs';
 import { verifyArchive } from './verify-snapshot-archive.mjs';
+import { verifySnapshotBackup } from './verify-snapshot-backup.mjs';
 import { replaceJournal } from './atomic-rename.mjs';
 
 const kit = createRequire(new URL('../clients/chain/package.json', import.meta.url))('@solana/kit');
@@ -38,11 +39,19 @@ export function verifyOffhostReceipt(receipt, archive, expectedSha256, now = Dat
 }
 
 export async function prepareSnapshotRetirement({ archivePath, offhostReceiptPath, expectedSha256,
+  backupResultPath, backupCopyReceiptPath, backupDrillReportPath,
   rpcFile, address, journalPath, nowSeconds }) {
   check(hex.test(expectedSha256 ?? '') && kit.isAddress(address), 'RETIRE_INPUT_INVALID');
   const primary = await verifyArchive({ archivePath, expectedSha256 });
   verifyOffhostReceipt(JSON.parse(await readFile(offhostReceiptPath, 'utf8')),
     primary, expectedSha256);
+  const [backup, copy, drill] = await Promise.all([
+    readFile(backupResultPath, 'utf8').then(JSON.parse),
+    readFile(backupCopyReceiptPath, 'utf8').then(JSON.parse),
+    readFile(backupDrillReportPath, 'utf8').then(JSON.parse),
+  ]);
+  const backupProof = verifySnapshotBackup({ backup, copy, drill,
+    archiveSha256: expectedSha256, archivePath });
   const endpoint = (await readFile(rpcFile, 'utf8')).trim();
   check(/^https:\/\//.test(endpoint), 'DEVNET_RPC_REQUIRED');
   const rpc = kit.createSolanaRpc(endpoint);
@@ -59,6 +68,7 @@ export async function prepareSnapshotRetirement({ archivePath, offhostReceiptPat
   const scope = { version: 1, cluster: 'devnet', programId: PROGRAM, address,
     market: candidate.market, sequence: candidate.sequence,
     publisher, admin, archiveSha256: expectedSha256,
+    backupSha256: backupProof.backupSha256,
     refundableLamports: candidate.refundableLamports };
   const fingerprint = digest(scope);
   if (existing) check(existing.fingerprint === fingerprint && existing.scope?.address === address,
@@ -162,12 +172,17 @@ async function main(argv = process.argv, env = process.env) {
     return;
   }
   const required = ['ANTE_UP_RETIRE_ARCHIVE', 'ANTE_UP_RETIRE_OFFHOST_RECEIPT',
-    'ANTE_UP_RETIRE_ARCHIVE_SHA256', 'ANTE_UP_RETIRE_RPC_FILE',
+    'ANTE_UP_RETIRE_ARCHIVE_SHA256', 'ANTE_UP_RETIRE_BACKUP_RESULT',
+    'ANTE_UP_RETIRE_BACKUP_COPY_RECEIPT', 'ANTE_UP_RETIRE_BACKUP_DRILL_REPORT',
+    'ANTE_UP_RETIRE_RPC_FILE',
     'ANTE_UP_RETIRE_ADDRESS', 'ANTE_UP_RETIRE_JOURNAL'];
   check(required.every(key => env[key]), 'RETIRE_INPUT_FILES_REQUIRED');
   const input = { archivePath: env.ANTE_UP_RETIRE_ARCHIVE,
     offhostReceiptPath: env.ANTE_UP_RETIRE_OFFHOST_RECEIPT,
     expectedSha256: env.ANTE_UP_RETIRE_ARCHIVE_SHA256,
+    backupResultPath: env.ANTE_UP_RETIRE_BACKUP_RESULT,
+    backupCopyReceiptPath: env.ANTE_UP_RETIRE_BACKUP_COPY_RECEIPT,
+    backupDrillReportPath: env.ANTE_UP_RETIRE_BACKUP_DRILL_REPORT,
     rpcFile: env.ANTE_UP_RETIRE_RPC_FILE, address: env.ANTE_UP_RETIRE_ADDRESS,
     journalPath: env.ANTE_UP_RETIRE_JOURNAL };
   const prepared = await prepareSnapshotRetirement(input);
