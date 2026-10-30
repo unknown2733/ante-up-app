@@ -56,18 +56,21 @@ test('read-only store preflight reports bad evidence as unready',async()=>{
     const hash=createHash('sha256').update(raw).digest('hex');
     db.prepare('INSERT INTO reference_raw VALUES(?,?)').run(hash,raw);
     const at=Date.parse('2026-10-30T04:00:00Z');
-    db.prepare('INSERT INTO reference_observations VALUES(?,?,?,?,?,?,?,?,?,?)')
-      .run('youtube-S0Q4gqBUs7c','YOUTUBE_VIEWS','cumulative',at,at,'100',null,
+    const insert=db.prepare('INSERT INTO reference_observations VALUES(?,?,?,?,?,?,?,?,?,?)');
+    for(const [when,value] of [[at-2*cadence,'100'],[at-cadence,'95'],[at,'98']])
+      insert.run('youtube-S0Q4gqBUs7c','YOUTUBE_VIEWS','cumulative',when,when,value,null,
         'YouTube Data API','https://www.youtube.com/watch?v=S0Q4gqBUs7c',hash);
     db.close();
     const original=inspectReferenceStore(file,{nowMs:at});
     assert.equal(original[0].evidence.evidenceValid,true);
     assert.equal(original[0].coverage.readyForFiveMinuteDerivation,false);
+    assert.deepEqual(original[0].intervalKinds,{OBSERVED_DELTA:0,GAP:0,
+      DOWNWARD_REVISION:1,REVISION_RECOVERY:1});
     const damaged=new DatabaseSync(file);
     damaged.prepare('UPDATE reference_raw SET raw_bytes=?').run(Buffer.from('changed'));
     damaged.close();
     const result=inspectReferenceStore(file,{nowMs:at});
-    assert.equal(result[0].evidence.invalidRows,1);
+    assert.equal(result[0].evidence.invalidRows,3);
     assert.equal(result[0].coverage.status,'SOURCE_EVIDENCE_INVALID');
     assert.equal(result[0].coverage.readyForFiveMinuteDerivation,false);
   }finally{await rm(dir,{recursive:true,force:true});}
