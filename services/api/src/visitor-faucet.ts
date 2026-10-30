@@ -50,6 +50,18 @@ export class SqliteSolFaucetLedger {
   get(requestId: string): Row | null {
     return (this.db.prepare('SELECT wallet,amount,state,signature,at_ms FROM visitor_sol_grants WHERE request_id=?').get(requestId) as Row|undefined) ?? null;
   }
+  pendingSigned(limit = 10, offset = 0): Array<{requestId:string;signature:string}> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50 ||
+        !Number.isSafeInteger(offset) || offset < 0) throw Error('INVALID_SOL_FAUCET_LIMIT');
+    return this.db.prepare(`SELECT request_id AS requestId,signature FROM visitor_sol_grants
+      WHERE state IN ('SUBMITTED','UNKNOWN') AND signature IS NOT NULL
+      ORDER BY at_ms,request_id LIMIT ? OFFSET ?`).all(limit,offset) as Array<{requestId:string;signature:string}>;
+  }
+  markFinalizedIfSigned(requestId:string, signature:string): boolean {
+    return this.db.prepare(`UPDATE visitor_sol_grants SET state='FINALIZED'
+      WHERE request_id=? AND signature=? AND state IN ('SUBMITTED','UNKNOWN')`)
+      .run(requestId,signature).changes===1;
+  }
   reserve(requestId: string, wallet: string, atMs: number, policy: SolFaucetPolicy): {row:Row;created:boolean} | null {
     this.db.exec('BEGIN IMMEDIATE');
     try {
@@ -77,6 +89,7 @@ export class SqliteSolFaucetLedger {
 
 /** Public reads are allowed; a write requires root's existing wallet session. */
 export class VisitorSolFaucet {
+  private pendingOffset=0;
   private readonly options:{policy:SolFaucetPolicy;rpc:SolFaucetRpc;ledger:SqliteSolFaucetLedger;
     fundingBalanceLamports:()=>Promise<bigint>;nowMs:()=>number};
   constructor(options:{policy:SolFaucetPolicy;rpc:SolFaucetRpc;ledger:SqliteSolFaucetLedger;
@@ -116,10 +129,27 @@ export class VisitorSolFaucet {
     const row=this.options.ledger.get(requestId);
     if (!row || row.wallet!==authenticatedWallet) throw Error('UNAUTHORIZED');
     if (row.signature && await this.options.rpc.finalized(row.signature)) {
-      this.options.ledger.mark(requestId,'FINALIZED',row.signature);
+      this.options.ledger.markFinalizedIfSigned(requestId,row.signature);
       return {state:'FINALIZED',signature:row.signature,amountLamports:row.amount};
     }
     return this.result(row);
+  }
+  /** Bounded read-only chain audit; never broadcasts or frees an uncertain reservation. */
+  async reconcilePendingSigned(limit = 10):Promise<number> {
+    const {ledger,rpc}=this.options;
+    let pending=ledger.pendingSigned(limit,this.pendingOffset);
+    if (!pending.length && this.pendingOffset) {
+      this.pendingOffset=0;
+      pending=ledger.pendingSigned(limit);
+    }
+    if (!pending.length) return 0;
+    if (await rpc.genesisHash()!==DEVNET_GENESIS) throw Error('DEVNET_REQUIRED');
+    this.pendingOffset=pending.length<limit?0:this.pendingOffset+pending.length;
+    let completed=0;
+    for (const item of pending)
+      if (await rpc.finalized(item.signature) && ledger.markFinalizedIfSigned(item.requestId,item.signature))
+        completed++;
+    return completed;
   }
   private result(row:Row):SolClaim {return {state:row.state,signature:row.signature,amountLamports:row.amount};}
 }

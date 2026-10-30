@@ -68,3 +68,46 @@ test('concurrent same request never sends twice and uncertain broadcast retains 
     assert.equal((await service.reconcile('request_0001',wallet)).state,'FINALIZED');
   }finally{release();ledger.close();await rm(dir,{recursive:true,force:true});}
 });
+
+test('background reconciliation finalizes signed grants without sending again or clearing unknowns',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'ante-visitor-'));const ledger=new SqliteSolFaucetLedger(join(dir,'ledger.sqlite'));
+  let sends=0,final=false,genesis=DEVNET_GENESIS;
+  const rpc={genesisHash:async()=>genesis,balanceLamports:async()=>0n,
+    sendOnce:async()=>{sends++;return 'signed-grant';},finalized:async(signature:string)=>signature==='signed-grant'&&final};
+  const service=new VisitorSolFaucet({policy,rpc,ledger,fundingBalanceLamports:async()=>100_000_000n,nowMs:()=>100_000_000});
+  try {
+    assert.equal((await service.claim({wallet,authenticatedWallet:wallet,requestId:'request_0001'})).state,'SUBMITTED');
+    ledger.mark('request_0001','UNKNOWN',null);
+    assert.equal(ledger.pendingSigned().length,1);
+    assert.equal(await service.reconcilePendingSigned(),0);
+    assert.equal(ledger.get('request_0001')?.state,'UNKNOWN');
+    final=true;genesis='wrong-network';
+    await assert.rejects(service.reconcilePendingSigned(),/DEVNET_REQUIRED/);
+    assert.equal(ledger.get('request_0001')?.state,'UNKNOWN');
+    genesis=DEVNET_GENESIS;
+    assert.equal(await service.reconcilePendingSigned(),1);
+    assert.equal(ledger.get('request_0001')?.state,'FINALIZED');
+    assert.equal(await service.reconcilePendingSigned(),0);
+    assert.equal(sends,1);
+  }finally{ledger.close();await rm(dir,{recursive:true,force:true});}
+});
+
+test('bounded grant sweeps reach later pending wallets when earlier signatures never finalize',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'ante-visitor-'));const ledger=new SqliteSolFaucetLedger(join(dir,'ledger.sqlite'));
+  const seen:string[]=[];let sent=0;
+  const rpc={genesisHash:async()=>DEVNET_GENESIS,balanceLamports:async()=>0n,
+    sendOnce:async()=>`signature-${++sent}`,finalized:async(signature:string)=>{
+      seen.push(signature);return signature==='signature-2';
+    }};
+  const service=new VisitorSolFaucet({policy:{...policy,dailyCapLamports:10_000_000n},rpc,ledger,
+    fundingBalanceLamports:async()=>100_000_000n,nowMs:()=>100_000_000});
+  try {
+    assert.equal((await service.claim({wallet,authenticatedWallet:wallet,requestId:'request_0001'})).state,'SUBMITTED');
+    assert.equal((await service.claim({wallet:wallet2,authenticatedWallet:wallet2,requestId:'request_0002'})).state,'SUBMITTED');
+    assert.equal(await service.reconcilePendingSigned(1),0);
+    assert.equal(await service.reconcilePendingSigned(1),1);
+    assert.deepEqual(seen,['signature-1','signature-2']);
+    assert.equal(ledger.get('request_0001')?.state,'SUBMITTED');
+    assert.equal(ledger.get('request_0002')?.state,'FINALIZED');
+  }finally{ledger.close();await rm(dir,{recursive:true,force:true});}
+});

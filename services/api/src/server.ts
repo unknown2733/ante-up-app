@@ -73,9 +73,27 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       priceDbPath:priceDbPath ? resolve(priceDbPath) : undefined,
       visitorSol:visitorSol?.faucet});
     const server=createApiServer(live.app);
-    server.on('close',()=>{live.close();visitorSol?.close();});
+    let sweeping=false;
+    const sweepVisitorClaims=async()=>{
+      if (!visitorSol || sweeping) return;
+      sweeping=true;
+      try {
+        const completed=await visitorSol.faucet.reconcilePendingSigned();
+        if (completed) console.log('VISITOR_SOL_RECONCILED',completed);
+      } catch { console.warn('VISITOR_SOL_RECONCILE_RETRY'); }
+      finally { sweeping=false; }
+    };
+    const sweepTimer=visitorSol ? setInterval(()=>{void sweepVisitorClaims();},300_000) : null;
+    sweepTimer?.unref();
+    server.on('close',()=>{
+      if (sweepTimer) clearInterval(sweepTimer);
+      live.close();visitorSol?.close();
+    });
     const host=process.env.HOST??'127.0.0.1';
-    server.listen(port,host,()=>console.log(`Ante Up ${mode} API listening on port ${port}`));
+    server.listen(port,host,()=>{
+      console.log(`Ante Up ${mode} API listening on port ${port}`);
+      void sweepVisitorClaims();
+    });
     const close=()=>{server.close();server.closeIdleConnections();};
     process.once('SIGTERM',close);process.once('SIGINT',close);
   }
