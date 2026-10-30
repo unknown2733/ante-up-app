@@ -1,12 +1,15 @@
 /** Prepare or freeze an observed X Counts maturity candidate. Never signs. */
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {join,resolve} from 'node:path';
+import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {FileCollectionState} from '../services/data/live.mjs';
+import {FileCandidateRepository} from '../services/data/publisher.mjs';
+import {readEmergencySnapshot} from '../services/data/emergency-snapshot.mjs';
 import {FileSettlementJournal,evaluateSettlement,settlementInputFromCollection}
   from '../services/data/settlement.mjs';
 import {HISTORY_MINUTES} from '../services/data/index.mjs';
+import {createKitChainTransport,readFinalizedSnapshot} from '../clients/chain/dist/index.js';
 
 const GENESIS='EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
 const PROGRAM='FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr';
@@ -56,13 +59,19 @@ async function main(){
     Number.isSafeInteger(status.slot),'OBSERVED_GRADUATION_UNVERIFIED');
   const collection=new FileCollectionState(config.collectionPath);
   const market={cluster:'devnet',programId:PROGRAM,address:scope.marketId};
+  const candidates=new FileCandidateRepository(join(dirname(config.collectionPath),'candidates.json'));
   const input=await settlementInputFromCollection({store:collection,market,
     epoch:scope.epoch,epochStartedAt:scope.epochStartedAt,maturityAt:scope.maturityAt,
     historyStart:scope.maturityAt-HISTORY_MINUTES*60,now:Math.floor(Date.now()/1000),
     configVersion:scope.configVersion,anchor:scope.anchor,
     anchorProvenance:{market,slot:String(status.slot),signature:config.graduationSignature,
       finality:'finalized'},
-    readLastVerifiedSnapshot:async()=>{throw Error('EMERGENCY_SNAPSHOT_READER_NOT_CONFIGURED');}});
+    readLastVerifiedSnapshot:async({incident})=>readEmergencySnapshot({repository:candidates,
+      market,incident,
+      readAccount:(address,sequence,programId)=>readFinalizedSnapshot(
+        createKitChainTransport(endpoint),address,sequence,programId),
+      readSignatureStatus:signature=>rpc(endpoint,'getSignatureStatuses',[[signature],
+        {searchTransactionHistory:true}]).then(result=>result?.value?.[0])})});
   assert.equal(input.queryHash,scope.queryHash,'OBSERVED_QUERY_HASH_MISMATCH');
   assert.equal(input.queryVersion,scope.queryVersion,'OBSERVED_QUERY_VERSION_MISMATCH');
   const journal=new FileSettlementJournal(join(dir,'settlements.json'));

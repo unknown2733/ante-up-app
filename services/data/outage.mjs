@@ -69,6 +69,21 @@ export function markSourceInvalid(market,marketId,at,{rawHash=null,batchId=null}
   return incident;
 }
 
+// An HTTP failure does not prove invalid source data. It can still reveal
+// a verifiable stale gap after the last validated bucket stops advancing.
+export function markSourceStale(market,marketId,at) {
+  check(second(at));
+  hydrateLegacyOutage(market,marketId);
+  const dataThrough=market.recoveryState?.dataThrough;
+  if(!second(dataThrough) || at<dataThrough+600)return null;
+  const incident=openOutage(market,marketId,{startedAt:dataThrough+600,
+    provenance:{kind:'PERSISTED_RECOVERY_STATE',dataThrough}});
+  market.recoveryState.outageStartAt=incident.startedAt;
+  market.recoveryState.emergencyAt=incident.startedAt+DAY;
+  market.recoveryState.admission={state:'BLOCKED',recoveryCount:0,reason:'DATA_NOT_READY'};
+  return incident;
+}
+
 // Called after a validated replay, not after a failed HTTP attempt. Its result
 // can be persisted inside the existing FileCollectionState market entry.
 export function updateOutageTimeline(market,marketId,result,{at,replayEnd,historyStart,batchId=null}) {

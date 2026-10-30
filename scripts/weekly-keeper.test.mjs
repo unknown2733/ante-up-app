@@ -4,7 +4,8 @@ import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {weeklyDue,inWeeklyServiceWindow,inValidityRecoveryTick,validityRecoveryDue,validateWeeklyMarkets,resolveWeeklyScope,
-  runWeeklyPass,runValidityRecoveryPass,selectWeeklyRpc} from './weekly-keeper.mjs';
+  runWeeklyPass,runValidityRecoveryPass,selectWeeklyRpc,missedObservedDeadline} from './weekly-keeper.mjs';
+import {openOutage} from '../services/data/outage.mjs';
 
 const program='FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr';
 const marketId='CyYjBcb4LyuyLN1Akaf2eXXJV5GhFUkaPNb7caLCuHN6';
@@ -64,6 +65,61 @@ test('weekly trigger waits for data cutoff and never repeats an opened LP window
  assert.equal(weeklyDue(finance({currentMaturity:0n}),week+960).due,true);
  assert.equal(weeklyDue(finance({currentMaturity:0n,lastLpMaturity:BigInt(week),
   lpWindowStart:BigInt(week+970),lpWindowEnd:BigInt(week+1870)}),week+1900).reason,'LP_ALREADY_OPENED');
+});
+
+test('24-hour stale data wakes observed settlement before Monday maturity',async()=>{
+ const now=week-2*86400,through=now-87_000;
+ const staleMarket={...chainMarket,latestDataThrough:BigInt(through)};
+ const positions=finance({openPositions:1,lastLpMaturity:BigInt(week-604800)});
+ assert.equal(weeklyDue(positions,now,{...staleMarket,latestDataThrough:BigInt(now-86_999)}).due,false);
+ assert.equal(weeklyDue(positions,now,staleMarket).reason,'OBSERVED_SETTLEMENT');
+ assert.equal(weeklyDue(finance({openPositions:0}),now,staleMarket).due,false);
+ const accepted={value:{maturityAt:BigInt(week),eligibleAt:BigInt(now-60),
+   acceptedAt:BigInt(now-30)}};
+ const afterSettlement=finance({openPositions:0,lastLpMaturity:BigInt(week-604800),
+   lpWindowStart:BigInt(now-3000),lpWindowEnd:BigInt(now-2100)});
+ assert.equal(weeklyDue(afterSettlement,now,{...chainMarket,latestDataThrough:BigInt(now-120)},accepted).reason,
+   'OBSERVED_SETTLEMENT');
+ assert.equal(weeklyDue({...afterSettlement,lpWindowStart:BigInt(now),
+   lpWindowEnd:BigInt(now+900)},now,chainMarket,accepted).due,false);
+ const f=await fixture();
+ try{
+  const calls=[];
+  const result=await runWeeklyPass({now,markets:[f.market],accounts:{
+    financeMarket:async()=>positions,market:async()=>staleMarket},env:{},run:async args=>{
+      calls.push(args[0]);
+      if(args[0]==='scripts/prepare-observed-settlement.mjs')return {state:'FROZEN_LOCAL'};
+      return {marketId,epoch:'3',state:'ready',action:'ACCEPT_SETTLEMENT'};
+    }});
+  assert.equal(result[0].action,'ACCEPT_SETTLEMENT');
+  assert.deepEqual(calls,['scripts/prepare-observed-settlement.mjs','services/api/src/keeper-run.ts']);
+ }finally{await rm(f.root,{recursive:true,force:true});}
+});
+
+test('a recovered source still preserves a missed 24-hour deadline',async()=>{
+ const f=await fixture();
+ try{
+  const now=week-2*86400,startedAt=now-86_460;
+  const entry={outageTimeline:[]};
+  const incident=openOutage(entry,marketId,{startedAt,
+    provenance:{kind:'PERSISTED_RECOVERY_STATE',dataThrough:startedAt-600}});
+  incident.recoveredAt=now-30;
+  const active={configPath:join(f.base,'observed-config.json'),scope};
+  const readCollection=async()=>({markets:{[marketId]:entry}});
+  assert.equal(await missedObservedDeadline(active,marketId,now,readCollection),true);
+  incident.recoveredAt=startedAt+86_399;
+  assert.equal(await missedObservedDeadline(active,marketId,now,readCollection),false);
+  incident.recoveredAt=now-30;
+  const calls=[];
+  const result=await runWeeklyPass({now,markets:[f.market],
+    accounts:{financeMarket:async()=>finance({openPositions:1}),
+      market:async()=>({...chainMarket,latestDataThrough:BigInt(now-120)})},
+    env:{},outageDue:()=>missedObservedDeadline(active,marketId,now,readCollection),
+    run:async args=>{calls.push(args[0]);return args[0]==='scripts/prepare-observed-settlement.mjs'?
+      {state:'FROZEN_LOCAL'}:{marketId,epoch:'3',state:'ready',action:'ACCEPT_SETTLEMENT'};}});
+  assert.equal(result[0].action,'ACCEPT_SETTLEMENT');
+  assert.deepEqual(calls,['scripts/prepare-observed-settlement.mjs','services/api/src/keeper-run.ts']);
+ }finally{await rm(f.root,{recursive:true,force:true});}
 });
 
 test('validity recovery waits until two minutes after the five-minute publisher boundary',()=>{

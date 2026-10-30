@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { ANTE_UP_PROGRAM_ADDRESS } from '../../clients/chain/dist/index.js';
 import { HISTORY_MINUTES } from './index.mjs';
 import { FileCollectionState, runInitialArchive, runRegularPoll } from './live.mjs';
-import { getAdmissionGateIntent, markSourceInvalid, openOutage, selectOutageForEpoch, updateOutageTimeline,
+import { getAdmissionGateIntent, markSourceInvalid, markSourceStale, openOutage, selectOutageForEpoch, updateOutageTimeline,
   validateOutageTimeline } from './outage.mjs';
 import { settlementInputFromCollection } from './settlement.mjs';
 
@@ -14,6 +14,40 @@ const marketId='fixture:outage';
 const rows=(from,through,count=1)=>Array.from({length:(through-from)/60},(_,i)=>({
   start:new Date((from+i*60)*1000).toISOString(),
   end:new Date((from+(i+1)*60)*1000).toISOString(),tweet_count:count}));
+
+test('HTTP failure preserves stale onset without treating the response as invalid data',async()=>{
+  const directory=await mkdtemp(join(process.cwd(),'ante-outage-http-'));
+  try{
+    const store=new FileCollectionState(join(directory,'collection.json'));
+    const common={store,rawDirectory:join(directory,'raw'),marketId,expressions:['alpha'],
+      queryVersion:'1',estimatedCostMicros:1000};
+    await runInitialArchive({...common,start,through:end,now:end,
+      transport:{async count(){return {data:rows(start,end),meta:{}};}}});
+    const market=(await store.read()).markets[marketId];
+    assert.equal(markSourceStale(market,marketId,end+599),null);
+    const failed={...common,historyStart:start,from:end,through:end+300,
+      transport:{async count(){throw Error('X_HTTP_403');}}};
+    assert.equal((await runRegularPoll({...failed,now:end+900})).state,'FAILED');
+    let saved=await store.read(),entry=saved.markets[marketId];
+    assert.equal(entry.outageTimeline.length,1);
+    assert.equal(entry.outageTimeline[0].startedAt,end+600);
+    assert.equal(entry.outageTimeline[0].provenance.kind,'PERSISTED_RECOVERY_STATE');
+    assert.equal(entry.recoveryState.emergencyAt,end+600+86400);
+    assert.equal(getAdmissionGateIntent(entry,marketId),null);
+    assert.equal(selectOutageForEpoch(entry,marketId,{epochStartedAt:end-86400,
+      maturityAt:end+7200,now:end+1000}).startedAt,end+600);
+    assert.equal((await runRegularPoll({...failed,now:end+1800})).state,'FAILED');
+    entry=(await store.read()).markets[marketId];
+    assert.equal(entry.outageTimeline.length,1);
+    assert.equal(entry.outageTimeline[0].startedAt,end+600);
+    const recovered=await runRegularPoll({...failed,through:end+5100,now:end+5400,
+      transport:{async count(){return {data:rows(end,end+5100),meta:{}};}}});
+    assert.equal(recovered.state,'VALIDATED');
+    saved=await store.read();entry=saved.markets[marketId];
+    assert.equal(entry.outageTimeline[0].recoveredAt,end+5400);
+    assert.equal(entry.recoveryState.outageStartAt,null);
+  }finally{await rm(directory,{recursive:true,force:true});}
+});
 
 test('source-invalid incident survives retry/restart and closes only on validated complete replay',async()=>{
   const directory=await mkdtemp(join(process.cwd(),'ante-outage-'));
