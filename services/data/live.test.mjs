@@ -30,6 +30,22 @@ test('X Counts URL, bearer header, minute granularity, and archive endpoint use 
   assert.match(queryHashFor('abc'),/^[a-f0-9]{64}$/);
 });
 
+test('X Counts classifies a provider spending cap without recording response details',async()=>{
+  const input={query:'"alpha" lang:en -is:retweet',from:start,through:start+300};
+  const capped=new XCountsHttpAdapter({bearerToken:'fixture-token',fetcher:async()=>({
+    ok:false,status:403,json:async()=>({type:'https://api.x.com/2/problems/spend-cap-reached',
+      detail:'account-specific detail must not enter the journal'})})});
+  await assert.rejects(()=>capped.count(input),error=>{
+    assert.equal(error.message,'X_SPEND_CAP_REACHED');return true;
+  });
+  const unknown=new XCountsHttpAdapter({bearerToken:'fixture-token',fetcher:async()=>({
+    ok:false,status:403,json:async()=>({type:'https://api.x.com/2/problems/access-denied'})})});
+  await assert.rejects(()=>unknown.count(input),/X_HTTP_403/);
+  const malformed=new XCountsHttpAdapter({bearerToken:'fixture-token',fetcher:async()=>({
+    ok:false,status:403,json:async()=>{throw Error('unparseable provider body');}})});
+  await assert.rejects(()=>malformed.count(input),/X_HTTP_403/);
+});
+
 test('archive pagination reserves budget before each page and stops at the cap',async()=>{
   const dir=await mkdtemp(join(process.cwd(),'ante-pages-'));
   try {

@@ -25,7 +25,18 @@ export class XCountsHttpAdapter {
     url.searchParams.set('granularity', 'minute');
     if (paginationToken) url.searchParams.set('next_token', paginationToken);
     const response = await this.fetcher(url, { headers: { Authorization: `Bearer ${this.token}`, Accept: 'application/json' }, signal: AbortSignal.timeout(15_000) });
-    if (!response.ok) throw new Error(`X_HTTP_${response.status}`);
+    if (!response.ok) {
+      // Persist only a bounded error class, never the provider's response body,
+      // which may include account details or the submitted query.
+      let problem = null;
+      if (response.status === 403) try { problem = await response.json(); } catch {}
+      const type = typeof problem?.type === 'string' ? problem.type.toLowerCase() : '';
+      const code = typeof problem?.code === 'string' ? problem.code.toLowerCase().replaceAll('_','-') : '';
+      if (response.status === 403 && (type === 'spend-cap-reached' ||
+          type.endsWith('/spend-cap-reached') || code === 'spend-cap-reached'))
+        throw new Error('X_SPEND_CAP_REACHED');
+      throw new Error(`X_HTTP_${response.status}`);
+    }
     // Let the collector archive a parsed but malformed response before
     // classifying it as an invalid source. HTTP and JSON failures have no
     // canonical raw response and remain transport failures.

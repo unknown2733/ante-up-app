@@ -12,7 +12,7 @@ export function validateOutageTimeline(marketId,timeline=[]) {
     check(second(incident.startedAt) && incident.startedAt>previous &&
       incident.startedAt>=previousRecoveredAt &&
       incident.id===incidentId(marketId,incident.startedAt,incident.provenance) &&
-      (incident.recoveredAt===null || second(incident.recoveredAt) && incident.recoveredAt>incident.startedAt));
+      (incident.recoveredAt===null || second(incident.recoveredAt) && incident.recoveredAt>=incident.startedAt));
     check(!open,'OVERLAPPING_OUTAGE');
     if(incident.provenance?.kind==='PERSISTED_RECOVERY_STATE')
       check(second(incident.provenance.dataThrough) &&
@@ -107,7 +107,9 @@ export function updateOutageTimeline(market,marketId,result,{at,replayEnd,histor
   const complete=candidate.dataThrough===replayEnd &&
     ['VALID','LOW_ACTIVITY'].includes(candidate.dataStatus);
   if(incident && complete){
-    check(at>incident.startedAt,'OUTAGE_RECOVERY_TIME_MISMATCH');
+    // A source request can finish at the exact stale threshold that opened
+    // the incident earlier in this cycle. Preserve its actual zero duration.
+    check(at>=incident.startedAt,'OUTAGE_RECOVERY_TIME_MISMATCH');
     incident.recoveredAt=at;
     state.outageStartAt=null;state.emergencyAt=null;
   } else if(incident){
