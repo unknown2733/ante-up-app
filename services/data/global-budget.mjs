@@ -5,11 +5,16 @@ import {dirname} from 'node:path';
 const DAY=/^\d{4}-\d{2}-\d{2}$/;
 const MARKET=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const positive=value=>Number.isSafeInteger(value)&&value>0;
+export const DEFAULT_GLOBAL_X_LIMITS=Object.freeze({
+  dailyLimitMicros:10_000_000,totalLimitMicros:150_000_000,
+  initialLimitMicros:100_000_000
+});
 
 /** Shared, conservative reservations across all paid X collectors. */
 export class GlobalXBudget {
-  constructor(path,{dailyLimitMicros=10_000_000,totalLimitMicros=150_000_000,
-    initialLimitMicros=100_000_000}={}){
+  constructor(path,{dailyLimitMicros=DEFAULT_GLOBAL_X_LIMITS.dailyLimitMicros,
+    totalLimitMicros=DEFAULT_GLOBAL_X_LIMITS.totalLimitMicros,
+    initialLimitMicros=DEFAULT_GLOBAL_X_LIMITS.initialLimitMicros}={}){
     if(!positive(dailyLimitMicros)||!positive(totalLimitMicros)||!positive(initialLimitMicros)||
         initialLimitMicros>totalLimitMicros)throw Error('GLOBAL_X_BUDGET_CONFIG_INVALID');
     mkdirSync(dirname(path),{recursive:true});
