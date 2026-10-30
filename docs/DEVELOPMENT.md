@@ -242,6 +242,14 @@ The tool verifies the Devnet genesis, requires a complete sequence for each
 market, writes atomically, and stores a count and digest in the archive manifest.
 Keep the archive inside the encrypted backup scope and verify its SQLite
 integrity and offsite recovery before considering any account retirement.
+The active backup config must list that exact archive under both `required`
+and `immutableSqlite`. The latter preserves the finalized SQLite file byte
+for byte; ordinary live SQLite databases still use the WAL-aware backup path.
+The immutable file must have no `-wal` or `-shm` sidecar. After the scheduled
+backup, compare the PC's isolated restore of this archive against the trusted
+source file SHA-256 before using it to authorize retirement. A backup made
+before the archive existed, or one that normalized its bytes, does not satisfy
+the retirement gate.
 Record the archive file's SHA-256 outside the archive, then independently read
 back every saved account, candidate and finalized event:
 
@@ -272,8 +280,11 @@ node scripts/snapshot-offhost-receipt.mjs OFFHOST_ARCHIVE.sqlite TRUSTED_SHA256 
 ```
 
 On the server, `scripts/retire-snapshot.mjs --plan` checks the primary archive,
-the recent off-host receipt, a finalized byte-for-byte account match, the
-market's latest sequence, and the configured signers. `--execute` also requires
+the recent off-host receipt, a matching encrypted-backup result and PC copy
+receipt, and an isolated restore report that proves the exact archive SHA-256.
+It also checks a finalized byte-for-byte account match, the market's latest
+sequence, and the configured signers. The restore report must be recent; its
+backup SHA-256 is bound into the plan fingerprint. `--execute` also requires
 the exact plan fingerprint, both key files, a successful simulation, and a new
 attempt journal. It signs at most one account per invocation and never resends
 an unknown transaction. `--status` reconciles the signature with the account's
