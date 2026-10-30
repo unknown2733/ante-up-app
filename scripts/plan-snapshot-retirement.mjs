@@ -20,10 +20,11 @@ const base64Account = value => {
 };
 
 export async function planSnapshotRetirement({ archivePath, expectedSha256, rpcFile, minAgeDays,
-  limit = 8, nowSeconds = Math.floor(Date.now() / 1000), rpc: injectedRpc }) {
-  check(Number.isSafeInteger(minAgeDays) && minAgeDays >= 1 && minAgeDays <= 365 &&
+  limit = 8, onlyAddress, nowSeconds = Math.floor(Date.now() / 1000), rpc: injectedRpc }) {
+  check(Number.isSafeInteger(minAgeDays) && minAgeDays >= 7 && minAgeDays <= 365 &&
     Number.isSafeInteger(limit) && limit >= 1 && limit <= 16 &&
     Number.isSafeInteger(nowSeconds) && nowSeconds > 0, 'RETIRE_PLAN_BOUNDS_INVALID');
+  check(onlyAddress === undefined || kit.isAddress(onlyAddress), 'RETIRE_ADDRESS_INVALID');
   const verified = await verifyArchive({ archivePath, expectedSha256 });
   const endpoint = injectedRpc ? null : (await readFile(rpcFile, 'utf8')).trim();
   check(injectedRpc || /^https:\/\//.test(endpoint), 'DEVNET_RPC_REQUIRED');
@@ -49,8 +50,10 @@ export async function planSnapshotRetirement({ archivePath, expectedSha256, rpcF
   }).filter(row => Number.isSafeInteger(row.publishedAt) && row.publishedAt > 0 &&
     BigInt(row.sequence) < row.latestSequence && nowSeconds - row.publishedAt >= minAgeSeconds)
     .sort((a, b) => a.publishedAt - b.publishedAt || a.address.localeCompare(b.address));
+  const selected = onlyAddress ? eligible.filter(row => row.address === onlyAddress) : eligible.slice(0, limit);
+  check(!onlyAddress || selected.length === 1, 'RETIRE_ADDRESS_NOT_ELIGIBLE');
   const batch = [];
-  for (const row of eligible.slice(0, limit)) {
+  for (const row of selected) {
     const response = await retryRpcRead(() => rpc.getAccountInfo(kit.address(row.address),
       { commitment: 'finalized', encoding: 'base64' }).send());
     check(response.value, 'RETIRE_CANDIDATE_NOT_ON_CHAIN');
@@ -66,13 +69,13 @@ export async function planSnapshotRetirement({ archivePath, expectedSha256, rpcF
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
-  const [archivePath, expectedSha256, rpcFile, age, count] = process.argv.slice(2);
+  const [archivePath, expectedSha256, rpcFile, age, count, onlyAddress] = process.argv.slice(2);
   if (!archivePath || !expectedSha256 || !rpcFile || !age) {
-    console.error('Usage: node scripts/plan-snapshot-retirement.mjs ARCHIVE_DB TRUSTED_SHA256 RPC_URL_FILE MIN_AGE_DAYS [BATCH_LIMIT]');
+    console.error('Usage: node scripts/plan-snapshot-retirement.mjs ARCHIVE_DB TRUSTED_SHA256 RPC_URL_FILE MIN_AGE_DAYS [BATCH_LIMIT] [SNAPSHOT_ADDRESS]');
     process.exitCode = 2;
   } else {
     planSnapshotRetirement({ archivePath, expectedSha256, rpcFile,
-      minAgeDays: Number(age), limit: count === undefined ? 8 : Number(count) })
+      minAgeDays: Number(age), limit: count === undefined ? 8 : Number(count), onlyAddress })
       .then(result => console.log(JSON.stringify(result)))
       .catch(error => { console.error(String(error?.message ?? error).replace(/https?:\/\/[^\s"'<>]+/g, '[RPC_URL_REDACTED]').slice(0, 120)); process.exitCode = 1; });
   }

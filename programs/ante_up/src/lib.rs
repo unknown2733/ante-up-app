@@ -9,6 +9,7 @@ declare_id!("FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr");
 
 const DAY: i64 = 86_400;
 const STALE_AFTER: i64 = 600;
+const SNAPSHOT_RETIRE_MIN_AGE: i64 = 7 * DAY;
 const WALLET_LIMIT: usize = 6;
 const GLOBAL_LIMIT: usize = 100;
 const OUTSTANDING_LIMIT: u16 = 200;
@@ -191,6 +192,20 @@ pub mod ante_up {
         Ok(())
     }
 
+    pub fn retire_snapshot(ctx: Context<RetireSnapshot>, sequence: u64, archive_sha256: [u8; 32]) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        let market = &ctx.accounts.market;
+        let snapshot = &ctx.accounts.snapshot;
+        require!(archive_sha256 != [0; 32] && sequence > 0, ErrorCode::InvalidInput);
+        require!(snapshot.sequence == sequence && snapshot.market == market.key(), ErrorCode::VersionMismatch);
+        require!(sequence < market.latest_sequence, ErrorCode::VersionMismatch);
+        require!(snapshot.published_at > 0 && now.checked_sub(snapshot.published_at)
+            .ok_or(ErrorCode::InvalidInput)? >= SNAPSHOT_RETIRE_MIN_AGE, ErrorCode::InvalidInput);
+        emit!(SnapshotRetired { market: market.key(), sequence,
+            payload_hash: snapshot.payload_hash, archive_sha256 });
+        Ok(())
+    }
+
     pub fn open_free(ctx: Context<OpenFree>, record_id: u64) -> Result<()> {
         let clock = Clock::get()?;
         let now = clock.unix_timestamp;
@@ -361,6 +376,17 @@ pub struct PublishSnapshot<'info> {
     pub system_program: Program<'info, System>,
 }
 #[derive(Accounts)]
+#[instruction(sequence: u64)]
+pub struct RetireSnapshot<'info> {
+    #[account(seeds = [b"config"], bump, has_one = publisher, has_one = admin)] pub config: Account<'info, Config>,
+    #[account(seeds = [b"market", market.id.as_ref()], bump)] pub market: Account<'info, Market>,
+    #[account(mut, close = publisher, seeds = [b"snapshot", market.key().as_ref(), &sequence.to_le_bytes()], bump,
+        constraint = snapshot.market == market.key() @ ErrorCode::VersionMismatch)]
+    pub snapshot: Account<'info, Snapshot>,
+    #[account(mut)] pub publisher: Signer<'info>,
+    pub admin: Signer<'info>,
+}
+#[derive(Accounts)]
 #[instruction(record_id: u64)]
 pub struct OpenFree<'info> {
     #[account(seeds = [b"market", market.id.as_ref()], bump)] pub market: Account<'info, Market>,
@@ -440,6 +466,9 @@ pub struct RecordPoint {
     pub proof_complete: bool, pub proof_hash: [u8; 32],
 }
 #[event] pub struct SnapshotPublished { pub market: Pubkey, pub sequence: u64, pub payload_hash: [u8; 32] }
+#[event] pub struct SnapshotRetired {
+    pub market: Pubkey, pub sequence: u64, pub payload_hash: [u8; 32], pub archive_sha256: [u8; 32]
+}
 #[event] pub struct FreeOpened {
     pub record: Pubkey, pub record_id: u64, pub owner: Pubkey, pub market: Pubkey,
     pub entry: RecordPoint,

@@ -18,3 +18,4 @@ export * from "./proOpened.js";
 export * from "./proSettled.js";
 export * from "./settlementAccepted.js";
 export * from "./snapshotPublished.js";
+export * from "./snapshotRetired.js";

@@ -194,5 +194,26 @@ continuity and the manifest digest. It reads the archive only. A successful
 readback does not yet prove that the live indexer can replay after closure.
 Creating or rolling an archive does not close onchain accounts or recover rent.
 The indexer has an opt-in verified archive read path and a test for a missing
-historical account, but an actual post-closure Devnet replay and a reviewed
-program upgrade are still required before any account retirement.
+historical account. `retire_snapshot` is staged in source. Bulk retirement
+requires a reviewed program upgrade, one controlled Devnet retirement, and a
+successful post-closure indexer replay first.
+
+The retirement instruction requires both the configured publisher and admin
+signatures. It refuses the newest Snapshot or one younger than seven days and
+refunds rent to the publisher. The archive digest argument is an operator
+commitment; the program cannot inspect offchain storage. Before a single
+retirement, verify an independently retained copy on another host and create
+its receipt there:
+
+```sh
+node scripts/snapshot-offhost-receipt.mjs OFFHOST_ARCHIVE.sqlite TRUSTED_SHA256 RECEIPT.json
+```
+
+On the server, `scripts/retire-snapshot.mjs --plan` checks the primary archive,
+the recent off-host receipt, a finalized byte-for-byte account match, the
+market's latest sequence, and the configured signers. `--execute` also requires
+the exact plan fingerprint, both key files, a successful simulation, and a new
+attempt journal. It signs at most one account per invocation and never resends
+an unknown transaction. `--status` reconciles the signature with the account's
+finalized absence. The required `ANTE_UP_RETIRE_*` environment variables are
+listed in the script; keep the receipt and journal outside the public checkout.
