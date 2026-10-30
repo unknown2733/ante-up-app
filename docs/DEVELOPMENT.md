@@ -293,3 +293,32 @@ attempt journal. It signs at most one account per invocation and never resends
 an unknown transaction. `--status` reconciles the signature with the account's
 finalized absence. The required `ANTE_UP_RETIRE_*` environment variables are
 listed in the script; keep the receipt and journal outside the public checkout.
+
+After the first retirement is finalized, replay the live indexer from the
+trusted archive and confirm that its public readback still includes the retired
+Snapshot. Only then use `scripts/retire-snapshot-batch.mjs` for bounded repeated
+recovery. It uses the same per-account archive, recent backup and off-host
+restore checks as the one-account tool. Put each one-account journal in a
+private directory under `<SNAPSHOT_ADDRESS>.json`. A previously finalized,
+scope-bound journal excludes that archived address from later plans; an
+unfinished or malformed journal stops the whole batch. Never remove an
+unfinished journal merely to retry a transaction. Reconcile its signature and
+account with the one-account `--status` path first.
+
+The batch runner defaults to one account and never signs without both
+`--execute` and `ANTE_UP_RETIRE_BATCH_EXECUTE=YES`. Set
+`ANTE_UP_RETIRE_JOURNAL_DIR` and the same archive, receipt, backup, RPC and
+signer environment variables required by the one-account tool, then run:
+
+```sh
+node scripts/retire-snapshot-batch.mjs --plan
+node scripts/retire-snapshot-batch.mjs --execute
+```
+
+`ANTE_UP_RETIRE_BATCH_LIMIT` is bounded to 1–16. More than one account per
+invocation also requires `ANTE_UP_RETIRE_PILOT_VERIFIED=YES`, which the operator
+must set only after the finalized first closure and live indexer readback.
+Each result must be finalized before the next account is signed; an unknown or
+failed result stops the batch. This source tool is not an enabled production
+schedule. Renewal of the recent backup and off-host receipt, real Devnet
+pilot, bounded scheduling and monitoring remain separate deployment steps.

@@ -20,11 +20,15 @@ const base64Account = value => {
 };
 
 export async function planSnapshotRetirement({ archivePath, expectedSha256, rpcFile, minAgeDays,
-  limit = 8, onlyAddress, nowSeconds = Math.floor(Date.now() / 1000), rpc: injectedRpc }) {
+  limit = 8, onlyAddress, completedAddresses = new Set(),
+  nowSeconds = Math.floor(Date.now() / 1000), rpc: injectedRpc }) {
   check(Number.isSafeInteger(minAgeDays) && minAgeDays >= 7 && minAgeDays <= 365 &&
     Number.isSafeInteger(limit) && limit >= 1 && limit <= 16 &&
     Number.isSafeInteger(nowSeconds) && nowSeconds > 0, 'RETIRE_PLAN_BOUNDS_INVALID');
   check(onlyAddress === undefined || kit.isAddress(onlyAddress), 'RETIRE_ADDRESS_INVALID');
+  check(completedAddresses instanceof Set && [...completedAddresses].every(address => kit.isAddress(address)),
+    'RETIRE_COMPLETED_ADDRESSES_INVALID');
+  check(onlyAddress === undefined || !completedAddresses.has(onlyAddress), 'RETIRE_ADDRESS_ALREADY_COMPLETED');
   const verified = await verifyArchive({ archivePath, expectedSha256 });
   const endpoint = injectedRpc ? null : (await readFile(rpcFile, 'utf8')).trim();
   check(injectedRpc || /^https:\/\//.test(endpoint), 'DEVNET_RPC_REQUIRED');
@@ -50,7 +54,8 @@ export async function planSnapshotRetirement({ archivePath, expectedSha256, rpcF
   }).filter(row => Number.isSafeInteger(row.publishedAt) && row.publishedAt > 0 &&
     BigInt(row.sequence) < row.latestSequence && nowSeconds - row.publishedAt >= minAgeSeconds)
     .sort((a, b) => a.publishedAt - b.publishedAt || a.address.localeCompare(b.address));
-  const selected = onlyAddress ? eligible.filter(row => row.address === onlyAddress) : eligible.slice(0, limit);
+  const remaining = eligible.filter(row => !completedAddresses.has(row.address));
+  const selected = onlyAddress ? remaining.filter(row => row.address === onlyAddress) : remaining.slice(0, limit);
   check(!onlyAddress || selected.length === 1, 'RETIRE_ADDRESS_NOT_ELIGIBLE');
   const batch = [];
   for (const row of selected) {
@@ -65,7 +70,8 @@ export async function planSnapshotRetirement({ archivePath, expectedSha256, rpcF
       refundableLamports: String(response.value.lamports) });
   }
   return { mode: 'READ_ONLY', archiveSha256: verified.fileSha256, archiveSnapshots: verified.snapshots,
-    minAgeDays, eligibleByAge: eligible.length, checkedOnChain: batch.length, batch };
+    minAgeDays, eligibleByAge: eligible.length, completedExcluded: eligible.length - remaining.length,
+    checkedOnChain: batch.length, batch };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
