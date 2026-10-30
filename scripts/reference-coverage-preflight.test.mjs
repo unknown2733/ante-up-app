@@ -28,6 +28,25 @@ test('missing source intervals, stale reads and downward revisions stay ineligib
     {...options,nowMs:now+3*cadence}).status,'SOURCE_STALE');
 });
 
+test('revision recovery cannot be promoted to five-minute activity after the downstep leaves the window',()=>{
+  const readings=[row(15,100),row(16,90),row(17,91),row(18,92),row(19,93),row(20,94)];
+  const result=analyzeCumulativeCoverage(readings,options);
+  assert.equal(result.coverageComplete,true);
+  assert.equal(result.negativeDeltas,0);
+  assert.equal(result.revisionRecoveryIntervals,4);
+  assert.equal(result.readyForFiveMinuteDerivation,false);
+  assert.equal(result.status,'SOURCE_REVISION_RECOVERY');
+});
+
+test('a completed recovery before the evaluated window does not block later deltas',()=>{
+  const readings=[row(14,100),row(15,90),row(16,101),
+    row(17,102),row(18,103),row(19,104),row(20,105)];
+  const result=analyzeCumulativeCoverage(readings,options);
+  assert.equal(result.coverageComplete,true);
+  assert.equal(result.revisionRecoveryIntervals,0);
+  assert.equal(result.readyForFiveMinuteDerivation,true);
+});
+
 test('invalid or noncumulative observations cannot be treated as market activity',()=>{
   assert.throws(()=>analyzeCumulativeCoverage([row(20,'-1')],options),/COVERAGE_OBSERVATION_INVALID/);
   assert.throws(()=>analyzeCumulativeCoverage([{...row(20,1),aggregation:'daily'}],options),/COVERAGE_OBSERVATION_INVALID/);
@@ -87,6 +106,34 @@ test('read-only store preflight reports bad evidence as unready',async()=>{
     const result=inspectReferenceStore(file,{nowMs:at});
     assert.equal(result[0].evidence.invalidRows,1);
     assert.equal(result[0].coverage.status,'SOURCE_EVIDENCE_INVALID');
+    assert.equal(result[0].coverage.readyForFiveMinuteDerivation,false);
+  }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test('store preflight retains a correction baseline older than the 28-day evidence window',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'ante-up-coverage-boundary-'));
+  try{
+    const file=join(dir,'observations.sqlite'),db=new DatabaseSync(file);
+    db.exec(`CREATE TABLE reference_raw(raw_sha256 TEXT PRIMARY KEY,raw_bytes BLOB);
+      CREATE TABLE reference_observations(slug TEXT,kind TEXT,aggregation TEXT,
+        observed_at_ms INTEGER,captured_at_ms INTEGER,value TEXT,reported_date TEXT,
+        provider TEXT,source_url TEXT,raw_sha256 TEXT);`);
+    const at=Date.parse('2026-10-30T04:00:00Z'),first=at-28*86_400_000;
+    const insert=db.prepare('INSERT INTO reference_observations VALUES(?,?,?,?,?,?,?,?,?,?)');
+    for(const [when,value] of [[first-2*cadence,'100'],[first-cadence,'90'],
+      [first,'91'],[first+cadence,'92'],[at,'93']]){
+      const raw=Buffer.from(JSON.stringify({items:[{id:'S0Q4gqBUs7c',statistics:{viewCount:value}}]}));
+      const hash=createHash('sha256').update(raw).digest('hex');
+      db.prepare('INSERT INTO reference_raw VALUES(?,?)').run(hash,raw);
+      insert.run('youtube-S0Q4gqBUs7c','YOUTUBE_VIEWS','cumulative',when,when,value,null,
+        'YouTube Data API','https://www.youtube.com/watch?v=S0Q4gqBUs7c',hash);
+    }
+    db.close();
+    const result=inspectReferenceStore(file,{nowMs:at});
+    assert.equal(result[0].coverage.negativeDeltas,0);
+    assert.equal(result[0].coverage.revisionRecoveryIntervals,2);
+    assert.equal(result[0].intervalKinds.REVISION_RECOVERY,2);
+    assert.equal(result[0].coverage.status,'SOURCE_REVISION_RECOVERY');
     assert.equal(result[0].coverage.readyForFiveMinuteDerivation,false);
   }finally{await rm(dir,{recursive:true,force:true});}
 });

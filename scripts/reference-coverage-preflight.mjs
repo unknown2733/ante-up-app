@@ -68,7 +68,7 @@ export function analyzeCumulativeCoverage(rows,{nowMs=Date.now(),cadenceMs=FIVE_
       !integer(row.value)||row.aggregation!=='cumulative'))throw Error('COVERAGE_OBSERVATION_INVALID');
   if(!rows.length)return {status:'NO_OBSERVATIONS',coverageComplete:false,readyForFiveMinuteDerivation:false,
     observedBuckets:0,requiredBuckets:windowMs/cadenceMs+1,missingBuckets:windowMs/cadenceMs+1,
-    negativeDeltas:0,latestAgeMs:null,trailingIntervals:0};
+    negativeDeltas:0,revisionRecoveryIntervals:0,latestAgeMs:null,trailingIntervals:0};
   const byBucket=new Map();
   for(const row of rows){
     const bucket=Math.floor(row.observedAtMs/cadenceMs)*cadenceMs;
@@ -77,7 +77,9 @@ export function analyzeCumulativeCoverage(rows,{nowMs=Date.now(),cadenceMs=FIVE_
         row.observedAtMs===previous.observedAtMs&&row.capturedAtMs>previous.capturedAtMs)
       byBucket.set(bucket,row);
   }
-  const latest=Math.max(...byBucket.keys()),first=latest-windowMs;
+  let latest=-1;
+  for(const bucket of byBucket.keys())if(bucket>latest)latest=bucket;
+  const first=latest-windowMs;
   const requiredBuckets=windowMs/cadenceMs+1;
   let observedBuckets=0,negativeDeltas=0,trailingIntervals=0,previous=null;
   for(let bucket=first;bucket<=latest;bucket+=cadenceMs){
@@ -89,15 +91,22 @@ export function analyzeCumulativeCoverage(rows,{nowMs=Date.now(),cadenceMs=FIVE_
   }
   for(let bucket=latest;byBucket.has(bucket-cadenceMs);bucket-=cadenceMs)
     trailingIntervals++;
+  // An increase after a downward provider correction can restore previously
+  // counted activity. Continuous buckets alone do not make it a new delta.
+  const revisionRecoveryIntervals=deriveCumulativeIntervals(rows,{bucketMs:cadenceMs}).intervals
+    .filter(interval=>interval.kind==='REVISION_RECOVERY'&&
+      Math.floor(interval.toAtMs/cadenceMs)*cadenceMs>=first&&
+      Math.floor(interval.toAtMs/cadenceMs)*cadenceMs<=latest).length;
   const latestAgeMs=nowMs-rows.reduce((max,row)=>Math.max(max,row.observedAtMs),0);
   const coverageComplete=observedBuckets===requiredBuckets;
   const fresh=latestAgeMs>=0&&latestAgeMs<2*cadenceMs;
-  const readyForFiveMinuteDerivation=coverageComplete&&fresh&&negativeDeltas===0;
+  const readyForFiveMinuteDerivation=coverageComplete&&fresh&&negativeDeltas===0&&revisionRecoveryIntervals===0;
   return {status:readyForFiveMinuteDerivation?'SOURCE_COVERAGE_COMPLETE':
     !fresh?'SOURCE_STALE':negativeDeltas?'SOURCE_REVISION_DOWN':
+    revisionRecoveryIntervals?'SOURCE_REVISION_RECOVERY':
     'SOURCE_HISTORY_INCOMPLETE',coverageComplete,readyForFiveMinuteDerivation,
     observedBuckets,requiredBuckets,missingBuckets:requiredBuckets-observedBuckets,
-    negativeDeltas,latestAgeMs,trailingIntervals};
+    negativeDeltas,revisionRecoveryIntervals,latestAgeMs,trailingIntervals};
 }
 
 export function inspectReferenceStore(dbPath,{nowMs=Date.now()}={}){
@@ -109,17 +118,28 @@ export function inspectReferenceStore(dbPath,{nowMs=Date.now()}={}){
       o.reported_date AS reportedDate, o.raw_sha256 AS rawSha256, r.raw_bytes AS rawBytes
       FROM reference_observations o LEFT JOIN reference_raw r ON r.raw_sha256=o.raw_sha256
       WHERE o.slug=? AND o.observed_at_ms>=? ORDER BY o.observed_at_ms, o.captured_at_ms`);
+    // Keep the correction baseline across the 28-day boundary without loading
+    // older raw provider responses into the evidence verification window.
+    const countHistory=db.prepare(`SELECT aggregation, observed_at_ms AS observedAtMs,
+      captured_at_ms AS capturedAtMs, value FROM reference_observations
+      WHERE slug=? ORDER BY observed_at_ms, captured_at_ms`);
     const latest=db.prepare('SELECT MAX(observed_at_ms) AS atMs FROM reference_observations WHERE slug=?');
     return slugs.map(({slug})=>{
       const atMs=latest.get(slug).atMs;
       const rows=history.all(slug,atMs-TWENTY_EIGHT_DAYS-FIVE_MINUTES);
       const kind=rows.at(-1)?.kind??null;
       const cadenceSource=kind==='YOUTUBE_VIEWS'||kind==='X_LIKES';
-      const coverage=cadenceSource?analyzeCumulativeCoverage(rows,{nowMs}):null;
+      const counts=cadenceSource?countHistory.all(slug):null;
+      const coverage=counts?analyzeCumulativeCoverage(counts,{nowMs}):null;
       const evidence=cadenceSource?verifyCumulativeEvidence(rows,slug):null;
-      const intervalKinds=cadenceSource
-        ?deriveCumulativeIntervals(rows).intervals.reduce((counts,interval)=>{
-          counts[interval.kind]++;return counts;
+      const firstBucket=Math.floor((atMs-TWENTY_EIGHT_DAYS)/FIVE_MINUTES)*FIVE_MINUTES;
+      const lastBucket=Math.floor(atMs/FIVE_MINUTES)*FIVE_MINUTES;
+      const intervalKinds=counts
+        ?deriveCumulativeIntervals(counts).intervals.filter(interval=>{
+          const bucket=Math.floor(interval.toAtMs/FIVE_MINUTES)*FIVE_MINUTES;
+          return bucket>=firstBucket&&bucket<=lastBucket;
+        }).reduce((totals,interval)=>{
+          totals[interval.kind]++;return totals;
         },{OBSERVED_DELTA:0,GAP:0,DOWNWARD_REVISION:0,REVISION_RECOVERY:0})
         :null;
       const checked=coverage&&evidence&&!evidence.evidenceValid
