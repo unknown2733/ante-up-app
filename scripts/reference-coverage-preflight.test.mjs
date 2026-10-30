@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {analyzeCumulativeCoverage} from './reference-coverage-preflight.mjs';
+import {createHash} from 'node:crypto';
+import {DatabaseSync} from 'node:sqlite';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {analyzeCumulativeCoverage,inspectReferenceStore,verifyCumulativeEvidence}
+  from './reference-coverage-preflight.mjs';
 
 const minute=60_000,cadence=5*minute,now=20*cadence;
 const row=(bucket,value)=>({observedAtMs:bucket*cadence+1000,
@@ -25,4 +31,44 @@ test('missing source intervals, stale reads and downward revisions stay ineligib
 test('invalid or noncumulative observations cannot be treated as market activity',()=>{
   assert.throws(()=>analyzeCumulativeCoverage([row(20,'-1')],options),/COVERAGE_OBSERVATION_INVALID/);
   assert.throws(()=>analyzeCumulativeCoverage([{...row(20,1),aggregation:'daily'}],options),/COVERAGE_OBSERVATION_INVALID/);
+});
+
+test('YouTube source identity and exact raw bytes are prerequisites for coverage',()=>{
+  const rawBytes=Buffer.from('{"items":[]}');
+  const valid={...row(20,100),kind:'YOUTUBE_VIEWS',provider:'YouTube Data API',
+    reportedDate:null,sourceUrl:'https://www.youtube.com/watch?v=S0Q4gqBUs7c',
+    rawBytes,rawSha256:createHash('sha256').update(rawBytes).digest('hex')};
+  const slug='youtube-S0Q4gqBUs7c';
+  assert.deepEqual(verifyCumulativeEvidence([valid],slug),{evidenceValid:true,invalidRows:0});
+  assert.equal(verifyCumulativeEvidence([{...valid,rawBytes:Buffer.from('changed')}],slug).evidenceValid,false);
+  assert.equal(verifyCumulativeEvidence([{...valid,sourceUrl:'https://www.youtube.com/watch?v=different'}],slug).evidenceValid,false);
+});
+
+test('read-only store preflight reports bad evidence as unready',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'ante-up-coverage-'));
+  try{
+    const file=join(dir,'observations.sqlite'),db=new DatabaseSync(file);
+    db.exec(`CREATE TABLE reference_raw(raw_sha256 TEXT PRIMARY KEY,raw_bytes BLOB);
+      CREATE TABLE reference_observations(slug TEXT,kind TEXT,aggregation TEXT,
+        observed_at_ms INTEGER,captured_at_ms INTEGER,value TEXT,reported_date TEXT,
+        provider TEXT,source_url TEXT,raw_sha256 TEXT);`);
+    const raw=Buffer.from('{"items":[]}');
+    const hash=createHash('sha256').update(raw).digest('hex');
+    db.prepare('INSERT INTO reference_raw VALUES(?,?)').run(hash,raw);
+    const at=Date.parse('2026-10-30T04:00:00Z');
+    db.prepare('INSERT INTO reference_observations VALUES(?,?,?,?,?,?,?,?,?,?)')
+      .run('youtube-S0Q4gqBUs7c','YOUTUBE_VIEWS','cumulative',at,at,'100',null,
+        'YouTube Data API','https://www.youtube.com/watch?v=S0Q4gqBUs7c',hash);
+    db.close();
+    const original=inspectReferenceStore(file,{nowMs:at});
+    assert.equal(original[0].evidence.evidenceValid,true);
+    assert.equal(original[0].coverage.readyForFiveMinuteDerivation,false);
+    const damaged=new DatabaseSync(file);
+    damaged.prepare('UPDATE reference_raw SET raw_bytes=?').run(Buffer.from('changed'));
+    damaged.close();
+    const result=inspectReferenceStore(file,{nowMs:at});
+    assert.equal(result[0].evidence.invalidRows,1);
+    assert.equal(result[0].coverage.status,'SOURCE_EVIDENCE_INVALID');
+    assert.equal(result[0].coverage.readyForFiveMinuteDerivation,false);
+  }finally{await rm(dir,{recursive:true,force:true});}
 });
