@@ -97,6 +97,7 @@ import {
   getRaiseFundedOpenCapInstructionAsync,
   getRegisterFinancialMarketInstructionAsync,
   getRegisterMarketInstructionAsync,
+  getRetireSnapshotInstructionAsync,
   getSetAdmissionGateInstructionAsync,
   getSettleProInstructionAsync,
   getSpotBuyInstructionAsync,
@@ -122,6 +123,7 @@ import {
   parseRaiseFundedOpenCapInstruction,
   parseRegisterFinancialMarketInstruction,
   parseRegisterMarketInstruction,
+  parseRetireSnapshotInstruction,
   parseSetAdmissionGateInstruction,
   parseSettleProInstruction,
   parseSpotBuyInstruction,
@@ -162,6 +164,7 @@ import {
   type ParsedRaiseFundedOpenCapInstruction,
   type ParsedRegisterFinancialMarketInstruction,
   type ParsedRegisterMarketInstruction,
+  type ParsedRetireSnapshotInstruction,
   type ParsedSetAdmissionGateInstruction,
   type ParsedSettleProInstruction,
   type ParsedSpotBuyInstruction,
@@ -172,6 +175,7 @@ import {
   type RaiseFundedOpenCapAsyncInput,
   type RegisterFinancialMarketAsyncInput,
   type RegisterMarketAsyncInput,
+  type RetireSnapshotAsyncInput,
   type SetAdmissionGateAsyncInput,
   type SettleProAsyncInput,
   type SpotBuyAsyncInput,
@@ -396,6 +400,7 @@ export enum AnteUpEvent {
   ProofCompleted,
   SettlementAccepted,
   SnapshotPublished,
+  SnapshotRetired,
 }
 
 export function identifyAnteUpEvent(
@@ -534,6 +539,17 @@ export function identifyAnteUpEvent(
   ) {
     return AnteUpEvent.SnapshotPublished;
   }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([131, 108, 135, 111, 17, 102, 16, 138]),
+      ),
+      0,
+    )
+  ) {
+    return AnteUpEvent.SnapshotRetired;
+  }
   throw new Error(
     "The provided event could not be identified as a anteUp event.",
   );
@@ -559,6 +575,7 @@ export enum AnteUpInstruction {
   RaiseFundedOpenCap,
   RegisterFinancialMarket,
   RegisterMarket,
+  RetireSnapshot,
   SetAdmissionGate,
   SettlePro,
   SpotBuy,
@@ -784,6 +801,17 @@ export function identifyAnteUpInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([143, 98, 229, 219, 51, 122, 2, 91]),
+      ),
+      0,
+    )
+  ) {
+    return AnteUpInstruction.RetireSnapshot;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([168, 135, 125, 83, 177, 25, 145, 219]),
       ),
       0,
@@ -912,6 +940,9 @@ export type ParsedAnteUpInstruction<
   | ({
       instructionType: AnteUpInstruction.RegisterMarket;
     } & ParsedRegisterMarketInstruction<TProgram>)
+  | ({
+      instructionType: AnteUpInstruction.RetireSnapshot;
+    } & ParsedRetireSnapshotInstruction<TProgram>)
   | ({
       instructionType: AnteUpInstruction.SetAdmissionGate;
     } & ParsedSetAdmissionGateInstruction<TProgram>)
@@ -1067,6 +1098,13 @@ export function parseAnteUpInstruction<TProgram extends string>(
       return {
         instructionType: AnteUpInstruction.RegisterMarket,
         ...parseRegisterMarketInstruction(instruction),
+      };
+    }
+    case AnteUpInstruction.RetireSnapshot: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: AnteUpInstruction.RetireSnapshot,
+        ...parseRetireSnapshotInstruction(instruction),
       };
     }
     case AnteUpInstruction.SetAdmissionGate: {
@@ -1234,6 +1272,10 @@ export type AnteUpPluginInstructions = {
   registerMarket: (
     input: RegisterMarketAsyncInput,
   ) => ReturnType<typeof getRegisterMarketInstructionAsync> &
+    SelfPlanAndSendFunctions;
+  retireSnapshot: (
+    input: RetireSnapshotAsyncInput,
+  ) => ReturnType<typeof getRetireSnapshotInstructionAsync> &
     SelfPlanAndSendFunctions;
   setAdmissionGate: (
     input: SetAdmissionGateAsyncInput,
@@ -1406,6 +1448,11 @@ export function anteUpProgram() {
             addSelfPlanAndSendFunctions(
               client,
               getRegisterMarketInstructionAsync(input),
+            ),
+          retireSnapshot: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getRetireSnapshotInstructionAsync(input),
             ),
           setAdmissionGate: (input) =>
             addSelfPlanAndSendFunctions(

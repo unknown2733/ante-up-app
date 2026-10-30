@@ -39,6 +39,31 @@ test('encrypted complete snapshot includes committed WAL rows, secrets and confi
   assert.equal((await readdir(join(target,'state/live-smoke'))).some(p=>p.endsWith('-wal')),false);
   assert.equal((await readdir(join(f.dir,'output'))).some(p=>p.startsWith('.ante-backup')),false);
 });
+test('immutable Snapshot SQLite is restored byte for byte while live WAL databases are normalized',async t=>{
+  const f=await fixture(t),archivePath=join(f.dir,'state/archives/snapshots.sqlite');
+  await mkdir(join(f.dir,'state/archives'));
+  const archive=new DatabaseSync(archivePath);
+  try{archive.exec("PRAGMA journal_mode=DELETE; CREATE TABLE snapshots(id INTEGER PRIMARY KEY, payload TEXT); INSERT INTO snapshots VALUES(1,'finalized');");}
+  finally{archive.close();}
+  const original=createHash('sha256').update(await readFile(archivePath)).digest('hex');
+  f.config.required.push('state/archives/snapshots.sqlite');
+  f.config.immutableSqlite=['state/archives/snapshots.sqlite'];
+  const created=await createBackup({...f,quiesced:true});
+  assert.equal(created.databases,2);
+  const restored=join(f.dir,'restored');
+  await restoreDrill({input:f.output,keyFile:f.keyFile,target:restored});
+  assert.equal(createHash('sha256').update(await readFile(join(restored,'state/archives/snapshots.sqlite'))).digest('hex'),original);
+  const live=new DatabaseSync(join(restored,'state/live-smoke/index.sqlite'),{readOnly:true});
+  try{assert.equal(live.prepare('SELECT count(*) AS n FROM ledger').get().n,1);}
+  finally{live.close();}
+});
+test('byte-exact SQLite must be required, present and free of WAL sidecars',async t=>{
+  const f=await fixture(t);
+  await assert.rejects(createBackup({...f,quiesced:true,config:{...f.config,
+    immutableSqlite:['state/live-smoke/missing.sqlite']}}),/IMMUTABLE_SQLITE_CONFIG_INVALID/);
+  await assert.rejects(createBackup({...f,quiesced:true,config:{...f.config,
+    immutableSqlite:['state/live-smoke/index.sqlite']}}),/IMMUTABLE_SQLITE_NOT_QUIESCED/);
+});
 test('backup fails closed without quiescence, required file or separate key/output',async t=>{
   const f=await fixture(t);
   await assert.rejects(createBackup(f),/QUIESCED_WRITERS_REQUIRED/);

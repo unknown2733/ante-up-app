@@ -31,7 +31,7 @@ This source revision replaces synthetic catalog histories and fictional profiles
 | Evidence | Raw inputs and calculation evidence archived through Arweave/Turbo; Solana records and SAS attestations link results to evidence |
 | Operations | API, indexer and bounded workers; provider budgets, stale-data handling and restart recovery |
 
-The Devnet program currently permits up to 10 graduated markets and 100,000 test tUSD of cumulative protocol contributions, capped at 10,000 test tUSD per market. Graduation still requires actual protocol-held tUSD, valid observed data, a filled curve, and the vault reserve checks. Paid X collection is activated separately by the operator; these limits do not imply that every registered market has a live data feed.
+The Devnet program currently permits up to 10 graduated markets and 100,000 test tUSD of cumulative protocol contributions, capped at 10,000 test tUSD per market. Graduation still requires actual protocol-held tUSD, valid observed data, a filled curve, and the vault reserve checks. The operator separately approves paid X collection for at most five markets; registering a market and trading its curve do not grant it a live data feed or automatic graduation.
 
 The MVP uses a custom Anchor program and a collateral-reserving vault settlement model. It does **not** implement InfinityPools-style borrowing and reconstruction of external AMM liquidity. Maximum test leverage is 5×; admission and reserved liability limits still apply.
 

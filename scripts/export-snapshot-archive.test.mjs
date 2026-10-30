@@ -99,6 +99,18 @@ test('archive preserves only complete finalized, PDA-bound snapshots and never o
     assert.equal(retirementPlan.batch[0].refundableLamports, '1991360');
     snapshotPresent = false;
     await assert.rejects(planSnapshotRetirement(retirementInput), /RETIRE_CANDIDATE_NOT_ON_CHAIN/);
+    const completedPlan = await planSnapshotRetirement({ ...retirementInput,
+      completedScopes: new Map([[String(snapshotAddress), { market: marketAddress, sequence: '1' }]]) });
+    assert.equal(completedPlan.completedExcluded, 1);
+    assert.equal(completedPlan.checkedOnChain, 0);
+    assert.deepEqual(completedPlan.batch, []);
+    await assert.rejects(planSnapshotRetirement({ ...retirementInput,
+      completedScopes: new Map([[String(snapshotAddress), { market: marketAddress, sequence: '1' }]]),
+      onlyAddress: String(snapshotAddress) }),
+    /RETIRE_ADDRESS_ALREADY_COMPLETED/);
+    await assert.rejects(planSnapshotRetirement({ ...retirementInput,
+      completedScopes: new Map([[String(snapshotAddress), { market: marketAddress, sequence: '2' }]]) }),
+    /RETIRE_COMPLETED_SCOPE_MISMATCH/);
     await assert.rejects(verifyArchive({ archivePath: outPath, expectedSha256: '0'.repeat(64) }), /ARCHIVE_FILE_HASH_MISMATCH/);
     await assert.rejects(buildArchive({ ...input, create: true }), /EEXIST/);
     const bad = { async scan() { return { slot: '10', accounts: [

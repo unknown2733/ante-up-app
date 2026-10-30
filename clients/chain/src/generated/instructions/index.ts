@@ -25,6 +25,7 @@ export * from "./publishSnapshot.js";
 export * from "./raiseFundedOpenCap.js";
 export * from "./registerFinancialMarket.js";
 export * from "./registerMarket.js";
+export * from "./retireSnapshot.js";
 export * from "./setAdmissionGate.js";
 export * from "./settlePro.js";
 export * from "./spotBuy.js";

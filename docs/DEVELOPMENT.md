@@ -187,6 +187,38 @@ and verified before these reference subjects can become executable markets.
 
 ## Finalized Snapshot archive preflight
 
+Before deploying a program binary that adds Snapshot retirement, calculate its
+actual Devnet ProgramData extension and temporary upload buffer funding. This
+check reads the finalized upgrade authority, binary hash, rent, and payer
+balance; it never loads a signer or sends a transaction:
+
+```sh
+node scripts/preflight-program-upgrade.mjs \
+  /absolute/path/ante_up.so TRUSTED_SBF_SHA256 \
+  /absolute/path/devnet-rpc.url DEPLOYER_ADDRESS
+```
+
+The result's `peakRequiredLamports` includes a 0.1 SOL fee reserve.
+`FUNDED_FOR_ESTIMATE` is a funding preflight, not permission to upgrade or
+retire accounts. Re-run it against the exact binary immediately before the
+program extension and deployment. Keep the temporary upload buffer, signer
+files, and RPC URL outside the public repository.
+
+Before retiring a Snapshot account, rehearse its disappearance from RPC reads
+against the trusted archive. The rehearsal fetches the still-live finalized
+account, checks its bytes against the archive, hides that one address from an
+in-memory RPC wrapper, and requires the complete program scan to recover it.
+It neither closes an account nor signs a transaction:
+
+```sh
+node scripts/simulate-retired-snapshot-read.mjs \
+  /absolute/path/snapshots.sqlite TRUSTED_ARCHIVE_SHA256 \
+  /absolute/path/devnet-rpc.url SNAPSHOT_ADDRESS
+```
+
+A passing rehearsal does not replace the later finalized retirement and live
+indexer readback. The current Snapshot must remain on chain.
+
 `scripts/export-snapshot-archive.mjs` creates a separate, immutable SQLite copy
 of every currently indexed Devnet Snapshot account. It compares the finalized
 program account, PDA, candidate hash and fields, and finalized indexer event.
@@ -213,6 +245,14 @@ The tool verifies the Devnet genesis, requires a complete sequence for each
 market, writes atomically, and stores a count and digest in the archive manifest.
 Keep the archive inside the encrypted backup scope and verify its SQLite
 integrity and offsite recovery before considering any account retirement.
+The active backup config must list that exact archive under both `required`
+and `immutableSqlite`. The latter preserves the finalized SQLite file byte
+for byte; ordinary live SQLite databases still use the WAL-aware backup path.
+The immutable file must have no `-wal` or `-shm` sidecar. After the scheduled
+backup, compare the PC's isolated restore of this archive against the trusted
+source file SHA-256 before using it to authorize retirement. A backup made
+before the archive existed, or one that normalized its bytes, does not satisfy
+the retirement gate.
 Record the archive file's SHA-256 outside the archive, then independently read
 back every saved account, candidate and finalized event:
 
@@ -227,5 +267,61 @@ continuity and the manifest digest. It reads the archive only. A successful
 readback does not yet prove that the live indexer can replay after closure.
 Creating or rolling an archive does not close onchain accounts or recover rent.
 The indexer has an opt-in verified archive read path and a test for a missing
-historical account, but an actual post-closure Devnet replay and a reviewed
-program upgrade are still required before any account retirement.
+historical account. `retire_snapshot` is staged in source. Bulk retirement
+requires a reviewed program upgrade, one controlled Devnet retirement, and a
+successful post-closure indexer replay first.
+
+The retirement instruction requires both the configured publisher and admin
+signatures. It refuses the newest Snapshot or one younger than seven days and
+refunds rent to the publisher. The archive digest argument is an operator
+commitment; the program cannot inspect offchain storage. Before a single
+retirement, verify an independently retained copy on another host and create
+its receipt there:
+
+```sh
+node scripts/snapshot-offhost-receipt.mjs OFFHOST_ARCHIVE.sqlite TRUSTED_SHA256 RECEIPT.json
+```
+
+On the server, `scripts/retire-snapshot.mjs --plan` checks the primary archive,
+the recent off-host receipt, a matching encrypted-backup result and PC copy
+receipt, and an isolated restore report that proves the exact archive SHA-256.
+It also checks a finalized byte-for-byte account match, the market's latest
+sequence, and the configured signers. The restore report must be recent; its
+backup SHA-256 is bound into the plan fingerprint. `--execute` also requires
+the exact plan fingerprint, both key files, a successful simulation, and a new
+attempt journal. It signs at most one account per invocation and never resends
+an unknown transaction. `--status` reconciles the signature with the account's
+finalized absence. The required `ANTE_UP_RETIRE_*` environment variables are
+listed in the script; keep the receipt and journal outside the public checkout.
+
+After the first retirement is finalized, replay the live indexer from the
+trusted archive and confirm that its public readback still includes the retired
+Snapshot. Only then use `scripts/retire-snapshot-batch.mjs` for bounded repeated
+recovery. It uses the same per-account archive, recent backup and off-host
+restore checks as the one-account tool. Put each one-account journal in a
+private directory under `<SNAPSHOT_ADDRESS>.json`. A previously finalized,
+scope-bound journal excludes that archived address from later plans; an
+unfinished or malformed journal stops the whole batch. Never remove an
+unfinished journal merely to retry a transaction. Reconcile its signature and
+account with the one-account `--status` path first.
+
+The batch runner defaults to one account and never signs without both
+`--execute` and `ANTE_UP_RETIRE_BATCH_EXECUTE=YES`. Set
+`ANTE_UP_RETIRE_JOURNAL_DIR` and the same archive, receipt, backup, RPC and
+signer environment variables required by the one-account tool, then run:
+
+```sh
+node scripts/retire-snapshot-batch.mjs --plan
+node scripts/retire-snapshot-batch.mjs --execute
+```
+
+`ANTE_UP_RETIRE_BATCH_LIMIT` is bounded to 1–16. More than one account per
+invocation also requires `ANTE_UP_RETIRE_PILOT_VERIFIED=YES`, which the operator
+must set only after the finalized first closure and live indexer readback, and
+`ANTE_UP_RETIRE_PILOT_ADDRESS` naming that account. The runner checks that its
+finalized journal exists and reconfirms its signature and account absence on
+Devnet before signing a multi-account batch.
+Each result must be finalized before the next account is signed; an unknown or
+failed result stops the batch. This source tool is not an enabled production
+schedule. Renewal of the recent backup and off-host receipt, real Devnet
+pilot, bounded scheduling and monitoring remain separate deployment steps.
