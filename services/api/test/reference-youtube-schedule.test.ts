@@ -33,8 +33,10 @@ test('oracle preparation uses a separate five-minute budget and never exceeds 28
       assert.notEqual(fast.reserve(t0).id, null);
       assert.deepEqual(fast.reserve(t0 + 60_000), { id: null, reason: 'MIN_INTERVAL' });
       for (let i = 1; i < 288; i++)
-        assert.notEqual(fast.reserve(t0 + i * 270_000).id, null);
-      assert.deepEqual(fast.reserve(t0 + 288 * 270_000), { id: null, reason: 'DAILY_CAP' });
+        assert.notEqual(fast.reserve(t0 + i * 300_000).id, null);
+      assert.deepEqual(fast.reserve(t0 + 287 * 300_000 + 59_000),
+        { id: null, reason: 'MIN_INTERVAL' });
+      assert.notEqual(fast.reserve(t0 + 288 * 300_000).id, null);
     } finally { fast.close(); }
     const reference = new ReferenceYouTubeRequestBudget(dbPath);
     try {
@@ -43,6 +45,19 @@ test('oracle preparation uses a separate five-minute budget and never exceeds 28
     } finally { reference.close(); }
     assert.throws(() => new ReferenceYouTubeRequestBudget(dbPath, 'unknown' as 'reference'),
       /YOUTUBE_CADENCE_INVALID/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('oracle preparation accepts the next calendar slot despite container startup jitter', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ante-up-youtube-budget-'));
+  try {
+    const budget = new ReferenceYouTubeRequestBudget(join(dir, 'api.sqlite'), 'oracle-prep');
+    try {
+      assert.notEqual(budget.reserve(t0 + 55_000).id, null);
+      assert.deepEqual(budget.reserve(t0 + 299_000), { id: null, reason: 'MIN_INTERVAL' });
+      // The next systemd timer may start only 250 seconds after a late capture.
+      assert.notEqual(budget.reserve(t0 + 305_000).id, null);
+    } finally { budget.close(); }
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

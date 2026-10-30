@@ -5,14 +5,18 @@ import { fileURLToPath } from 'node:url';
 import { collectYouTubeReferenceViews } from './reference-youtube.ts';
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+const FIVE_MINUTES_MS = 5 * 60 * 1000;
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 export type YouTubeCadence = 'reference' | 'oracle-prep';
 const POLICIES = {
-  reference: { table: 'reference_youtube_requests', minIntervalMs: SIX_HOURS_MS, dailyCap: 4, rollingCap: 120 },
-  // Five-minute timer with a small scheduling allowance. The daily cap keeps
-  // this preparation feed within 288 statistics batch calls even after manual runs.
-  'oracle-prep': { table: 'reference_youtube_oracle_prep_requests', minIntervalMs: 270_000,
+  reference: { table: 'reference_youtube_requests', minIntervalMs: SIX_HOURS_MS,
+    slotMs: null, dailyCap: 4, rollingCap: 120 },
+  // One request per UTC five-minute slot. Container startup can vary by over
+  // 30 seconds, so an elapsed-time gate can skip the next scheduled slot.
+  // The daily cap still bounds this feed to 288 statistics batch calls.
+  'oracle-prep': { table: 'reference_youtube_oracle_prep_requests', minIntervalMs: null,
+    slotMs: FIVE_MINUTES_MS,
     dailyCap: 288, rollingCap: 8_640 },
 } as const;
 
@@ -45,7 +49,11 @@ export class ReferenceYouTubeRequestBudget {
       const rolling = this.db.prepare(`SELECT COUNT(*) AS n FROM ${this.policy.table} WHERE attempted_at_ms > ? AND attempted_at_ms <= ?`)
         .get(nowMs - THIRTY_DAYS_MS, nowMs) as { n: number };
       let reason: string | null = null;
-      if (last.at_ms !== null && nowMs - last.at_ms < this.policy.minIntervalMs) reason = 'MIN_INTERVAL';
+      if (last.at_ms !== null && (last.at_ms > nowMs ||
+        (this.policy.slotMs === null
+          ? nowMs - last.at_ms < (this.policy.minIntervalMs ?? 0)
+          : Math.floor(nowMs / this.policy.slotMs) === Math.floor(last.at_ms / this.policy.slotMs))))
+        reason = 'MIN_INTERVAL';
       else if (today.n >= this.policy.dailyCap) reason = 'DAILY_CAP';
       else if (rolling.n >= this.policy.rollingCap) reason = 'ROLLING_30_DAY_CAP';
       if (reason) { this.db.exec('COMMIT'); return { id: null, reason }; }
