@@ -3,8 +3,9 @@ set -euo pipefail
 mode="${1:---check}"
 [[ "$mode" == --check || "$mode" == --apply ]] || { echo WEB_ASSETS_ARGS_INVALID; exit 2; }
 : "${ANTE_UP_WEB_ASSETS_RELEASE:?Set reviewed web assets image tag}"
+target_release="$ANTE_UP_WEB_ASSETS_RELEASE"
 release="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-image="ante-up:${ANTE_UP_WEB_ASSETS_RELEASE}"
+image="ante-up:${target_release}"
 scratch="$(mktemp -d)"
 trap 'rm -rf -- "$scratch"' EXIT
 
@@ -12,6 +13,8 @@ docker inspect ante-up-web-1 --format '{{index .Config.Labels "com.docker.compos
 docker inspect ante-up-web-1 --format '{{index .Config.Labels "com.docker.compose.project.environment_file"}}' > "$scratch/env"
 docker inspect ante-up-web-1 --format '{{.Config.Image}}' > "$scratch/image"
 running_image="$(cat "$scratch/image")"
+[[ "$running_image" == ante-up:* ]] || { echo WEB_RUNNING_IMAGE_UNEXPECTED; exit 1; }
+running_release="${running_image#ante-up:}"
 IFS=',' read -r -a files < "$scratch/files"
 IFS=',' read -r -a env_files < "$scratch/env"
 args=(-p ante-up)
@@ -21,9 +24,9 @@ for file in "${env_files[@]}"; do args+=(--env-file "$file"); done
 visitor_env=/srv/ante-up/builds/visitor-onboarding-174c8e4/visitor-sol.env
 [[ -f "$visitor_env" ]] && args+=(--env-file "$visitor_env")
 for file in "${files[@]}"; do args+=(-f "$file"); done
-docker compose "${args[@]}" config --format json > "$scratch/old.json"
+ANTE_UP_WEB_ASSETS_RELEASE="$running_release" docker compose "${args[@]}" config --format json > "$scratch/old.json"
 next=("${args[@]}" -f "$release/deploy/compose.web-assets.yml")
-docker compose "${next[@]}" config --format json > "$scratch/new.json"
+ANTE_UP_WEB_ASSETS_RELEASE="$target_release" docker compose "${next[@]}" config --format json > "$scratch/new.json"
 python3 - "$scratch/old.json" "$scratch/new.json" "$running_image" "$image" <<'PY'
 import json,sys
 with open(sys.argv[1]) as f: old=json.load(f)
@@ -39,10 +42,10 @@ PY
 [[ "$mode" == --apply ]] || exit 0
 rollback(){
   echo WEB_ASSETS_ROLLOUT_FAILED_ROLLING_BACK
-  docker compose "${args[@]}" up -d --no-deps web || true
+  ANTE_UP_WEB_ASSETS_RELEASE="$running_release" docker compose "${args[@]}" up -d --no-deps web || true
 }
 trap rollback ERR
-docker compose "${next[@]}" up -d --no-deps web
+ANTE_UP_WEB_ASSETS_RELEASE="$target_release" docker compose "${next[@]}" up -d --no-deps web
 health=unknown
 for i in $(seq 1 60); do
   health="$(docker inspect ante-up-web-1 --format '{{.State.Health.Status}}' 2>/dev/null || true)"

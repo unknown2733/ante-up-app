@@ -25,6 +25,7 @@ const errors: Record<string, string> = {
   RPC_RATE_LIMITED: 'Devnet is busy. Request a fresh quote in a moment.',
   LOW_ACTIVITY: 'New paid trades are paused while activity is low.',
   WRONG_PHASE: 'This action is not available at the current market stage.',
+  LP_WINDOW_CLOSED: 'Liquidity deposits and withdrawals reopen during the next weekly liquidity window.',
   PENDING_CONFIRMATION: 'Your earlier request is still being checked. Check its status before trying again.',
   REQUOTE_REQUIRED: 'The quote changed. Review a new quote before signing.',
   LIMIT_REACHED: 'You have reached the current limit.',
