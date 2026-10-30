@@ -1,5 +1,5 @@
 import * as defaultSdk from 'sas-lib';
-import { canonical, fetchManifest } from './index.mjs';
+import { canonical, fetchManifest, payloadHash } from './index.mjs';
 import { verifySemanticPacket } from './semantic.mjs';
 
 const check=(ok,code='INVALID_INPUT')=>{if(!ok)throw new Error(code);};
@@ -13,6 +13,7 @@ export function createSasAdapter({rpc,credential,schema,payer,authority,nonceFor
   check(rpc && credential && schema && payer && authority && storage,'SAS_CONFIG_REQUIRED');
   check([nonceForJob,encodeClaims,decodeClaims,sendInstruction,semanticPacketProvider,chainVerifier,expiryAt]
     .every(x=>typeof x==='function'),'SAS_CONFIG_REQUIRED');
+  const verifiedClaims=new Map();
   async function location(jobId) {
     const nonce=await nonceForJob(jobId);
     check(typeof nonce==='string' && nonce.length>0,'INVALID_NONCE');
@@ -21,13 +22,21 @@ export function createSasAdapter({rpc,credential,schema,payer,authority,nonceFor
   }
   async function validateMeaning(jobId,hash,manifestRef,payload) {
     check(/^[a-f0-9]{64}$/.test(hash) && manifestRef?.contentHash===hash,'INVALID_EVIDENCE');
-    const archived=await fetchManifest(storage,{payloadHash:hash,manifestRef});
-    check(canonical(archived)===canonical(payload),'MANIFEST_MISMATCH');
-    const packet=await semanticPacketProvider(jobId,payload);
-    check(packet && packet.payloadHash===hash,'INVALID_EVIDENCE');
-    await verifySemanticPacket(payload,packet,chainVerifier,storage);
-    return {jobId,payloadHash:hash,manifestItemId:manifestRef.arweaveItemId,
-      manifestParentId:manifestRef.parentTransactionId,recordId:payload.record.id};
+    check(payloadHash(payload)===hash,'INVALID_EVIDENCE');
+    const key=`${jobId}:${hash}:${manifestRef.arweaveItemId}:${manifestRef.parentTransactionId}`;
+    if (verifiedClaims.has(key)) return verifiedClaims.get(key);
+    const pending=(async()=>{
+      const archived=await fetchManifest(storage,{payloadHash:hash,manifestRef});
+      check(canonical(archived)===canonical(payload),'MANIFEST_MISMATCH');
+      const packet=await semanticPacketProvider(jobId,payload);
+      check(packet && packet.payloadHash===hash,'INVALID_EVIDENCE');
+      await verifySemanticPacket(payload,packet,chainVerifier,storage);
+      return {jobId,payloadHash:hash,manifestItemId:manifestRef.arweaveItemId,
+        manifestParentId:manifestRef.parentTransactionId,recordId:payload.record.id};
+    })();
+    verifiedClaims.set(key,pending);
+    try { return await pending; }
+    catch(error) { if(verifiedClaims.get(key)===pending)verifiedClaims.delete(key); throw error; }
   }
   async function lookupIssue(jobId,hash=null,manifestRef=null,payload=null) {
     const expected=hash===null ? null : await validateMeaning(jobId,hash,manifestRef,payload);

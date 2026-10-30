@@ -28,12 +28,18 @@ export async function verifySemanticPacket(payload,packet,chainVerifier,storage)
     check(ref && /^[a-f0-9]{64}$/.test(ref.contentHash) && typeof ref.arweaveItemId==='string' &&
       ref.arweaveItemId.length>0 && typeof ref.parentTransactionId==='string' && ref.parentTransactionId.length>0);
     check(!seenRefs.has(ref.arweaveItemId)); seenRefs.add(ref.arweaveItemId);
-    const bytes=await storage.fetch(ref);
-    check(typeof bytes==='string' && sha256(Buffer.from(bytes,'utf8'))===ref.contentHash,'CONTENT_MISMATCH');
-    let artifact;
-    try { artifact=JSON.parse(bytes); } catch { throw new Error('INVALID_EVIDENCE'); }
-    check(canonical(artifact)===bytes);
-    artifacts.push(artifact);
+  }
+  // Bound gateway fan-out while preserving the payload's exact evidence order.
+  for (let offset=0; offset<payload.evidence.length; offset+=4) {
+    const batch=await Promise.all(payload.evidence.slice(offset,offset+4).map(async ref=>{
+      const bytes=await storage.fetch(ref);
+      check(typeof bytes==='string' && sha256(Buffer.from(bytes,'utf8'))===ref.contentHash,'CONTENT_MISMATCH');
+      let artifact;
+      try { artifact=JSON.parse(bytes); } catch { throw new Error('INVALID_EVIDENCE'); }
+      check(canonical(artifact)===bytes);
+      return artifact;
+    }));
+    artifacts.push(...batch);
   }
   const calculation=artifacts.filter(a=>a?.kind==='calculation');
   check(calculation.length===1 && canonical(calculation[0])===
