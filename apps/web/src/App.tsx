@@ -458,7 +458,8 @@ function ConsumerMarketPage({ id, mode, refresh, changed, transport, section, in
   const selected = history.value?.actions.find(action => action.id === actionId) ?? null;
   const liveId = history.value?.market.liveMarketId ?? id;
   const artSrc = artworkSource(history.value?.market.thumbnailUrl, failedArtUrl);
-  const preferredSeriesKind: ConsumerSeriesKind | undefined = mode === 'REFERENCE' ? undefined : section === 'call' ? 'ATTENTION_INDEX' : section === 'trade' ? history.value?.series.some(series => series.kind === 'CURVE_PRICE' && series.points.length) ? 'CURVE_PRICE' : 'REFERENCE_PRICE' : 'REFERENCE_PRICE';
+  const isCurrentCurveMarket = measurementMarket.value?.id === id && measurementMarket.value.price?.kind === 'curve';
+  const preferredSeriesKind: ConsumerSeriesKind | undefined = mode === 'REFERENCE' ? undefined : section === 'call' ? 'ATTENTION_INDEX' : section === 'trade' && isCurrentCurveMarket && history.value?.series.some(series => series.kind === 'CURVE_PRICE' && series.points.length) ? 'CURVE_PRICE' : 'REFERENCE_PRICE';
   return <div className="au-consumer-detail au-trading-page">
     <button type="button" className="back" onClick={() => go('/markets')}>← Explore</button>
     {history.loading ? <p className="muted">Loading market history…</p> : history.error && !history.value && mode === 'LIVE' && measurementMarket.value?.id === id ? <>
