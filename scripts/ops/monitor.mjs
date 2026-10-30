@@ -34,9 +34,15 @@ export function validateConfig(c) {
       BigInt(v.grantLamports)>0n&&BigInt(v.grantLamports)<=BigInt(v.dailyCapLamports)&&BigInt(v.dailyCapLamports)<=BigInt(v.totalCapLamports),
       'MONITOR_VISITOR_FAUCET_INVALID');
   }
-  if(c.referenceKworb)
-    check(safeRelative(c.referenceKworb.ledgerPath)&&positive(c.referenceKworb.maxAgeSeconds),
+  if(c.referenceKworb){
+    const k=c.referenceKworb;
+    check(safeRelative(k.ledgerPath)&&positive(k.maxAgeSeconds),
       'MONITOR_REFERENCE_KWORB_INVALID');
+    if(k.maxReportAgeSeconds!==undefined)
+      check(positive(k.maxReportAgeSeconds)&&Array.isArray(k.slugs)&&k.slugs.length>0&&k.slugs.length<=20&&
+        k.slugs.every(slug=>typeof slug==='string'&&/^[A-Za-z0-9-]{1,80}$/.test(slug))&&
+        new Set(k.slugs).size===k.slugs.length,'MONITOR_REFERENCE_KWORB_INVALID');
+  }
   if(c.referenceYouTube)
     check(safeRelative(c.referenceYouTube.ledgerPath)&&positive(c.referenceYouTube.maxAgeSeconds),
       'MONITOR_REFERENCE_YOUTUBE_INVALID');
@@ -230,6 +236,23 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
         metrics.kworbLastRun={attemptedAtMs:row.attempted_at_ms,status:row.status};
         age(Math.floor(row.attempted_at_ms/1000),c.referenceKworb.maxAgeSeconds,'REFERENCE_COLLECTION_STALE','kworb');
         if(row.status!=='SUCCESS')add('REFERENCE_COLLECTION_FAILED','kworb','critical',{status:row.status,errorCode:row.error_code??null});
+      }
+      if(c.referenceKworb.maxReportAgeSeconds!==undefined){
+        const reports=referenceDb.prepare("SELECT slug,MAX(observed_at_ms) AS observed_at_ms FROM reference_observations WHERE kind='SPOTIFY_STREAMS' AND provider='Kworb' GROUP BY slug").all();
+        const bySlug=new Map(reports.map(report=>[report.slug,report.observed_at_ms]));
+        metrics.kworbReports=[];
+        for(const slug of c.referenceKworb.slugs){
+          const observedAtMs=bySlug.get(slug);
+          if(observedAtMs===undefined){add('REFERENCE_REPORT_MISSING',slug,'warning');continue;}
+          if(!Number.isSafeInteger(observedAtMs)||observedAtMs<=0||observedAtMs>now+30_000){
+            add('TIMESTAMP_INVALID',slug);continue;
+          }
+          metrics.kworbReports.push({slug,observedAtMs});
+          if(now-observedAtMs>=c.referenceKworb.maxReportAgeSeconds*1000)
+            add('REFERENCE_REPORT_STALE',slug,'warning',{
+              ageSeconds:Math.floor((now-observedAtMs)/1000),
+              limitSeconds:c.referenceKworb.maxReportAgeSeconds});
+        }
       }
     }catch{add('INPUT_UNAVAILABLE','kworb');}
     finally{referenceDb?.close();}
