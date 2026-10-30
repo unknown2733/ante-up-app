@@ -5,7 +5,7 @@ import {resolve,join} from 'node:path';
 import {setTimeout as sleep} from 'node:timers/promises';
 import * as sdk from '../clients/chain/dist/index.js';
 import {FileCollectionState} from '../services/data/live.mjs';
-import {runLiveCycle} from '../services/data/cli.mjs';
+import {runLiveCycle,persistObservedStaleness} from '../services/data/cli.mjs';
 import {FileCandidateRepository,reconcilePublications} from '../services/data/publisher.mjs';
 import {createKitPublisherChain} from '../services/data/kit.mjs';
 import {SqliteProjectionStore} from '../services/indexer/src/sqlite.ts';
@@ -98,6 +98,7 @@ try{
   await checkStorage(config.directory);
   await reconcilePublications({collectionStore:store,...publisherRuntime});
   const state=await store.read(),stored=state.markets[market],now=Math.floor(Date.now()/1000);
+  await persistObservedStaleness(store,market,now,state);
   const retryAt=Math.max(0,...Object.values(state.batches).filter(b=>b.state==='FAILED').map(b=>b.retryAt??0));
   const due=Math.max(stored?.lastPollAt?nextRegularPollAt(stored.lastPollAt):0,retryAt);
   await heartbeat(healthName,{marketId:market,lastPollAt:stored?.lastPollAt??null,totalSpentMicros:state.totalSpentMicros,nextPollAt:due});
