@@ -8,6 +8,20 @@ const FIVE_MINUTES=300_000;
 const TWENTY_EIGHT_DAYS=28*86_400_000;
 const integer=value=>typeof value==='string'&&/^(0|[1-9][0-9]*)$/.test(value);
 
+function reportedCount(rawBytes,kind,id){
+  try{
+    const response=JSON.parse(Buffer.from(rawBytes).toString('utf8'));
+    const items=kind==='YOUTUBE_VIEWS'?response?.items:response?.data;
+    if(!Array.isArray(items))return null;
+    const matches=items.filter(item=>item?.id===id);
+    if(matches.length!==1)return null;
+    const value=kind==='YOUTUBE_VIEWS'
+      ?matches[0]?.statistics?.viewCount:matches[0]?.public_metrics?.like_count;
+    if(kind==='YOUTUBE_VIEWS')return integer(value)?value:null;
+    return Number.isSafeInteger(value)&&value>=0?String(value):null;
+  }catch{return null;}
+}
+
 /** Source identity and stored raw response must agree before coverage is useful. */
 export function verifyCumulativeEvidence(rows,slug){
   if(!Array.isArray(rows)||typeof slug!=='string')throw Error('COVERAGE_EVIDENCE_ARGS_INVALID');
@@ -16,14 +30,26 @@ export function verifyCumulativeEvidence(rows,slug){
     const rawValid=row.rawBytes instanceof Uint8Array&&
       /^[a-f0-9]{64}$/.test(row.rawSha256??'')&&
       createHash('sha256').update(row.rawBytes).digest('hex')===row.rawSha256;
-    let sourceValid=true;
+    let sourceValid=false;
     if(slug.startsWith('youtube-')){
       try{
         const url=new URL(row.sourceUrl);
         sourceValid=row.kind==='YOUTUBE_VIEWS'&&row.provider==='YouTube Data API'&&
           row.reportedDate===null&&row.observedAtMs===row.capturedAtMs&&
           url.protocol==='https:'&&url.hostname==='www.youtube.com'&&url.pathname==='/watch'&&
-          url.searchParams.get('v')===slug.slice('youtube-'.length);
+          !url.username&&!url.password&&!url.hash&&
+          url.searchParams.get('v')===slug.slice('youtube-'.length)&&
+          reportedCount(row.rawBytes,row.kind,slug.slice('youtube-'.length))===row.value;
+      }catch{sourceValid=false;}
+    }else if(slug.startsWith('x-')){
+      try{
+        const url=new URL(row.sourceUrl);
+        sourceValid=row.kind==='X_LIKES'&&row.provider==='X API'&&
+          row.reportedDate===null&&row.observedAtMs===row.capturedAtMs&&
+          url.protocol==='https:'&&url.hostname==='x.com'&&
+          !url.username&&!url.password&&!url.hash&&!url.search&&
+          url.pathname.endsWith('/status/'+slug.slice('x-'.length))&&
+          reportedCount(row.rawBytes,row.kind,slug.slice('x-'.length))===row.value;
       }catch{sourceValid=false;}
     }
     if(!rawValid||!sourceValid)invalidRows++;
