@@ -34,7 +34,7 @@ test('invalid or noncumulative observations cannot be treated as market activity
 });
 
 test('YouTube source identity and exact raw bytes are prerequisites for coverage',()=>{
-  const rawBytes=Buffer.from('{"items":[]}');
+  const rawBytes=Buffer.from('{"items":[{"id":"S0Q4gqBUs7c","statistics":{"viewCount":"100"}}]}');
   const valid={...row(20,100),kind:'YOUTUBE_VIEWS',provider:'YouTube Data API',
     reportedDate:null,sourceUrl:'https://www.youtube.com/watch?v=S0Q4gqBUs7c',
     rawBytes,rawSha256:createHash('sha256').update(rawBytes).digest('hex')};
@@ -42,6 +42,18 @@ test('YouTube source identity and exact raw bytes are prerequisites for coverage
   assert.deepEqual(verifyCumulativeEvidence([valid],slug),{evidenceValid:true,invalidRows:0});
   assert.equal(verifyCumulativeEvidence([{...valid,rawBytes:Buffer.from('changed')}],slug).evidenceValid,false);
   assert.equal(verifyCumulativeEvidence([{...valid,sourceUrl:'https://www.youtube.com/watch?v=different'}],slug).evidenceValid,false);
+  assert.equal(verifyCumulativeEvidence([{...valid,value:'101'}],slug).evidenceValid,false);
+});
+
+test('X count must match the named post in the original provider response',()=>{
+  const rawBytes=Buffer.from('{"data":[{"id":"1557433517579141121","public_metrics":{"like_count":100}}]}');
+  const valid={...row(20,100),kind:'X_LIKES',provider:'X API',reportedDate:null,
+    sourceUrl:'https://x.com/example/status/1557433517579141121',rawBytes,
+    rawSha256:createHash('sha256').update(rawBytes).digest('hex')};
+  const slug='x-1557433517579141121';
+  assert.equal(verifyCumulativeEvidence([valid],slug).evidenceValid,true);
+  assert.equal(verifyCumulativeEvidence([{...valid,value:'101'}],slug).evidenceValid,false);
+  assert.equal(verifyCumulativeEvidence([{...valid,sourceUrl:'https://x.com/example/status/1858854362614763615'}],slug).evidenceValid,false);
 });
 
 test('read-only store preflight reports bad evidence as unready',async()=>{
@@ -52,14 +64,17 @@ test('read-only store preflight reports bad evidence as unready',async()=>{
       CREATE TABLE reference_observations(slug TEXT,kind TEXT,aggregation TEXT,
         observed_at_ms INTEGER,captured_at_ms INTEGER,value TEXT,reported_date TEXT,
         provider TEXT,source_url TEXT,raw_sha256 TEXT);`);
-    const raw=Buffer.from('{"items":[]}');
-    const hash=createHash('sha256').update(raw).digest('hex');
-    db.prepare('INSERT INTO reference_raw VALUES(?,?)').run(hash,raw);
     const at=Date.parse('2026-10-30T04:00:00Z');
     const insert=db.prepare('INSERT INTO reference_observations VALUES(?,?,?,?,?,?,?,?,?,?)');
-    for(const [when,value] of [[at-2*cadence,'100'],[at-cadence,'95'],[at,'98']])
+    let latestHash;
+    for(const [when,value] of [[at-2*cadence,'100'],[at-cadence,'95'],[at,'98']]){
+      const raw=Buffer.from(JSON.stringify({items:[{id:'S0Q4gqBUs7c',statistics:{viewCount:value}}]}));
+      const hash=createHash('sha256').update(raw).digest('hex');
+      db.prepare('INSERT INTO reference_raw VALUES(?,?)').run(hash,raw);
       insert.run('youtube-S0Q4gqBUs7c','YOUTUBE_VIEWS','cumulative',when,when,value,null,
         'YouTube Data API','https://www.youtube.com/watch?v=S0Q4gqBUs7c',hash);
+      latestHash=hash;
+    }
     db.close();
     const original=inspectReferenceStore(file,{nowMs:at});
     assert.equal(original[0].evidence.evidenceValid,true);
@@ -67,10 +82,10 @@ test('read-only store preflight reports bad evidence as unready',async()=>{
     assert.deepEqual(original[0].intervalKinds,{OBSERVED_DELTA:0,GAP:0,
       DOWNWARD_REVISION:1,REVISION_RECOVERY:1});
     const damaged=new DatabaseSync(file);
-    damaged.prepare('UPDATE reference_raw SET raw_bytes=?').run(Buffer.from('changed'));
+    damaged.prepare('UPDATE reference_raw SET raw_bytes=? WHERE raw_sha256=?').run(Buffer.from('changed'),latestHash);
     damaged.close();
     const result=inspectReferenceStore(file,{nowMs:at});
-    assert.equal(result[0].evidence.invalidRows,3);
+    assert.equal(result[0].evidence.invalidRows,1);
     assert.equal(result[0].coverage.status,'SOURCE_EVIDENCE_INVALID');
     assert.equal(result[0].coverage.readyForFiveMinuteDerivation,false);
   }finally{await rm(dir,{recursive:true,force:true});}
