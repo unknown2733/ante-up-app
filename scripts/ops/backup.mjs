@@ -79,6 +79,10 @@ export async function createBackup({config,keyFile,output,quiesced=false}) {
   check(config.version===1&&typeof config.release==='string'&&config.release.length>0,'BACKUP_CONFIG_INVALID');
   check(config.roots&&['state','secrets','deployment'].every(k=>typeof config.roots[k]==='string'),'BACKUP_ROOTS_REQUIRED');
   check(Array.isArray(config.required)&&config.required.length>0&&config.required.every(safePath),'BACKUP_REQUIREMENTS_REQUIRED');
+  const immutableSqlite=config.immutableSqlite??[];
+  check(Array.isArray(immutableSqlite)&&immutableSqlite.every(path=>safePath(path)&&config.required.includes(path))&&
+    new Set(immutableSqlite).size===immutableSqlite.length,'IMMUTABLE_SQLITE_CONFIG_INVALID');
+  const exactSqlite=new Set(immutableSqlite),exactHashes=new Map();
   const key=await keyFrom(keyFile), roots={};output=resolve(output);
   for(const [name,path] of Object.entries(config.roots)){
     check(/^[a-z][a-z0-9-]*$/.test(name),'INVALID_ROOT_NAME');
@@ -105,7 +109,15 @@ export async function createBackup({config,keyFile,output,quiesced=false}) {
         if([...databases].some(db=>path===`${db}-wal`||path===`${db}-shm`))continue;
         const archivePath=`${name}/${path}`, source=join(root,path), dest=join(stage,archivePath);
         await mkdir(dirname(dest),{recursive:true,mode:0o700});let sqlite=null;
-        if(databases.has(path)){
+        if(exactSqlite.has(archivePath)){
+          check(databases.has(path)&&!await exists(`${source}-wal`)&&!await exists(`${source}-shm`),
+            'IMMUTABLE_SQLITE_NOT_QUIESCED');
+          const sourceHash=await digest(source);
+          await copyFile(source,dest);
+          check(await digest(dest)===sourceHash,'IMMUTABLE_SQLITE_COPY_MISMATCH');
+          exactHashes.set(archivePath,sourceHash);
+          sqlite=inspectSqlite(dest);
+        }else if(databases.has(path)){
           // Copy quiesced DB/WAL first. SQLite may need to create shared memory,
           // which must happen in scratch, never in the read-only source mount.
           const scratch=await mkdtemp(join(stage,'.sqlite-')), clone=join(scratch,'source.sqlite');
@@ -120,6 +132,10 @@ export async function createBackup({config,keyFile,output,quiesced=false}) {
       }
     }
     check(await inventory(roots)===before,'SOURCE_CHANGED_DURING_BACKUP');
+    for(const [path,hash] of exactHashes)
+      check(await digest(join(roots[path.split('/')[0]],path.slice(path.indexOf('/')+1)))===hash,
+        'IMMUTABLE_SQLITE_SOURCE_CHANGED');
+    check(exactHashes.size===exactSqlite.size,'IMMUTABLE_SQLITE_MISSING');
     for(const path of manifest.required)check(manifest.entries.some(e=>e.path===path),'REQUIRED_FILE_MISSING');
     await validateHistory(stage,manifest.entries);
     const encoded=Buffer.from(JSON.stringify(manifest));check(encoded.length<=MAX_MANIFEST,'MANIFEST_TOO_LARGE');
