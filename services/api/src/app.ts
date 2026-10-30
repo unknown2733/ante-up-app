@@ -7,7 +7,7 @@ import { OperationStore } from '../../indexer/src/index.ts';
 import { freeReturn } from '../../../contracts/reference.mjs';
 import { notExecutable, validateCompiledFree, validatePreparedForWallet, type TransactionAdapter } from './transaction.ts';
 import { LiveStore } from './live-store.ts';
-import { reconcileLiveOperation, verifyReceipt, type OperationChain } from './operation-chain.ts';
+import { BoundedOperationReconciler, verifyReceipt, type OperationChain } from './operation-chain.ts';
 import { financialIntentKey, financialQuoteKey, validateFinancialIntent, validateFinancialPortfolio, validateFinancialQuote, validateFinancialVault, validatePreparedFinancial, type FinancialReader, type FinancialTransactionAdapter } from './financial.ts';
 import type { FinancialPrepareRequest } from '../../../contracts/financial.ts';
 import { ExistingMarket } from './registration.ts';
@@ -90,6 +90,7 @@ export function createApp(options: {
   const operations = options.operations ?? new OperationStore();
   const admin = options.admin ?? denyAdmin;
   const audit: Array<{ at: number; wallet: string; action: string; allowed: boolean }> = [];
+  const operationReconciler=mode==='fixture'?null:new BoundedOperationReconciler(options.liveStore!,options.chain!,now);
 
   async function signed(request: Request, wallet: string): Promise<boolean> {
     const bearer = /^Bearer ([A-Za-z0-9_-]+)$/.exec(request.headers.get('authorization') ?? '');
@@ -260,7 +261,7 @@ export function createApp(options: {
         if (liveOperation && (liveOperation.prepared.cluster !== mode || liveOperation.prepared.programId !== options.programId)) return fail('UNAUTHORIZED','operation network mismatch',parts[2]);
         const wallet = url.searchParams.get('wallet') ?? request.headers.get('x-ante-wallet');
         if (wallet !== operation.wallet || !(await signed(request, wallet))) return fail('UNAUTHORIZED', 'wallet signature required', parts[2]);
-        const current = mode === 'fixture' ? operation : await reconcileLiveOperation(options.liveStore!,options.chain!,parts[2],asOf);
+        const current = mode === 'fixture' ? operation : await operationReconciler!.read(parts[2]);
         if (current.state==='FINALIZED' && liveOperation?.kind==='financial' && liveOperation.intent.action==='registerMarket') {
           try {await options.finalizeRegistration?.(parts[2]);} catch { /* Keep receipt visible; retry metadata verification on next read. */ }
         }

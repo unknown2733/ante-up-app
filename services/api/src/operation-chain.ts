@@ -4,6 +4,7 @@ import { decodeBase58 } from './auth.ts';
 import { LiveStore, type StoredOperation } from './live-store.ts';
 import { verifyMessageIntent } from './receipt-intent.ts';
 import { retryRpcRead } from '../../indexer/src/rpc-retry.ts';
+import type { Operation } from '../../../contracts/types.ts';
 
 export interface ChainReceipt { wireBase64: string; status: 'confirmed'|'finalized'|'failed' }
 export interface OperationChain {
@@ -116,4 +117,39 @@ export async function reconcileLiveOperation(store: LiveStore, chain: OperationC
   if (!receipt) return store.mark(requestId,'UNKNOWN').operation;
   verifyReceipt(stored,signature,receipt);
   return store.mark(requestId,receipt.status === 'failed' ? 'FAILED' : receipt.status === 'finalized' ? 'FINALIZED' : 'CONFIRMED').operation;
+}
+
+/** A slow unsigned-history scan must not hold an authenticated HTTP read past the proxy deadline. */
+export class BoundedOperationReconciler {
+  private readonly inflight=new Map<string,Promise<Operation>>();
+  private readonly store:LiveStore;
+  private readonly chain:OperationChain;
+  private readonly now:()=>number;
+  private readonly waitMs:number;
+  constructor(store:LiveStore,chain:OperationChain,now:()=>number,waitMs=8_000) {
+    if (!Number.isSafeInteger(waitMs) || waitMs<1 || waitMs>15_000) throw new Error('INVALID_RECONCILE_WAIT');
+    this.store=store;
+    this.chain=chain;
+    this.now=now;
+    this.waitMs=waitMs;
+  }
+  async read(requestId:string):Promise<Operation> {
+    let job=this.inflight.get(requestId);
+    if (!job) {
+      const started=reconcileLiveOperation(this.store,this.chain,requestId,this.now());
+      const tracked:Promise<Operation>=started.finally(()=>{
+        if (this.inflight.get(requestId)===tracked) this.inflight.delete(requestId);
+      });
+      // A timed-out HTTP caller may be gone when the read-only chain scan finishes.
+      void tracked.catch(()=>{});
+      this.inflight.set(requestId,tracked);
+      job=tracked;
+    }
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    try {
+      return await Promise.race([job,new Promise<Operation>(resolve=>{
+        timer=setTimeout(()=>resolve(this.store.get(requestId)!.operation),this.waitMs);
+      })]);
+    } finally { if(timer)clearTimeout(timer); }
+  }
 }
