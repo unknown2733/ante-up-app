@@ -15,7 +15,10 @@ const check = (condition, code) => { if (!condition) throw Error(code); };
 const fingerprint = scope => createHash('sha256').update(JSON.stringify(scope)).digest('hex');
 
 /** A finalized journal may skip a previously retired account in an immutable archive. */
-export async function completedRetirements(journalDir) {
+export async function completedRetirements(journalDir, { legacyAddress, legacyFingerprint } = {}) {
+  const legacy = legacyAddress !== undefined || legacyFingerprint !== undefined;
+  check(!legacy || (kit.isAddress(legacyAddress ?? '') && SHA256.test(legacyFingerprint ?? '')),
+    'RETIRE_BATCH_LEGACY_INPUT_INVALID');
   const entries = await readdir(journalDir, { withFileTypes: true });
   const completed = new Map();
   for (const entry of entries) {
@@ -30,7 +33,9 @@ export async function completedRetirements(journalDir) {
       kit.isAddress(scope.publisher) && kit.isAddress(scope.admin) &&
       /^(?:[1-9][0-9]*)$/.test(scope.sequence) &&
       /^(?:0|[1-9][0-9]*)$/.test(scope.refundableLamports) &&
-      SHA256.test(scope.archiveSha256) && SHA256.test(scope.backupSha256) &&
+      SHA256.test(scope.archiveSha256) &&
+      (SHA256.test(scope.backupSha256) || (legacy && address === legacyAddress &&
+        scope.backupSha256 === undefined && journal.fingerprint === legacyFingerprint)) &&
       journal.fingerprint === fingerprint(scope) && SIGNATURE.test(journal.signature),
     'RETIRE_BATCH_JOURNAL_INVALID');
     completed.set(address, { market: scope.market, sequence: scope.sequence });
@@ -39,11 +44,19 @@ export async function completedRetirements(journalDir) {
 }
 
 export async function planRetirementBatch({ journalDir, archivePath, expectedSha256, rpcFile,
-  limit = 1, nowSeconds, plan = planSnapshotRetirement }) {
+  limit = 1, nowSeconds, legacyAddress, legacyFingerprint,
+  plan = planSnapshotRetirement, pilotStatus = loadRetirementStatus }) {
   check(Number.isSafeInteger(limit) && limit >= 1 && limit <= 16,
     'RETIRE_BATCH_LIMIT_INVALID');
   check(SHA256.test(expectedSha256 ?? ''), 'RETIRE_BATCH_ARCHIVE_HASH_INVALID');
-  const completedScopes = await completedRetirements(journalDir);
+  const completedScopes = await completedRetirements(journalDir,
+    { legacyAddress, legacyFingerprint });
+  if (legacyAddress !== undefined) {
+    check(completedScopes.has(legacyAddress), 'RETIRE_BATCH_LEGACY_JOURNAL_REQUIRED');
+    const status = await pilotStatus({ rpcFile, address: legacyAddress,
+      journalPath: join(journalDir, `${legacyAddress}.json`) });
+    check(status.state === 'FINALIZED', 'RETIRE_BATCH_LEGACY_NOT_FINALIZED');
+  }
   const selection = await plan({ archivePath, expectedSha256, rpcFile, minAgeDays: 7, limit,
     nowSeconds, completedScopes });
   const addresses = selection?.batch?.map(item => item.address);
@@ -60,7 +73,7 @@ export async function planRetirementBatch({ journalDir, archivePath, expectedSha
 export async function executeRetirementBatch({ journalDir, archivePath, expectedSha256, rpcFile,
   offhostReceiptPath, backupResultPath, backupCopyReceiptPath, backupDrillReportPath,
   signerFile, adminSignerFile, limit = 1, pilotAcknowledged = false,
-  pilotAddress, nowSeconds,
+  pilotAddress, legacyAddress, legacyFingerprint, nowSeconds,
   plan = planSnapshotRetirement, prepare = prepareSnapshotRetirement,
   retire = retireSnapshot, pilotStatus = loadRetirementStatus }) {
   check(typeof signerFile === 'string' && typeof adminSignerFile === 'string' &&
@@ -68,14 +81,16 @@ export async function executeRetirementBatch({ journalDir, archivePath, expected
   check(limit === 1 || pilotAcknowledged === true, 'RETIRE_BATCH_PILOT_REQUIRED');
   if (limit > 1) {
     check(kit.isAddress(pilotAddress ?? ''), 'RETIRE_BATCH_PILOT_ADDRESS_REQUIRED');
-    const completed = await completedRetirements(journalDir);
+    const completed = await completedRetirements(journalDir,
+      { legacyAddress, legacyFingerprint });
     check(completed.has(pilotAddress), 'RETIRE_BATCH_PILOT_JOURNAL_REQUIRED');
     const status = await pilotStatus({ rpcFile, address: pilotAddress,
       journalPath: join(journalDir, `${pilotAddress}.json`) });
     check(status.state === 'FINALIZED', 'RETIRE_BATCH_PILOT_NOT_FINALIZED');
   }
   const selection = await planRetirementBatch({ journalDir, archivePath,
-    expectedSha256, rpcFile, limit, nowSeconds, plan });
+    expectedSha256, rpcFile, limit, nowSeconds, legacyAddress, legacyFingerprint,
+    plan, pilotStatus });
   const results = [];
   for (const candidate of selection.batch) {
     const journalPath = join(journalDir, `${candidate.address}.json`);
@@ -108,6 +123,8 @@ async function main(mode, env) {
     expectedSha256: env.ANTE_UP_RETIRE_ARCHIVE_SHA256,
     rpcFile: env.ANTE_UP_RETIRE_RPC_FILE,
     journalDir: env.ANTE_UP_RETIRE_JOURNAL_DIR,
+    legacyAddress: env.ANTE_UP_RETIRE_LEGACY_ADDRESS,
+    legacyFingerprint: env.ANTE_UP_RETIRE_LEGACY_FINGERPRINT,
     limit: Number(env.ANTE_UP_RETIRE_BATCH_LIMIT ?? '1') };
   if (mode === '--plan') {
     console.log(JSON.stringify(await planRetirementBatch(input)));return;

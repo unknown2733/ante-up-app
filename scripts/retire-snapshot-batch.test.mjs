@@ -37,6 +37,34 @@ test('only finalized, scope-bound journals exclude immutable archived snapshots'
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test('one explicitly identified legacy pilot requires finalized chain status', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ante-up-retire-legacy-'));
+  const legacyScope = { ...scope };
+  delete legacyScope.backupSha256;
+  const legacyFingerprint = fingerprint(legacyScope);
+  const journal = { version: 1, scope: legacyScope, fingerprint: legacyFingerprint,
+    signature: '3oa9T4w8VWWph2kYSevdGCRfPFcagJ7LzdNAvcusXqoftwBC6qLeB3of98bMY3YffVbiU3wsQvWLwcndehDPCa2P',
+    state: 'FINALIZED' };
+  try {
+    await writeFile(join(dir, `${address}.json`), JSON.stringify(journal));
+    await assert.rejects(completedRetirements(dir), /RETIRE_BATCH_JOURNAL_INVALID/);
+    await assert.rejects(completedRetirements(dir,
+      { legacyAddress: address, legacyFingerprint: 'c'.repeat(64) }),
+    /RETIRE_BATCH_JOURNAL_INVALID/);
+    const args = { journalDir: dir, archivePath: 'archive',
+      expectedSha256: scope.archiveSha256, rpcFile: 'rpc', legacyAddress: address,
+      legacyFingerprint, plan: async ({ completedScopes }) => {
+        assert.deepEqual(completedScopes.get(address), { market: another, sequence: '1' });
+        return { mode: 'READ_ONLY', archiveSha256: scope.archiveSha256, batch: [] };
+      } };
+    await assert.rejects(planRetirementBatch({ ...args,
+      pilotStatus: async () => ({ state: 'UNKNOWN' }) }),
+    /RETIRE_BATCH_LEGACY_NOT_FINALIZED/);
+    await planRetirementBatch({ ...args,
+      pilotStatus: async () => ({ state: 'FINALIZED' }) });
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('an unknown first retirement stops the batch before signing another account', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ante-up-retire-batch-stop-'));
   try {
