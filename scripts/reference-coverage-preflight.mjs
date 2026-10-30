@@ -1,10 +1,34 @@
 import {DatabaseSync} from 'node:sqlite';
+import {createHash} from 'node:crypto';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const FIVE_MINUTES=300_000;
 const TWENTY_EIGHT_DAYS=28*86_400_000;
 const integer=value=>typeof value==='string'&&/^(0|[1-9][0-9]*)$/.test(value);
+
+/** Source identity and stored raw response must agree before coverage is useful. */
+export function verifyCumulativeEvidence(rows,slug){
+  if(!Array.isArray(rows)||typeof slug!=='string')throw Error('COVERAGE_EVIDENCE_ARGS_INVALID');
+  let invalidRows=0;
+  for(const row of rows){
+    const rawValid=row.rawBytes instanceof Uint8Array&&
+      /^[a-f0-9]{64}$/.test(row.rawSha256??'')&&
+      createHash('sha256').update(row.rawBytes).digest('hex')===row.rawSha256;
+    let sourceValid=true;
+    if(slug.startsWith('youtube-')){
+      try{
+        const url=new URL(row.sourceUrl);
+        sourceValid=row.kind==='YOUTUBE_VIEWS'&&row.provider==='YouTube Data API'&&
+          row.reportedDate===null&&row.observedAtMs===row.capturedAtMs&&
+          url.protocol==='https:'&&url.hostname==='www.youtube.com'&&url.pathname==='/watch'&&
+          url.searchParams.get('v')===slug.slice('youtube-'.length);
+      }catch{sourceValid=false;}
+    }
+    if(!rawValid||!sourceValid)invalidRows++;
+  }
+  return {evidenceValid:invalidRows===0,invalidRows};
+}
 
 /** Readiness of cumulative source observations only; this does not authorize a market. */
 export function analyzeCumulativeCoverage(rows,{nowMs=Date.now(),cadenceMs=FIVE_MINUTES,
@@ -53,9 +77,11 @@ export function inspectReferenceStore(dbPath,{nowMs=Date.now()}={}){
   const db=new DatabaseSync(resolve(dbPath),{readOnly:true});
   try{
     const slugs=db.prepare('SELECT DISTINCT slug FROM reference_observations ORDER BY slug').all();
-    const history=db.prepare(`SELECT kind, aggregation, observed_at_ms AS observedAtMs,
-      captured_at_ms AS capturedAtMs, value FROM reference_observations
-      WHERE slug=? AND observed_at_ms>=? ORDER BY observed_at_ms, captured_at_ms`);
+    const history=db.prepare(`SELECT o.kind, o.aggregation, o.observed_at_ms AS observedAtMs,
+      o.captured_at_ms AS capturedAtMs, o.value, o.provider, o.source_url AS sourceUrl,
+      o.reported_date AS reportedDate, o.raw_sha256 AS rawSha256, r.raw_bytes AS rawBytes
+      FROM reference_observations o LEFT JOIN reference_raw r ON r.raw_sha256=o.raw_sha256
+      WHERE o.slug=? AND o.observed_at_ms>=? ORDER BY o.observed_at_ms, o.captured_at_ms`);
     const latest=db.prepare('SELECT MAX(observed_at_ms) AS atMs FROM reference_observations WHERE slug=?');
     return slugs.map(({slug})=>{
       const atMs=latest.get(slug).atMs;
@@ -63,7 +89,11 @@ export function inspectReferenceStore(dbPath,{nowMs=Date.now()}={}){
       const kind=rows.at(-1)?.kind??null;
       const cadenceSource=kind==='YOUTUBE_VIEWS'||kind==='X_LIKES';
       const coverage=cadenceSource?analyzeCumulativeCoverage(rows,{nowMs}):null;
-      return {slug,kind,requiredCadence:'5m',coverage:coverage??{status:'UNSUPPORTED_SOURCE_CADENCE',
+      const evidence=cadenceSource?verifyCumulativeEvidence(rows,slug):null;
+      const checked=coverage&&evidence&&!evidence.evidenceValid
+        ?{...coverage,status:'SOURCE_EVIDENCE_INVALID',readyForFiveMinuteDerivation:false}:coverage;
+      return {slug,kind,requiredCadence:'5m',evidence,coverage:checked??{
+        status:'UNSUPPORTED_SOURCE_CADENCE',
         coverageComplete:false,readyForFiveMinuteDerivation:false}};
     });
   }finally{db.close();}
