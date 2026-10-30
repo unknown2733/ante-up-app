@@ -1,19 +1,67 @@
 // Read-only Devnet market activation snapshot. No signer, paid source call, or transaction.
 import {createRequire} from 'node:module';
-import {readFile} from 'node:fs/promises';
+import {readFile,stat} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import * as chain from '../clients/chain/dist/index.js';
 import {KitFinalizedAccountReader} from '../services/indexer/src/repositories.ts';
 import {FinalizedFinancialAccounts} from '../services/api/src/financial-chain.ts';
-import {validatePaidXRegistry} from './paid-x-approvals.mjs';
+import {candidatePathForDirectory,validatePaidXRegistry} from './paid-x-approvals.mjs';
+import {verifyCandidate} from './verify-paid-x-candidate.mjs';
+import {buildQuery} from '../services/data/index.mjs';
+import {queryHashFor} from '../services/data/live.mjs';
 
 const kit=createRequire(new URL('../clients/chain/package.json',import.meta.url))('@solana/kit');
 const CORRECT_GENESIS='EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
 const UNIT=1_000_000n,CURVE_CAP=1_000n*UNIT,MIN_RESERVE=1_100n*UNIT;
 const safe=error=>String(error?.message??error).replace(/https?:\/\/[^\s"'<>]+/g,'[RPC_URL_REDACTED]').slice(0,180);
 
-export async function readActivation({marketId,endpoint,approvalPath}) {
+export function collectorReadiness({marketId,market,snapshot,registry,config,candidates,nowSeconds,
+  globalBudgetPresent=false}) {
+  validatePaidXRegistry(registry);
+  const approved=registry.markets.find(item=>item.marketId===marketId);
+  const legacyBudget=approved && config.initialEstimatedCostMicros===undefined &&
+    config.initialLimitMicros===undefined && config.dailyLimitMicros===undefined &&
+    config.totalLimitMicros===undefined;
+  let verified;
+  if(legacyBudget){
+    const seedHex=Buffer.from(market.id).toString('hex');
+    const queryHash=Buffer.from(market.queryHash).toString('hex');
+    if(config.marketId!==marketId || config.seedHex!==seedHex ||
+      config.queryVersion!==market.queryVersion.toString() ||
+      queryHashFor(buildQuery(config.expressions))!==queryHash ||
+      approved.seedHex!==seedHex || approved.queryHash!==queryHash ||
+      approved.queryVersion!==config.queryVersion ||
+      !Number.isSafeInteger(config.estimatedCostMicros) || config.estimatedCostMicros<=0)
+      throw Error('CANDIDATE_ONCHAIN_QUERY_MISMATCH');
+    verified={state:'ALREADY_APPROVED',candidatePath:candidatePathForDirectory(config.directory)};
+  }else verified=verifyCandidate({marketId,config,market,registry});
+  const approvedPathMatches=!!approved &&
+    (approved.candidatePath===undefined || approved.candidatePath===verified.candidatePath);
+  const entry=candidates?.snapshots?.[`${marketId}:${market.latestSequence}`];
+  const published=entry?.published;
+  const snapshotHash=snapshot?Buffer.from(snapshot.payloadHash).toString('hex'):null;
+  const identityMatched=!!published && published.finality==='finalized' &&
+    published.payload?.marketId===marketId &&
+    published.payload?.sequence===market.latestSequence.toString() &&
+    published.payload?.queryHash===Buffer.from(market.queryHash).toString('hex') &&
+    published.payloadHash===snapshotHash &&
+    published.payloadHash===Buffer.from(market.latestHash).toString('hex');
+  const dataThrough=published?.payload?.dataThrough;
+  const fresh=identityMatched && Number.isSafeInteger(dataThrough) &&
+    dataThrough<=nowSeconds && nowSeconds-dataThrough<600;
+  return {configState:verified.state,budgetMode:legacyBudget?'GLOBAL_LEDGER':'PER_MARKET_AND_GLOBAL',
+    globalBudgetPresent,approved:verified.state==='ALREADY_APPROVED',
+    approvedPathMatches,
+    candidatePath:verified.candidatePath,latestCandidatePresent:!!entry,
+    latestCandidateFinalized:published?.finality==='finalized',
+    snapshotIdentityMatched:identityMatched,latestDataFresh:fresh,
+    collectorFeedReady:verified.state==='ALREADY_APPROVED' && approvedPathMatches &&
+      globalBudgetPresent && fresh};
+}
+
+export async function readActivation({marketId,endpoint,approvalPath,collectionConfigPath,
+  globalBudgetPath,nowSeconds=Math.floor(Date.now()/1000)}) {
   if(!kit.isAddress(marketId))throw Error('MARKET_ADDRESS_REQUIRED');
   if(await kit.createSolanaRpc(endpoint).getGenesisHash().send()!==CORRECT_GENESIS)
     throw Error('DEVNET_GENESIS_MISMATCH');
@@ -23,7 +71,7 @@ export async function readActivation({marketId,endpoint,approvalPath}) {
   const [market,finance]=await Promise.all([state.market(marketId),state.financeMarket(marketId)]);
   const latestSequence=market.latestSequence;
   const snapshot=latestSequence>0n?await state.snapshot(marketId,latestSequence):null;
-  let paidXApproval='NOT_CHECKED';
+  let paidXApproval='NOT_CHECKED',collection=null;
   if(approvalPath){
     const registry=JSON.parse(await readFile(approvalPath,'utf8'));
     validatePaidXRegistry(registry);
@@ -32,13 +80,27 @@ export async function readActivation({marketId,endpoint,approvalPath}) {
       entry.seedHex===Buffer.from(market.id).toString('hex') &&
       entry.queryHash===Buffer.from(market.queryHash).toString('hex') &&
       entry.queryVersion===market.queryVersion.toString()?'APPROVED':'NOT_APPROVED';
+    if(collectionConfigPath){
+      const config=JSON.parse(await readFile(collectionConfigPath,'utf8'));
+      const candidatePath=candidatePathForDirectory(config.directory);
+      let candidates=null;
+      try{candidates=JSON.parse(await readFile(candidatePath,'utf8'));}
+      catch(error){if(error?.code!=='ENOENT')throw error;}
+      let globalBudgetPresent=false;
+      if(globalBudgetPath){
+        try{globalBudgetPresent=(await stat(globalBudgetPath)).isFile();}
+        catch(error){if(error?.code!=='ENOENT')throw error;}
+      }
+      collection=collectorReadiness({marketId,market,snapshot,registry,config,candidates,
+        globalBudgetPresent,nowSeconds});
+    }
   }
   const sold=finance.curveSold,reserve=finance.curveReserve;
   return {
     marketId,cluster:'devnet',readOnly:true,
     phase:chain.MarketPhase[market.phase],dataStatus:chain.DataStatus[market.dataStatus],
     admission:chain.AdmissionState[market.admission.state],
-    paidXApproval,latestSequence:latestSequence.toString(),snapshotPresent:!!snapshot,
+    paidXApproval,collection,latestSequence:latestSequence.toString(),snapshotPresent:!!snapshot,
     curveSoldAtoms:sold.toString(),curveRemainingAtoms:(sold<CURVE_CAP?CURVE_CAP-sold:0n).toString(),
     curveReserveAtoms:reserve.toString(),
     reserveShortfallAtoms:(reserve<MIN_RESERVE?MIN_RESERVE-reserve:0n).toString(),
@@ -59,7 +121,9 @@ async function main(){
     throw Error('MARKET_PREFLIGHT_ARGS_INVALID');
   const endpoint=(await readFile(process.env.ANTE_UP_RPC_URL_FILE,'utf8')).trim();
   const report=await readActivation({marketId,endpoint,
-    approvalPath:process.env.ANTE_UP_APPROVED_X_MARKETS_PATH});
+    approvalPath:process.env.ANTE_UP_APPROVED_X_MARKETS_PATH,
+    collectionConfigPath:process.env.ANTE_UP_COLLECTION_CONFIG,
+    globalBudgetPath:process.env.ANTE_UP_GLOBAL_X_BUDGET_DB});
   console.log(JSON.stringify(report));
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))
