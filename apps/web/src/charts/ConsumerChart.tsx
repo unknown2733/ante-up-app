@@ -70,8 +70,9 @@ export function ConsumerChart({ history, marketContext, preferredSeriesKind, onS
   const scopedHistory = scopedChartHistory(history);
   const series = scopedHistory.series.find(item => item.id === seriesId)
     ?? scopedHistory.series.find(item => item.kind === preferredSeriesKind && item.points.length > 0)
-    ?? scopedHistory.series.find(item => item.evidence === 'ILLUSTRATIVE')
     ?? scopedHistory.series.find(item => item.points.length > 0 && (item.kind === 'CURVE_PRICE' || item.kind === 'REFERENCE_PRICE'))
+    ?? scopedHistory.series.find(item => item.points.length > 1 && item.evidence !== 'ILLUSTRATIVE')
+    ?? scopedHistory.series.find(item => item.evidence === 'ILLUSTRATIVE')
     ?? scopedHistory.series.find(item => item.points.length > 0)
     ?? scopedHistory.series[0] ?? null;
   const illustrative = series?.evidence === 'ILLUSTRATIVE';

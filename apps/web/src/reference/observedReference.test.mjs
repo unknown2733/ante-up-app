@@ -18,9 +18,9 @@ test('new measured count refreshes the public catalog and chart without enabling
   assert.equal(initial.latestPrice, null);
   assert.equal(initial.liveMarketId, undefined);
   const history = await api.getHistory(id, 'ALL');
-  assert.equal(history.series.length, 2, 'a sparse measured history retains a separate illustrative preview');
+  assert.equal(history.series.length, 1, 'two measured points replace the illustrative preview');
   assert.equal(history.series[0].points.at(-1).value, observation.value);
-  assert.equal(history.series[1].evidence, 'ILLUSTRATIVE');
+  assert.equal(history.series[0].evidence, undefined);
   assert.equal(history.series[0].points.at(-1).observationId, `public:${observation.rawSha256}:${capturedAtMs}`);
   assert.deepEqual(history.actions, []);
   current = { ...observation, value: '14200100', observedAtMs: capturedAtMs + 500,
@@ -38,7 +38,7 @@ test('reference API outage preserves the dated baseline instead of inventing an 
   assert.match(market.source.label, /captured 2026-10-12/);
 });
 
-test('older provider report dates are fetched and shown beside a separate sparse preview', async () => {
+test('older provider report dates are fetched without a synthetic trend once two observations exist', async () => {
   const observation = { slug: 'spotify-5MhMXTuVODDF234VDvSxQx', kind: 'SPOTIFY_STREAMS',
     aggregation: 'cumulative', value: '113536955', observedAtMs: Date.parse('2026-10-13T00:00:00Z'),
     capturedAtMs: Date.parse('2026-10-23T00:00:00Z'), reportedDate: '2026-10-13',
@@ -55,6 +55,6 @@ test('older provider report dates are fetched and shown beside a separate sparse
   assert.match(paths.at(-1), /sinceMs=0$/);
   assert.equal(history.source.asOfMs, observation.observedAtMs);
   assert.equal(history.series[0].points.at(-1).value, observation.value);
-  assert.equal(history.series[1].evidence, 'ILLUSTRATIVE');
-  assert.equal(history.series[1].points.at(-1).atMs, observation.observedAtMs);
+  assert.equal(history.series.length, 1);
+  assert.equal(history.series[0].points.at(-1).atMs, observation.observedAtMs);
 });

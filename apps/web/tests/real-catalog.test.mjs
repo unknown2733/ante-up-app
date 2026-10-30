@@ -204,6 +204,7 @@ test('illustrative defaults are labeled and never borrow observed provenance', a
     const history = await api.getHistory(market.id, 'ALL');
     const preview = history.series.find(series => series.evidence === 'ILLUSTRATIVE');
     if (!preview) continue;
+    assert.equal(history.series[0].points.length, 1, 'preview is limited to a single measured observation');
     count++;
     const html = render(ConsumerChart, { history, onSelectAction: noAction });
     assert.match(html, /au-chart-illustrative/);
@@ -220,7 +221,24 @@ test('illustrative defaults are labeled and never borrow observed provenance', a
     assert.match(spark, /not measured/);
     assert.equal((spark.match(/<circle /g) ?? []).length, 29);
   }
-  assert.equal(count, 9);
+  assert.equal(count, 7, 'only single-observation subjects use a temporary preview');
+});
+
+test('measured histories are the default trend when two or more observations exist', async () => {
+  const { ConsumerChart } = await server.ssrLoadModule('/src/charts/ConsumerChart.tsx');
+  const { MarketSparkline } = await server.ssrLoadModule('/src/consumer-ui/MarketSparkline.tsx');
+  const { referenceConsumerReadApi: api } = await server.ssrLoadModule('/src/reference/referenceData.ts');
+  const market = (await api.listMarkets()).find(item => item.activity.historyLabel === 'Dated observations');
+  assert.ok(market);
+  const history = await api.getHistory(market.id, 'ALL');
+  assert.ok(history.series[0].points.length >= 2);
+  assert.equal(history.series.some(series => series.evidence === 'ILLUSTRATIVE'), false);
+  const chart = render(ConsumerChart, { history, onSelectAction: noAction });
+  const spark = render(MarketSparkline, { market, history });
+  assert.match(chart, /Public source data/);
+  assert.doesNotMatch(chart, /au-chart-illustrative/);
+  assert.match(spark, /First → last observation/);
+  assert.doesNotMatch(spark, /Illustrative trend/);
 });
 
 test('display names preserve original market data and source provenance', async () => {
