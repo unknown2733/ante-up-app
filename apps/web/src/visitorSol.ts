@@ -6,6 +6,10 @@ export type SolReadiness = {
   minimumBalanceLamports: string;
   needsSol: boolean;
   serverGrantEnabled: boolean;
+  grantLamports: string;
+  grantRemaining: string;
+  serverGrantAvailable: boolean;
+  grantUnavailableReason: 'DISABLED'|'ENOUGH_SOL'|'COOLDOWN'|'FUNDING_LOW'|'DAILY_LIMIT'|'TOTAL_LIMIT'|null;
 };
 export type SolClaim = {
   state: 'DISABLED'|'ENOUGH_SOL'|'LIMIT_REACHED'|'RESERVED'|'UNKNOWN'|'SUBMITTED'|'FINALIZED';
@@ -55,7 +59,11 @@ export function createVisitorSolFlow(input: {
     const context = wallet();
     const data = await request<SolReadiness>(`/readiness?wallet=${encodeURIComponent(context.address)}`);
     if (!data || !amount(data.balanceLamports) || !amount(data.minimumBalanceLamports) ||
+        !amount(data.grantLamports) || BigInt(data.grantLamports) === 0n || !amount(data.grantRemaining) ||
         typeof data.needsSol !== 'boolean' || typeof data.serverGrantEnabled !== 'boolean' ||
+        typeof data.serverGrantAvailable !== 'boolean' ||
+        ![null,'DISABLED','ENOUGH_SOL','COOLDOWN','FUNDING_LOW','DAILY_LIMIT','TOTAL_LIMIT'].includes(data.grantUnavailableReason) ||
+        data.serverGrantAvailable !== (data.grantUnavailableReason === null) ||
         data.needsSol !== (BigInt(data.balanceLamports) < BigInt(data.minimumBalanceLamports)))
       throw new Error('Devnet SOL balance response is invalid.');
     return data;
