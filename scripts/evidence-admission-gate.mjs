@@ -1,11 +1,12 @@
 // Close-only admission guard. One invocation per worker pass, behind the same
 // flock. It never changes proof jobs or opens a previously closed gate.
-import {readFile} from 'node:fs/promises';
+import {readFile,writeFile,rename,unlink} from 'node:fs/promises';
+import {randomUUID} from 'node:crypto';
 import {join} from 'node:path';
 import {createRequire} from 'node:module';
 import * as chain from '../clients/chain/dist/index.js';
 import {readJson} from '../services/evidence/worker-support.mjs';
-import {admissionBudget} from '../services/evidence/intake.mjs';
+import {admissionBudget,proofCapacitySnapshot} from '../services/evidence/intake.mjs';
 import {closeAdmissionOnce} from '../services/evidence/admission-gate.mjs';
 import {storagePressure} from './runtime-status.mjs';
 import {createTurboClient} from '../services/evidence/turbo.mjs';
@@ -27,6 +28,16 @@ try{
  const budget=admissionBudget({ledger,totalLimit:required('ANTE_UP_EVIDENCE_TOTAL_WINC'),
   dailyLimit:required('ANTE_UP_EVIDENCE_DAILY_WINC'),perRecordLimit:required('ANTE_UP_MAX_UPLOAD_WINC'),
   balanceWinc:balance.winc,outstanding:gate.data.outstanding});
+ const capacity=proofCapacitySnapshot({gate:gate.data,balanceWinc:balance.winc,
+  perRecordLimitWinc:required('ANTE_UP_MAX_UPLOAD_WINC')});
+ const capacityPath=join(evidence,'capacity.json'),temporary=`${capacityPath}.${randomUUID()}.tmp`;
+ try{
+  await writeFile(temporary,JSON.stringify(capacity)+'\n',{mode:0o600,flag:'wx'});
+  await rename(temporary,capacityPath);
+ }catch{
+  await unlink(temporary).catch(()=>{});
+  console.error('PROOF_CAPACITY_REPORT_FAILED');
+ }
  const pressure=await storagePressure(directory);
  if(pressure?.admissionBlocked){budget.admit=false;budget.reason='STORAGE_PRESSURE';}
  if(budget.admit||gate.data.open===false){

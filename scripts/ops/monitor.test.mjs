@@ -231,6 +231,29 @@ test('visitor SOL grant reservations warn before daily and total caps stop first
   await rm(path);
   assert.ok((await collect(f.config,{now,fetcher:f.fetcher})).alerts.some(a=>a.id==='INPUT_UNAVAILABLE:visitor-sol'));
 });
+
+test('funded chip capacity warns when Turbo credit or total proof budget cannot cover all remaining duties',async t=>{
+  const f=await fixture(t),path=join(f.live,'evidence/capacity.json');
+  f.config.proofCapacity={path:'live-smoke/evidence/capacity.json',maxAgeSeconds:900};
+  const capacity={version:1,observedAt:at,fundedCap:'20',fundedUsed:'8',fundedRemaining:'12',
+    outstanding:'2',perRecordLimitWinc:'60',turboBalanceWinc:'900',requiredWinc:'840',fullyCovered:true};
+  await f.save(path,capacity);
+  const healthy=await collect(f.config,{now,fetcher:f.fetcher});
+  assert.equal(healthy.metrics.proofCapacity.fundedRemaining,'12');
+  assert.ok(!healthy.alerts.some(a=>a.code==='PROOF_FUNDED_CAP_SHORTFALL'));
+  await f.save(path,{...capacity,turboBalanceWinc:'839',fullyCovered:false});
+  const short=await collect(f.config,{now,fetcher:f.fetcher});
+  assert.ok(short.alerts.some(a=>a.id==='PROOF_FUNDED_CAP_SHORTFALL:evidence'));
+  await f.save(path,capacity);
+  const internal=await collect({...f.config,proofBudget:{dailyWinc:'1000',totalWinc:'800'}},{now,fetcher:f.fetcher});
+  assert.ok(internal.alerts.some(a=>a.id==='PROOF_FUNDED_CAP_SHORTFALL:evidence'));
+  await f.save(path,{...capacity,observedAt:at-901});
+  const stale=await collect(f.config,{now,fetcher:f.fetcher});
+  assert.ok(stale.alerts.some(a=>a.id==='PROOF_CAPACITY_STALE:evidence'));
+  await f.save(path,{...capacity,requiredWinc:'1'});
+  assert.ok((await collect(f.config,{now,fetcher:f.fetcher})).alerts.some(a=>a.id==='INPUT_INVALID:proof-capacity'));
+  assert.throws(()=>validateConfig({...f.config,proofCapacity:{path:'../secrets',maxAgeSeconds:1}}),/MONITOR_PROOF_CAPACITY_INVALID/);
+});
 test('detects stalled collection/publication, proof obligations outside allowlist, budgets and wallets',async t=>{
   const f=await fixture(t);
   await f.save(join(f.live,'collection.json'),{markets:{[market]:{lastPollAt:at-80000}},batches:{uncertain:{id:'uncertain',state:'REQUESTING',requestedAt:at-5000}},totalSpentMicros:9995,spentByDay:{'2026-10-16':800}});

@@ -55,3 +55,17 @@ export function fundedCapBudget({fundedOpenCount,cap,outstanding,...budget}){
  return {...admissionBudget({...budget,outstanding:outstanding+remaining-1}),
   reservedFutureOpens:remaining};
 }
+
+/** Read-only accounting for every remaining funded admission and open proof duty. */
+export function proofCapacitySnapshot({gate,balanceWinc,perRecordLimitWinc,now=Math.floor(Date.now()/1000)}){
+ const cap=BigInt(gate.fundedOpenCap),used=BigInt(gate.fundedOpenCount);
+ const outstanding=BigInt(gate.outstanding),perRecord=integer(String(perRecordLimitWinc));
+ const balance=integer(String(balanceWinc));
+ check(cap>=used&&outstanding>=0n&&perRecord>0n&&
+  Number.isSafeInteger(now)&&now>0,'EVIDENCE_CAP_INVALID');
+ const remaining=cap-used,required=(remaining+outstanding)*perRecord;
+ return {version:1,observedAt:now,fundedCap:cap.toString(),fundedUsed:used.toString(),
+  fundedRemaining:remaining.toString(),outstanding:outstanding.toString(),
+  perRecordLimitWinc:perRecord.toString(),turboBalanceWinc:balance.toString(),
+  requiredWinc:required.toString(),fullyCovered:balance>=required};
+}

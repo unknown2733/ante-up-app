@@ -139,6 +139,12 @@ itself cannot authorize spending.
 
 Each five-minute publication creates a new rent-funded snapshot account. Keep
 the operations monitor's market list aligned with the approved collectors.
+The evidence admission guard writes `evidence/capacity.json` after a finalized
+admission read and a Turbo balance read. Configure the optional operations
+`proofCapacity` path so the observer alerts when all remaining funded chip
+slots and accepted proof duties exceed available Turbo credit or the total
+proof budget. A stale or invalid capacity report also raises an alert; it does
+not change the on-chain admission rule.
 The optional `snapshotFunding` settings in `deploy/ops/monitor.example.json`
 estimate the publisher balance needed for one and three days of publications,
 using the measured rent per snapshot and an explicit reserve. Recheck that

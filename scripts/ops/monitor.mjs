@@ -28,6 +28,9 @@ export function validateConfig(c) {
       c.xBudget.initialMicros<=c.xBudget.totalMicros,'MONITOR_X_LEDGER_INVALID');
   check(c.budgetWarningPercent>0&&c.budgetWarningPercent<100&&Number.isInteger(c.budgetWarningPercent),'MONITOR_BUDGET_THRESHOLD_INVALID');
   check(DECIMAL.test(c.proofBudget?.dailyWinc)&&DECIMAL.test(c.proofBudget?.totalWinc)&&BigInt(c.proofBudget.dailyWinc)>0n&&BigInt(c.proofBudget.totalWinc)>0n,'MONITOR_PROOF_BUDGET_INVALID');
+  if(c.proofCapacity)
+    check(safeRelative(c.proofCapacity.path)&&positive(c.proofCapacity.maxAgeSeconds),
+      'MONITOR_PROOF_CAPACITY_INVALID');
   if(c.visitorFaucet){
     const v=c.visitorFaucet;
     check(safeRelative(v.ledgerPath)&&DECIMAL.test(v.grantLamports)&&DECIMAL.test(v.dailyCapLamports)&&DECIMAL.test(v.totalCapLamports)&&
@@ -211,6 +214,34 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
     }
     metrics.proofReservedWinc={total:total.toString(),today:today.toString()};budget(total,c.proofBudget.totalWinc,'proof-total');budget(today,c.proofBudget.dailyWinc,'proof-daily');
   }catch{add('INPUT_INVALID','proof-budget');}
+  if(c.proofCapacity){
+    const capacity=await load(join(c.stateDirectory,c.proofCapacity.path),'proof-capacity');
+    if(capacity)try{
+      const fields=['fundedCap','fundedUsed','fundedRemaining','outstanding',
+        'perRecordLimitWinc','turboBalanceWinc','requiredWinc'];
+      check(capacity.version===1&&Number.isSafeInteger(capacity.observedAt)&&
+        capacity.observedAt>0&&capacity.observedAt<=at+30&&
+        fields.every(field=>DECIMAL.test(capacity[field]))&&
+        BigInt(capacity.perRecordLimitWinc)>0n,'INVALID_PROOF_CAPACITY');
+      const cap=BigInt(capacity.fundedCap),used=BigInt(capacity.fundedUsed),
+        remaining=BigInt(capacity.fundedRemaining),outstanding=BigInt(capacity.outstanding),
+        required=(remaining+outstanding)*BigInt(capacity.perRecordLimitWinc),
+        balance=BigInt(capacity.turboBalanceWinc);
+      check(cap===used+remaining&&required===BigInt(capacity.requiredWinc)&&
+        capacity.fullyCovered===(balance>=required),'INVALID_PROOF_CAPACITY');
+      metrics.proofCapacity={fundedRemaining:capacity.fundedRemaining,
+        outstanding:capacity.outstanding,requiredWinc:capacity.requiredWinc,
+        turboBalanceWinc:capacity.turboBalanceWinc,observedAt:capacity.observedAt};
+      if(at-capacity.observedAt>=c.proofCapacity.maxAgeSeconds)
+        add('PROOF_CAPACITY_STALE','evidence','critical',{ageSeconds:at-capacity.observedAt});
+      if(balance<required||metrics.proofReservedWinc&&
+        BigInt(metrics.proofReservedWinc.total)+required>BigInt(c.proofBudget.totalWinc))
+        add('PROOF_FUNDED_CAP_SHORTFALL','evidence','critical',{
+          requiredWinc:required.toString(),turboBalanceWinc:balance.toString(),
+          reservedWinc:metrics.proofReservedWinc?.total??null,
+          totalLimitWinc:c.proofBudget.totalWinc});
+    }catch{add('INPUT_INVALID','proof-capacity');}
+  }
   if(c.visitorFaucet){
     let grantDb;
     try{
