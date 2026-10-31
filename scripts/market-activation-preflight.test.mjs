@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {collectorReadiness,inspectGlobalBudget,lastCollectionRequest} from './market-activation-preflight.mjs';
+import {collectorReadiness,inspectGlobalBudget,lastCollectionRequest,
+  preliminaryGraduationGate} from './market-activation-preflight.mjs';
+import * as chain from '../clients/chain/dist/index.js';
 import {buildQuery} from '../services/data/index.mjs';
 import {queryHashFor} from '../services/data/live.mjs';
 import {GlobalXBudget} from '../services/data/global-budget.mjs';
@@ -23,15 +25,21 @@ const snapshot={payloadHash:Buffer.from(hash,'hex')};
 const candidates={snapshots:{[`${marketId}:1384`]:{
   published:{finality:'finalized',payloadHash:hash,
     payload:{marketId,sequence:'1384',queryHash,dataThrough:1000}}}}};
+const acceptedSource={status:'LAST_ACCEPTED'};
 
 test('approved collector is ready only when latest finalized candidate matches chain and is fresh',()=>{
   const ready=collectorReadiness({marketId,market,snapshot,registry,config,candidates,
-    globalBudget:{status:'READY'},nowSeconds:1050});
+    globalBudget:{status:'READY'},lastSourceRequest:acceptedSource,nowSeconds:1050});
   assert.equal(ready.collectorFeedReady,true);
+  assert.deepEqual(ready.collectorBlockers,[]);
   assert.equal(ready.snapshotIdentityMatched,true);
   assert.equal(ready.candidatePath,'/state/tariff/candidates.json');
   assert.equal(collectorReadiness({marketId,market,snapshot,registry,config,candidates,
-    globalBudget:{status:'READY'},nowSeconds:1600}).collectorFeedReady,false);
+    globalBudget:{status:'READY'},lastSourceRequest:acceptedSource,nowSeconds:1600}).collectorFeedReady,false);
+  const unchecked=collectorReadiness({marketId,market,snapshot,registry,config,candidates,
+    globalBudget:{status:'READY'},nowSeconds:1050});
+  assert.equal(unchecked.collectorFeedReady,false);
+  assert.deepEqual(unchecked.collectorBlockers,['SOURCE_REQUEST_NOT_ACCEPTED']);
 });
 
 test('a saved provider cap failure blocks activation even before the snapshot ages out',()=>{
@@ -45,9 +53,11 @@ test('a saved provider cap failure blocks activation even before the snapshot ag
   const last=lastCollectionRequest(collection,marketId,'1');
   assert.deepEqual(last,{status:'LAST_SPEND_CAP_FAILURE',from:1000,retryAt:1300});
   const input={marketId,market,snapshot,registry,config,candidates,
-    globalBudget:{status:'READY'},nowSeconds:1050};
+    globalBudget:{status:'READY'},lastSourceRequest:acceptedSource,nowSeconds:1050};
   assert.equal(collectorReadiness({...input,lastSourceRequest:last}).latestDataFresh,true);
   assert.equal(collectorReadiness({...input,lastSourceRequest:last}).collectorFeedReady,false);
+  assert.deepEqual(collectorReadiness({...input,lastSourceRequest:last}).collectorBlockers,
+    ['X_PROVIDER_SPEND_CAP']);
   collection.batches[latest]={id:latest,state:'VALIDATED'};
   const recovered=lastCollectionRequest(collection,marketId,'1');
   assert.deepEqual(recovered,{status:'LAST_ACCEPTED',from:1000,retryAt:null});
@@ -57,9 +67,23 @@ test('a saved provider cap failure blocks activation even before the snapshot ag
   assert.throws(()=>lastCollectionRequest({batches:{[latest]:{id:'changed',state:'VALIDATED'}}},marketId,'1'),/COLLECTION_PREFLIGHT_STATE_INVALID/);
 });
 
+test('graduation preflight cannot become green on an old snapshot during a provider cap',()=>{
+  const readyMarket={...market,dataStatus:chain.DataStatus.Valid,
+    admission:{state:chain.AdmissionState.Open}};
+  const finance={curveSold:1_000_000_000n,curveReserve:1_100_000_000n};
+  const input={market:readyMarket,finance,snapshot,paidXApproval:'APPROVED'};
+  const green=preliminaryGraduationGate({...input,collection:{collectorFeedReady:true}});
+  assert.deepEqual(green.blockers,[]);
+  assert.equal(green.fullGraduationPlanStillRequired,true);
+  const capped=preliminaryGraduationGate({...input,collection:{collectorFeedReady:false}});
+  assert.deepEqual(capped.blockers,['COLLECTOR_FEED_NOT_READY']);
+  const uninspected=preliminaryGraduationGate(input);
+  assert.deepEqual(uninspected.blockers,['COLLECTOR_FEED_NOT_READY']);
+});
+
 test('missing, unfinalized, mismatched, and unapproved candidates cannot be ready',()=>{
   const input={marketId,market,snapshot,registry,config,candidates,
-    globalBudget:{status:'READY'},nowSeconds:1050};
+    globalBudget:{status:'READY'},lastSourceRequest:acceptedSource,nowSeconds:1050};
   assert.equal(collectorReadiness({...input,candidates:null}).collectorFeedReady,false);
   assert.equal(collectorReadiness({...input,candidates:{snapshots:{[`${marketId}:1384`]:{
     published:{...candidates.snapshots[`${marketId}:1384`].published,finality:'confirmed'}}}}}).collectorFeedReady,false);
@@ -77,7 +101,8 @@ test('existing approved legacy collector is accepted only with the global budget
   const legacy={marketId,seedHex,queryVersion:'1',expressions:['tariff'],
     directory:'/state/tariff',estimatedCostMicros:10000};
   const input={marketId,market,snapshot,registry,config:legacy,candidates,nowSeconds:1050};
-  assert.equal(collectorReadiness({...input,globalBudget:{status:'READY'}}).collectorFeedReady,true);
+  assert.equal(collectorReadiness({...input,globalBudget:{status:'READY'},
+    lastSourceRequest:acceptedSource}).collectorFeedReady,true);
   assert.equal(collectorReadiness({...input,globalBudget:{status:'MISSING'}}).collectorFeedReady,false);
   assert.throws(()=>collectorReadiness({...input,config:{...legacy,seedHex:'33'.repeat(32)},
     globalBudget:{status:'READY'}}),/CANDIDATE_ONCHAIN_QUERY_MISMATCH/);

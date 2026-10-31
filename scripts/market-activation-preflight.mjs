@@ -102,6 +102,17 @@ export function collectorReadiness({marketId,market,snapshot,registry,config,can
   const dataThrough=published?.payload?.dataThrough;
   const fresh=identityMatched && Number.isSafeInteger(dataThrough) &&
     dataThrough<=nowSeconds && nowSeconds-dataThrough<600;
+  const blockers=[];
+  if(verified.state!=='ALREADY_APPROVED')blockers.push('PAID_X_NOT_APPROVED');
+  if(!approvedPathMatches)blockers.push('APPROVAL_CANDIDATE_PATH_MISMATCH');
+  if(globalBudget.status!=='READY')blockers.push('GLOBAL_X_BUDGET_NOT_READY');
+  if(lastSourceRequest.status==='LAST_SPEND_CAP_FAILURE')blockers.push('X_PROVIDER_SPEND_CAP');
+  else if(lastSourceRequest.status!=='LAST_ACCEPTED')
+    blockers.push('SOURCE_REQUEST_NOT_ACCEPTED');
+  if(!entry)blockers.push('CANDIDATE_MISSING');
+  else if(published?.finality!=='finalized')blockers.push('CANDIDATE_NOT_FINALIZED');
+  if(entry&&!identityMatched)blockers.push('SNAPSHOT_IDENTITY_MISMATCH');
+  else if(identityMatched&&!fresh)blockers.push('LATEST_DATA_STALE');
   return {configState:verified.state,budgetMode:legacyBudget?'GLOBAL_LEDGER':'PER_MARKET_AND_GLOBAL',
     globalBudgetPresent:!['MISSING','NOT_CHECKED'].includes(globalBudget.status),
     globalBudget,lastSourceRequest,approved:verified.state==='ALREADY_APPROVED',
@@ -109,9 +120,27 @@ export function collectorReadiness({marketId,market,snapshot,registry,config,can
     candidatePath:verified.candidatePath,latestCandidatePresent:!!entry,
     latestCandidateFinalized:published?.finality==='finalized',
     snapshotIdentityMatched:identityMatched,latestDataFresh:fresh,
-    collectorFeedReady:verified.state==='ALREADY_APPROVED' && approvedPathMatches &&
-      globalBudget.status==='READY' && fresh &&
-      (lastSourceRequest.status==='NOT_CHECKED'||lastSourceRequest.status==='LAST_ACCEPTED')};
+    collectorBlockers:blockers,collectorFeedReady:blockers.length===0};
+}
+
+export function preliminaryGraduationGate({market,finance,snapshot,paidXApproval,collection}){
+  const sold=finance.curveSold,reserve=finance.curveReserve;
+  const blockers=[];
+  if(sold!==CURVE_CAP)blockers.push('CURVE_INCOMPLETE');
+  if(reserve<MIN_RESERVE)blockers.push('RESERVE_SHORTFALL');
+  if(market.latestSequence===0n||!snapshot)blockers.push('OBSERVATION_MISSING');
+  if(market.dataStatus!==chain.DataStatus.Valid ||
+      market.admission.state!==chain.AdmissionState.Open)
+    blockers.push('DATA_OR_ADMISSION_NOT_OPEN');
+  if(paidXApproval!=='APPROVED')blockers.push('PAID_X_NOT_APPROVED');
+  if(!collection?.collectorFeedReady)blockers.push('COLLECTOR_FEED_NOT_READY');
+  return {curveComplete:sold===CURVE_CAP&&reserve>=MIN_RESERVE,
+    observationPublished:market.latestSequence>0n&&!!snapshot,
+    dataOpen:market.dataStatus===chain.DataStatus.Valid &&
+      market.admission.state===chain.AdmissionState.Open,
+    paidXApproved:paidXApproval==='APPROVED',
+    collectorFeedReady:collection?.collectorFeedReady===true,
+    blockers,fullGraduationPlanStillRequired:true};
 }
 
 export async function readActivation({marketId,endpoint,approvalPath,collectionConfigPath,
@@ -169,13 +198,8 @@ export async function readActivation({marketId,endpoint,approvalPath,collectionC
     curveSoldAtoms:sold.toString(),curveRemainingAtoms:(sold<CURVE_CAP?CURVE_CAP-sold:0n).toString(),
     curveReserveAtoms:reserve.toString(),
     reserveShortfallAtoms:(reserve<MIN_RESERVE?MIN_RESERVE-reserve:0n).toString(),
-    preliminaryGraduationGate:{
-      curveComplete:sold===CURVE_CAP&&reserve>=MIN_RESERVE,
-      observationPublished:latestSequence>0n&&!!snapshot,
-      dataOpen:market.dataStatus===chain.DataStatus.Valid &&
-        market.admission.state===chain.AdmissionState.Open,
-      paidXApproved:paidXApproval==='APPROVED'
-    },
+    preliminaryGraduationGate:preliminaryGraduationGate({market,finance,snapshot,
+      paidXApproval,collection}),
     note:'The X ledger covers internal reservations. The last saved source outcome is not a current billing-console reading. A complete graduation plan still requires separate checks.'
   };
 }
