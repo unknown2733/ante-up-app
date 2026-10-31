@@ -5,6 +5,19 @@ import {createVisitorSolFlow} from '../src/visitorSol.ts';
 const context={address:'939RPDweeCfV1s39nND2KsARHesEvaH5MqhjxV5soKQv',cluster:'devnet',signer:{}};
 const envelope=data=>({schemaVersion:'0.1',mode:'devnet',asOf:1_800_000_000,nextCursor:null,data});
 
+test('SOL readiness accepts a real capacity quote and rejects contradictory availability',async()=>{
+  let available=true;
+  const flow=createVisitorSolFlow({baseUrl:'https://example.test/api',getWallet:()=>context,
+    authorize:async()=>{throw Error('readiness is public');},
+    fetcher:async()=>new Response(JSON.stringify(envelope({
+      balanceLamports:'0',minimumBalanceLamports:'10000000',needsSol:true,serverGrantEnabled:true,
+      grantLamports:'20000000',grantRemaining:'15',serverGrantAvailable:available,
+      grantUnavailableReason:null})))});
+  assert.equal((await flow.readiness()).grantRemaining,'15');
+  available=false;
+  await assert.rejects(flow.readiness(),/response is invalid/);
+});
+
 test('lost response retains the same SOL grant request ID for a safe retry',async()=>{
   const saved=new Map();const requests=[];
   let failOnce=true;

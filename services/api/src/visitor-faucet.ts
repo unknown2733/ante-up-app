@@ -50,6 +50,14 @@ export class SqliteSolFaucetLedger {
   get(requestId: string): Row | null {
     return (this.db.prepare('SELECT wallet,amount,state,signature,at_ms FROM visitor_sol_grants WHERE request_id=?').get(requestId) as Row|undefined) ?? null;
   }
+  availability(wallet: string, atMs: number, policy: SolFaucetPolicy) {
+    const rows = this.db.prepare('SELECT wallet,amount,at_ms FROM visitor_sol_grants').all() as Row[];
+    const dayStart = Math.floor(atMs / DAY_MS) * DAY_MS;
+    const total = rows.reduce((sum,row) => sum + BigInt(row.amount),0n);
+    const day = rows.filter(row=>row.at_ms>=dayStart && row.at_ms<dayStart+DAY_MS)
+      .reduce((sum,row)=>sum+BigInt(row.amount),0n);
+    return {total,day,recentlyGranted:rows.some(row=>row.wallet===wallet && atMs-row.at_ms < policy.cooldownMs)};
+  }
   pendingSigned(limit = 10, offset = 0): Array<{requestId:string;signature:string}> {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50 ||
         !Number.isSafeInteger(offset) || offset < 0) throw Error('INVALID_SOL_FAUCET_LIMIT');
@@ -67,12 +75,7 @@ export class SqliteSolFaucetLedger {
     try {
       const previous = this.get(requestId);
       if (previous) { this.db.exec('COMMIT'); if (previous.wallet !== wallet) throw Error('REQUEST_ID_CONFLICT'); return {row:previous,created:false}; }
-      const rows = this.db.prepare('SELECT wallet,amount,at_ms FROM visitor_sol_grants').all() as Row[];
-      const total = rows.reduce((sum,row) => sum + BigInt(row.amount),0n);
-      const dayStart = Math.floor(atMs / DAY_MS) * DAY_MS;
-      const day = rows.filter(row=>row.at_ms>=dayStart && row.at_ms<dayStart+DAY_MS)
-        .reduce((sum,row)=>sum+BigInt(row.amount),0n);
-      const recentlyGranted = rows.some(row=>row.wallet===wallet && atMs-row.at_ms < policy.cooldownMs);
+      const {total,day,recentlyGranted}=this.availability(wallet,atMs,policy);
       if (recentlyGranted || total+policy.grantLamports>policy.totalCapLamports ||
           day+policy.grantLamports>policy.dailyCapLamports) { this.db.exec('COMMIT'); return null; }
       this.db.prepare('INSERT INTO visitor_sol_grants VALUES(?,?,?,?,?,?)')
@@ -97,10 +100,22 @@ export class VisitorSolFaucet {
   async readiness(wallet:string) {
     if (!WALLET.test(wallet)) throw Error('INVALID_WALLET');
     if (await this.options.rpc.genesisHash() !== DEVNET_GENESIS) throw Error('DEVNET_REQUIRED');
-    const balance = await this.options.rpc.balanceLamports(wallet);
+    const {policy,ledger}=this.options;
+    const [balance,funding]=await Promise.all([
+      this.options.rpc.balanceLamports(wallet),this.options.fundingBalanceLamports()]);
+    const {total,day,recentlyGranted}=ledger.availability(wallet,this.options.nowMs(),policy);
+    const remaining=(limit:bigint,used:bigint)=>limit>used?(limit-used)/policy.grantLamports:0n;
+    const fundingRemaining=remaining(funding,policy.reserveLamports);
+    const dailyRemaining=remaining(policy.dailyCapLamports,day);
+    const totalRemaining=remaining(policy.totalCapLamports,total);
+    const grantRemaining=[fundingRemaining,dailyRemaining,totalRemaining].reduce((min,value)=>value<min?value:min);
+    const needsSol=balance<policy.minimumBalanceLamports;
+    const grantUnavailableReason=!policy.enabled?'DISABLED':!needsSol?'ENOUGH_SOL':recentlyGranted?'COOLDOWN':
+      fundingRemaining===0n?'FUNDING_LOW':dailyRemaining===0n?'DAILY_LIMIT':totalRemaining===0n?'TOTAL_LIMIT':null;
     return {balanceLamports:balance.toString(),minimumBalanceLamports:this.options.policy.minimumBalanceLamports.toString(),
-      needsSol:balance<this.options.policy.minimumBalanceLamports,
-      serverGrantEnabled:this.options.policy.enabled};
+      needsSol,serverGrantEnabled:policy.enabled,grantLamports:policy.grantLamports.toString(),
+      grantRemaining:grantRemaining.toString(),serverGrantAvailable:grantUnavailableReason===null,
+      grantUnavailableReason};
   }
   async claim(input:{wallet:string;authenticatedWallet:string;requestId:string}):Promise<SolClaim> {
     const {wallet,authenticatedWallet,requestId}=input, {policy,rpc,ledger}=this.options;

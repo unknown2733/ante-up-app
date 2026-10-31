@@ -35,6 +35,25 @@ test('one reservation survives lost response, blocks replay and daily overspend'
     await assert.rejects(service.claim({wallet,authenticatedWallet:wallet2,requestId:'request_0003'}),/UNAUTHORIZED/);
   }finally{ledger.close();await rm(dir,{recursive:true,force:true});}
 });
+test('public readiness reflects reserved grants, wallet cooldown and the funding reserve',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'ante-visitor-'));const ledger=new SqliteSolFaucetLedger(join(dir,'ledger.sqlite'));
+  let now=100_000_000, funding=25_000_000n;
+  const rpc={genesisHash:async()=>DEVNET_GENESIS,balanceLamports:async()=>0n,
+    sendOnce:async()=>{throw Error('transport lost');},finalized:async()=>false};
+  const service=new VisitorSolFaucet({policy,rpc,ledger,fundingBalanceLamports:async()=>funding,nowMs:()=>now});
+  try {
+    assert.deepEqual(await service.readiness(wallet),{
+      balanceLamports:'0',minimumBalanceLamports:'1000000',needsSol:true,serverGrantEnabled:true,
+      grantLamports:'5000000',grantRemaining:'1',serverGrantAvailable:true,grantUnavailableReason:null});
+    assert.equal((await service.claim({wallet,authenticatedWallet:wallet,requestId:'request_0001'})).state,'UNKNOWN');
+    assert.equal((await service.readiness(wallet)).grantUnavailableReason,'COOLDOWN');
+    assert.equal((await service.readiness(wallet2)).grantUnavailableReason,'DAILY_LIMIT');
+    funding=24_999_999n;now+=86_400_000;
+    assert.equal((await service.readiness(wallet2)).grantUnavailableReason,'FUNDING_LOW');
+    funding=25_000_000n;
+    assert.deepEqual((await service.readiness(wallet2)).grantRemaining,'1');
+  }finally{ledger.close();await rm(dir,{recursive:true,force:true});}
+});
 test('submitted SOL is final only after chain readback',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'ante-visitor-'));const ledger=new SqliteSolFaucetLedger(join(dir,'ledger.sqlite'));
   let final=false;const rpc={genesisHash:async()=>DEVNET_GENESIS,balanceLamports:async()=>0n,
