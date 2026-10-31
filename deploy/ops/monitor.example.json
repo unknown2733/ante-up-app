@@ -37,6 +37,7 @@
   "budgetWarningPercent": 80,
   "xBudget": {"dailyMicros": 10000000, "totalMicros": 100000000, "estimatedRequestMicros": 1000},
   "proofBudget": {"dailyWinc": "60000000000", "totalWinc": "100000000000"},
+  "proofCapacity": {"path": "live-smoke/evidence/capacity.json", "maxAgeSeconds": 900},
   "visitorFaucet": {
     "ledgerPath": "live-smoke/index.sqlite.visitor-sol.sqlite",
     "grantLamports": "20000000",
