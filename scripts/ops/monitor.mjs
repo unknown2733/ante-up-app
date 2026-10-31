@@ -49,6 +49,9 @@ export function validateConfig(c) {
   if(c.referenceYouTube)
     check(safeRelative(c.referenceYouTube.ledgerPath)&&positive(c.referenceYouTube.maxAgeSeconds),
       'MONITOR_REFERENCE_YOUTUBE_INVALID');
+  if(c.referenceX)
+    check(safeRelative(c.referenceX.ledgerPath)&&positive(c.referenceX.maxAgeSeconds),
+      'MONITOR_REFERENCE_X_INVALID');
   check(Array.isArray(c.wallets)&&c.wallets.length>0&&c.wallets.every(w=>typeof w.role==='string'&&/^[a-z0-9-]+$/.test(w.role)&&address(w.address)&&DECIMAL.test(w.minLamports)),'MONITOR_WALLETS_INVALID');
   check(new Set(c.markets.map(m=>m.id)).size===c.markets.length&&new Set(c.wallets.map(w=>w.role)).size===c.wallets.length&&new Set(c.services.map(s=>s.name)).size===c.services.length,'DUPLICATE_MONITOR_SCOPE');
   if(c.snapshotFunding){
@@ -308,6 +311,21 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
         if(row.status!=='SUCCESS')add('REFERENCE_COLLECTION_FAILED','youtube','critical',{status:row.status,errorCode:row.error_code??null});
       }
     }catch{add('INPUT_UNAVAILABLE','youtube');}
+    finally{referenceDb?.close();}
+  }
+  if(c.referenceX){
+    let referenceDb;
+    try{
+      referenceDb=new DatabaseSync(join(c.stateDirectory,c.referenceX.ledgerPath),{readOnly:true});
+      referenceDb.exec('PRAGMA busy_timeout=3000');
+      const row=referenceDb.prepare('SELECT attempted_at_ms,status,error_code FROM reference_x_requests ORDER BY attempted_at_ms DESC,id DESC LIMIT 1').get();
+      if(!row)add('REFERENCE_COLLECTION_MISSING','x-posts');
+      else{
+        metrics.xPostLastRun={attemptedAtMs:row.attempted_at_ms,status:row.status};
+        age(Math.floor(row.attempted_at_ms/1000),c.referenceX.maxAgeSeconds,'REFERENCE_COLLECTION_STALE','x-posts');
+        if(row.status!=='SUCCESS')add('REFERENCE_COLLECTION_FAILED','x-posts','critical',{status:row.status,errorCode:row.error_code??null});
+      }
+    }catch{add('INPUT_UNAVAILABLE','x-posts');}
     finally{referenceDb?.close();}
   }
   try{

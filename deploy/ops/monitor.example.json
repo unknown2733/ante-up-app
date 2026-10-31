@@ -52,6 +52,10 @@
     "ledgerPath": "live-smoke/index.sqlite",
     "maxAgeSeconds": 900
   },
+  "referenceX": {
+    "ledgerPath": "live-smoke/index.sqlite",
+    "maxAgeSeconds": 28800
+  },
   "rpcUrlFile": "/run/secrets/rpc.url",
   "wallets": [
     {"role": "publisher", "address": "8qfbLii5YBfJiHoLGBNozyJnLFA4knBymTCtK9pP4mHH", "minLamports": "10000000"},

@@ -139,6 +139,26 @@ test('five-minute YouTube collector alerts on stale or failed real observations'
     /MONITOR_REFERENCE_YOUTUBE_INVALID/);
 });
 
+test('X post reference health reflects the last paid attempt, including provider failures',async t=>{
+  const f=await fixture(t);
+  f.config.referenceX={ledgerPath:'live-smoke/index.sqlite',maxAgeSeconds:8*3600};
+  const db=new DatabaseSync(f.dbPath);
+  try{
+    db.exec('CREATE TABLE reference_x_requests (id INTEGER PRIMARY KEY, attempted_at_ms INTEGER, status TEXT, error_code TEXT)');
+    db.prepare('INSERT INTO reference_x_requests VALUES (1,?,?,NULL)').run(now-60_000,'SUCCESS');
+  }finally{db.close();}
+  assert.ok(!(await collect(f.config,{now,fetcher:f.fetcher})).alerts.some(a=>a.id.endsWith(':x-posts')));
+  const failed=new DatabaseSync(f.dbPath);
+  try{failed.prepare('INSERT INTO reference_x_requests VALUES (2,?,?,?)').run(now-30_000,'FAILED','X_PROVIDER_HTTP_403');}
+  finally{failed.close();}
+  const report=await collect(f.config,{now,fetcher:f.fetcher});
+  assert.ok(report.alerts.some(a=>a.id==='REFERENCE_COLLECTION_FAILED:x-posts'&&a.metrics.errorCode==='X_PROVIDER_HTTP_403'));
+  assert.equal(report.metrics.xPostLastRun.status,'FAILED');
+  assert.ok((await collect(f.config,{now:now+9*3600_000,fetcher:f.fetcher})).alerts.some(a=>a.id==='REFERENCE_COLLECTION_STALE:x-posts'));
+  assert.throws(()=>validateConfig({...f.config,referenceX:{ledgerPath:'../secret',maxAgeSeconds:28800}}),
+    /MONITOR_REFERENCE_X_INVALID/);
+});
+
 test('an evidence admission guard failure raises an operational alert',async t=>{
   const f=await fixture(t);
   f.config.services.push({name:'evidence',path:'health/evidence.json',maxAgeSeconds:180});
