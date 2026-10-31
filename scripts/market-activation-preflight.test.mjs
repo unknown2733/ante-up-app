@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {collectorReadiness,inspectGlobalBudget} from './market-activation-preflight.mjs';
+import {collectorReadiness,inspectGlobalBudget,lastCollectionRequest} from './market-activation-preflight.mjs';
 import {buildQuery} from '../services/data/index.mjs';
 import {queryHashFor} from '../services/data/live.mjs';
 import {GlobalXBudget} from '../services/data/global-budget.mjs';
@@ -32,6 +32,29 @@ test('approved collector is ready only when latest finalized candidate matches c
   assert.equal(ready.candidatePath,'/state/tariff/candidates.json');
   assert.equal(collectorReadiness({marketId,market,snapshot,registry,config,candidates,
     globalBudget:{status:'READY'},nowSeconds:1600}).collectorFeedReady,false);
+});
+
+test('a saved provider cap failure blocks activation even before the snapshot ages out',()=>{
+  const earlier=`${marketId}:1:700`,latest=`${marketId}:1:1000`;
+  const collection={batches:{
+    [earlier]:{id:earlier,state:'VALIDATED'},
+    [latest]:{id:latest,state:'FAILED',error:'X_SPEND_CAP_REACHED',retryAt:1300},
+    [`backfill:${marketId}:1:1100:1`]:{id:`backfill:${marketId}:1:1100:1`,state:'VALIDATED'},
+    ['11111111111111111111111111111111:1:1200']:{id:'11111111111111111111111111111111:1:1200',state:'VALIDATED'}
+  }};
+  const last=lastCollectionRequest(collection,marketId,'1');
+  assert.deepEqual(last,{status:'LAST_SPEND_CAP_FAILURE',from:1000,retryAt:1300});
+  const input={marketId,market,snapshot,registry,config,candidates,
+    globalBudget:{status:'READY'},nowSeconds:1050};
+  assert.equal(collectorReadiness({...input,lastSourceRequest:last}).latestDataFresh,true);
+  assert.equal(collectorReadiness({...input,lastSourceRequest:last}).collectorFeedReady,false);
+  collection.batches[latest]={id:latest,state:'VALIDATED'};
+  const recovered=lastCollectionRequest(collection,marketId,'1');
+  assert.deepEqual(recovered,{status:'LAST_ACCEPTED',from:1000,retryAt:null});
+  assert.equal(collectorReadiness({...input,lastSourceRequest:recovered}).collectorFeedReady,true);
+  assert.equal(collectorReadiness({...input,lastSourceRequest:{status:'MISSING'}}).collectorFeedReady,false);
+  assert.throws(()=>lastCollectionRequest({batches:[]},marketId,'1'),/COLLECTION_PREFLIGHT_STATE_INVALID/);
+  assert.throws(()=>lastCollectionRequest({batches:{[latest]:{id:'changed',state:'VALIDATED'}}},marketId,'1'),/COLLECTION_PREFLIGHT_STATE_INVALID/);
 });
 
 test('missing, unfinalized, mismatched, and unapproved candidates cannot be ready',()=>{
