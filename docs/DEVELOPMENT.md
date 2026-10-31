@@ -95,8 +95,13 @@ market's collection JSON and `ANTE_UP_GLOBAL_X_BUDGET_DB` to the shared
 SQLite ledger. The inspector reads the next regular or initial request cost
 against the same daily, initial, and total limits as the collector. A ledger
 file alone does not mean the next paid request is affordable. The report's
-`globalBudget` covers internal reservations; it cannot verify the X
-provider's separate spend cap.
+`globalBudget` covers internal reservations. The inspector also reads the
+collection directory's last saved regular request without making a new X call.
+`LAST_SPEND_CAP_FAILURE`, a missing collection file, or another unresolved
+request result keeps `collectorFeedReady` false even if the last finalized
+snapshot is still within its freshness window. A saved result is not a live
+reading of the provider's billing console; after the cap changes, a successful
+collection must establish readiness again.
 
 This is a preliminary gate. The existing `graduate-market.mjs` finalized plan
 must still verify the full funding, liability, source freshness, and account

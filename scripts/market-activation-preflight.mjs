@@ -42,8 +42,34 @@ export function inspectGlobalBudget(path,{day,costMicros,kind}){
   }finally{db.close();}
 }
 
+/** Report the last regular request only; it is evidence of an outcome, not a live X billing read. */
+export function lastCollectionRequest(collection,marketId,queryVersion){
+  if(!collection||typeof collection!=='object'||!collection.batches||
+    typeof collection.batches!=='object'||Array.isArray(collection.batches))
+    throw Error('COLLECTION_PREFLIGHT_STATE_INVALID');
+  const prefix=`${marketId}:${queryVersion}:`;
+  let latest=null,from=-1;
+  for(const [id,batch] of Object.entries(collection.batches)){
+    if(!id.startsWith(prefix))continue;
+    const bucket=id.slice(prefix.length);
+    if(!/^(0|[1-9][0-9]*)$/.test(bucket))continue;
+    if(!batch||typeof batch!=='object'||batch.id!==id)
+      throw Error('COLLECTION_PREFLIGHT_STATE_INVALID');
+    const value=Number(bucket);
+    if(!Number.isSafeInteger(value)||value<=from)continue;
+    latest=batch;from=value;
+  }
+  if(!latest)return {status:'NO_REGULAR_REQUEST',from:null,retryAt:null};
+  const status=latest.state==='FAILED'&&latest.error==='X_SPEND_CAP_REACHED'
+    ? 'LAST_SPEND_CAP_FAILURE'
+    : latest.state==='VALIDATED'||latest.state==='PREPARING'
+      ? 'LAST_ACCEPTED'
+      : latest.state==='FAILED'?'LAST_FAILED':'IN_FLIGHT';
+  return {status,from,retryAt:latest.state==='FAILED'&&Number.isSafeInteger(latest.retryAt)?latest.retryAt:null};
+}
+
 export function collectorReadiness({marketId,market,snapshot,registry,config,candidates,nowSeconds,
-  globalBudget={status:'NOT_CHECKED'}}) {
+  globalBudget={status:'NOT_CHECKED'},lastSourceRequest={status:'NOT_CHECKED'}}) {
   validatePaidXRegistry(registry);
   const approved=registry.markets.find(item=>item.marketId===marketId);
   const legacyBudget=approved && config.initialEstimatedCostMicros===undefined &&
@@ -78,13 +104,14 @@ export function collectorReadiness({marketId,market,snapshot,registry,config,can
     dataThrough<=nowSeconds && nowSeconds-dataThrough<600;
   return {configState:verified.state,budgetMode:legacyBudget?'GLOBAL_LEDGER':'PER_MARKET_AND_GLOBAL',
     globalBudgetPresent:!['MISSING','NOT_CHECKED'].includes(globalBudget.status),
-    globalBudget,approved:verified.state==='ALREADY_APPROVED',
+    globalBudget,lastSourceRequest,approved:verified.state==='ALREADY_APPROVED',
     approvedPathMatches,
     candidatePath:verified.candidatePath,latestCandidatePresent:!!entry,
     latestCandidateFinalized:published?.finality==='finalized',
     snapshotIdentityMatched:identityMatched,latestDataFresh:fresh,
     collectorFeedReady:verified.state==='ALREADY_APPROVED' && approvedPathMatches &&
-      globalBudget.status==='READY' && fresh};
+      globalBudget.status==='READY' && fresh &&
+      (lastSourceRequest.status==='NOT_CHECKED'||lastSourceRequest.status==='LAST_ACCEPTED')};
 }
 
 export async function readActivation({marketId,endpoint,approvalPath,collectionConfigPath,
@@ -124,8 +151,13 @@ export async function readActivation({marketId,endpoint,approvalPath,collectionC
         }
         catch(error){if(error?.code!=='ENOENT')throw error;}
       }
+      let lastSourceRequest={status:'MISSING',from:null,retryAt:null};
+      try{
+        const state=JSON.parse(await readFile(`${config.directory}/collection.json`,'utf8'));
+        lastSourceRequest=lastCollectionRequest(state,marketId,config.queryVersion);
+      }catch(error){if(error?.code!=='ENOENT')throw error;}
       collection=collectorReadiness({marketId,market,snapshot,registry,config,candidates,
-        globalBudget,nowSeconds});
+        globalBudget,lastSourceRequest,nowSeconds});
     }
   }
   const sold=finance.curveSold,reserve=finance.curveReserve;
@@ -144,7 +176,7 @@ export async function readActivation({marketId,endpoint,approvalPath,collectionC
         market.admission.state===chain.AdmissionState.Open,
       paidXApproved:paidXApproval==='APPROVED'
     },
-    note:'The X ledger check covers internal reservations only. Provider spend caps and a complete graduation plan require separate checks.'
+    note:'The X ledger covers internal reservations. The last saved source outcome is not a current billing-console reading. A complete graduation plan still requires separate checks.'
   };
 }
 
