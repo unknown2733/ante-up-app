@@ -102,6 +102,10 @@ request result keeps `collectorFeedReady` false even if the last finalized
 snapshot is still within its freshness window. A saved result is not a live
 reading of the provider's billing console; after the cap changes, a successful
 collection must establish readiness again.
+The read-only report lists every known `collectorBlockers` reason and the
+`preliminaryGraduationGate.blockers` separately. An unchecked source request
+cannot make the collector ready. Clearing the listed preliminary blockers does
+not authorize graduation; the finalized graduation plan remains mandatory.
 
 This is a preliminary gate. The existing `graduate-market.mjs` finalized plan
 must still verify the full funding, liability, source freshness, and account
