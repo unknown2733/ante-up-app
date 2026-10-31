@@ -451,11 +451,12 @@ function ConsumerMarketPage({ id, mode, refresh, changed, transport, section, in
   section: ActionTab; initialPeriod: ConsumerPeriod; actionId: string | null;
 }) {
   const [period, setPeriod] = useState<ConsumerPeriod>(initialPeriod);
+  const [marketLoadRetry, setMarketLoadRetry] = useState(0);
   const [chartControlsExpanded, setChartControlsExpanded] = useState(false);
   const [failedArtUrl, setFailedArtUrl] = useState<string | null>(null);
   const changePeriod = (next: ConsumerPeriod) => { setPeriod(next); const url = new URL(window.location.href); url.searchParams.set('period', next); window.history.replaceState(null, '', url.pathname + url.search); };
-  const history = useConsumerHistory(mode, id, period, refresh);
-  const measurementMarket = useData(() => mode === 'LIVE' ? api.getMarket(id) : Promise.resolve({ data: null }), [mode, id, refresh]);
+  const history = useConsumerHistory(mode, id, period, refresh + marketLoadRetry);
+  const measurementMarket = useData(() => mode === 'LIVE' ? api.getMarket(id) : Promise.resolve({ data: null }), [mode, id, refresh, marketLoadRetry]);
   const validHistory = history.value && history.value.source.mode === mode && history.value.market.source.mode === mode && history.value.market.id === id;
   const selected = history.value?.actions.find(action => action.id === actionId) ?? null;
   const liveId = history.value?.market.liveMarketId ?? id;
@@ -465,10 +466,10 @@ function ConsumerMarketPage({ id, mode, refresh, changed, transport, section, in
   return <div className="au-consumer-detail au-trading-page">
     <button type="button" className="back" onClick={() => go('/markets')}>← Explore</button>
     {history.loading ? <p className="muted">Loading market history…</p> : history.error && !history.value && mode === 'LIVE' && measurementMarket.value?.id === id ? <>
-      <Notice tone="orange">The chart is temporarily unavailable. Market actions use fresh Devnet quotes and remain available when current market state can be verified. {history.error}</Notice>
+      <Notice tone="orange">The chart is temporarily unavailable. Market actions use fresh Devnet quotes and remain available when current market state can be verified. {history.error} <button type="button" className="button button-dark" onClick={() => setMarketLoadRetry(value => value + 1)}>Retry chart and market data</button></Notice>
       <div className="au-detail-heading"><span className="eyebrow blue-text">MARKET</span><h1>{marketDisplayTitle(measurementMarket.value.keyword)}<span className="title-dot">.</span></h1></div>
       <div className="au-trading-actions"><ActionTabs value={section} onChange={tab => go(`${marketHref(id)}${tab === 'call' ? '' : `/${tab === 'liquidity' ? 'lp' : tab}`}`)} /><MarketPage id={id} refresh={refresh} changed={changed} mode={transport} section={section} compact /></div>
-    </> : history.error && !history.value ? <ErrorBox message={history.error} /> : !history.value ? <Empty title="Market not found" /> : !validHistory ? <ErrorBox message="Market history identity or mode does not match this route." /> : <>
+    </> : history.error && !history.value ? <><ErrorBox message={history.error} /><button type="button" className="button button-dark" onClick={() => setMarketLoadRetry(value => value + 1)}>Retry market data</button></> : !history.value ? <Empty title="Market not found" /> : !validHistory ? <ErrorBox message="Market history identity or mode does not match this route." /> : <>
       {history.stale && <Notice tone="orange">Live chart update failed. {history.value.period !== period ? `Showing the previous ${history.value.period} period while ${period} is unavailable. ` : ''}Last successful refresh: {history.refreshedAtMs ? new Date(history.refreshedAtMs).toLocaleString('en-US', { timeZone: 'UTC' }) + ' UTC' : 'unknown'}. {history.error}</Notice>}
       {history.value.period !== period && !history.refreshing && !history.stale && <Notice tone="orange">Showing the previous {history.value.period} period. The selected {period} period will load when this tab is visible.</Notice>}
       {history.refreshing && <p className="tiny muted" role="status">{history.value.period !== period ? `Loading ${period}; showing ${history.value.period} until it arrives…` : 'Updating live chart…'}</p>}
