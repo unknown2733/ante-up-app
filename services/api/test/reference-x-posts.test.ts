@@ -54,3 +54,16 @@ test('missing or malformed provider metrics never become fabricated zeroes', asy
     finally { store.close(); }
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test('provider spending cap is reported without retaining a failed response as observations', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ante-up-x-posts-'));
+  const dbPath = join(dir, 'api.sqlite');
+  try {
+    const fetcher = async () => new Response(JSON.stringify({ type: 'https://api.x.com/2/problems/spend-cap-reached' }), { status: 403 });
+    await assert.rejects(collectXReferenceLikes({ dbPath, bearerToken: 'test-token',
+      fetcher: fetcher as typeof fetch }), /X_SPEND_CAP_REACHED/);
+    const store = new ReferenceObservationStore(dbPath);
+    try { assert.deepEqual(store.latest(), []); }
+    finally { store.close(); }
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

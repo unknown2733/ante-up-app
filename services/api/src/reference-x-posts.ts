@@ -21,8 +21,23 @@ export async function collectXReferenceLikes(input: {
   url.searchParams.set('tweet.fields', 'public_metrics');
   const response = await (input.fetcher ?? fetch)(url.toString(), {
     headers: { Authorization: `Bearer ${input.bearerToken}` }, cache: 'no-store',
+    signal: AbortSignal.timeout(15_000),
   });
-  if (!response.ok) throw new Error(`X_PROVIDER_HTTP_${response.status}`);
+  if (!response.ok) {
+    // Keep the provider response out of logs: it may include account or query data.
+    // Counts and Post lookup share the same account-level spending limit.
+    if (response.status === 403) {
+      let problem: unknown = null;
+      try { problem = await response.json(); } catch {}
+      const detail: { type?: unknown; code?: unknown } = problem && typeof problem === 'object'
+        ? problem as { type?: unknown; code?: unknown } : {};
+      const type = typeof detail.type === 'string' ? detail.type.toLowerCase() : '';
+      const code = typeof detail.code === 'string' ? detail.code.toLowerCase().replaceAll('_', '-') : '';
+      if (type === 'spend-cap-reached' || type.endsWith('/spend-cap-reached') || code === 'spend-cap-reached')
+        throw new Error('X_SPEND_CAP_REACHED');
+    }
+    throw new Error(`X_PROVIDER_HTTP_${response.status}`);
+  }
   const raw = Buffer.from(await response.arrayBuffer());
   if (raw.byteLength > 2_000_000) throw new Error('X_RESPONSE_TOO_LARGE');
   let parsed: unknown;

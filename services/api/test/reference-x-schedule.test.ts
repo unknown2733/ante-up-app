@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -38,5 +39,21 @@ test('failed or uncertain X provider call consumes its slot and is not retried a
     assert.deepEqual(await runBoundedXReferenceLikes({ dbPath, bearerToken: 'test-token',
       fetcher: fetcher as typeof fetch, nowMs }), { status: 'SKIPPED', reason: 'MIN_INTERVAL' });
     assert.equal(calls, 1);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('spending-cap rejection is preserved as a distinct monitorable failure', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ante-up-x-budget-'));
+  const dbPath = join(dir, 'api.sqlite');
+  try {
+    const fetcher = async () => new Response(JSON.stringify({ type: 'spend-cap-reached' }), { status: 403 });
+    await assert.rejects(runBoundedXReferenceLikes({ dbPath, bearerToken: 'test-token',
+      fetcher: fetcher as typeof fetch, nowMs: () => Date.parse('2026-11-03T00:00:00Z') }), /X_SPEND_CAP_REACHED/);
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      const row = db.prepare('SELECT status,error_code FROM reference_x_requests').get();
+      assert.equal(row?.status, 'FAILED');
+      assert.equal(row?.error_code, 'X_SPEND_CAP_REACHED');
+    } finally { db.close(); }
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
