@@ -1,6 +1,6 @@
 import type { MarketView } from '../../../contracts/types';
 
-type MarketStatusInput = Pick<MarketView, 'phase' | 'dataStatus' | 'price'>;
+type MarketStatusInput = Pick<MarketView, 'phase' | 'dataStatus' | 'price' | 'priceReadiness'>;
 type Tone = 'green' | 'orange' | 'red';
 
 const labels: Record<MarketView['dataStatus'], { label: string; tone: Tone }> = {
@@ -12,6 +12,8 @@ const labels: Record<MarketView['dataStatus'], { label: string; tone: Tone }> = 
 
 /** A VALID on-chain snapshot can age out before a fresh executable price exists. */
 export function marketStatusView(market: MarketStatusInput): { label: string; tone: Tone; delayed: boolean } {
+  if(market.priceReadiness?.state==='SYNCING')return {label:'Syncing latest observation',tone:'orange',delayed:true};
+  if(market.priceReadiness?.state==='STALE')return {label:'Observation delayed',tone:'red',delayed:true};
   if (market.phase === 'INDEXED' && market.dataStatus === 'VALID' && market.price === null) {
     return { label: 'Index price unavailable', tone: 'red', delayed: true };
   }

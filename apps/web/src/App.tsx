@@ -9,6 +9,7 @@ import type { FreeOutcome, FreeProgress, FreeRequest, FreeReview } from './liveF
 import { FinancialFaucet, FinancialMarket, FinancialRegistration, PrivateFinancialPanel } from './Financial';
 import { displayConsumerError } from './consumer-ui/copy';
 import { marketStatusView } from './marketStatus';
+import {createMarketRefresh,mergeMarketRead,currentMarketRead,type ScopedMarketRead} from './marketRefresh';
 import type { ConsumerAction, ConsumerMarket, ConsumerMode, ConsumerNote, ConsumerPeriod, ConsumerSeriesKind, MarketHistory } from '../../../contracts/consumer';
 import { ConsumerShell, MarketDiscovery, ActionTabs, mergeConsumerMarkets } from './consumer-ui';
 import type { ActionTab, ConsumerRoute } from './consumer-ui';
@@ -194,19 +195,24 @@ function LiveFreeAction({ market, recordId, mode, profileLoading, limitReached, 
 function MarketPage({ id, refresh, changed, mode, section = 'call', compact = false }: { id: string; refresh: number; changed: () => void; mode: Mode | null; section?: ActionTab; compact?: boolean }) {
   const [marketRetry, setMarketRetry] = useState(0);
   const [profileRetry, setProfileRetry] = useState(0);
-  useEffect(() => {
-    const refreshCurrentMarket = () => {
-      if (document.visibilityState === 'visible') setMarketRetry(value => value + 1);
-    };
-    const timer = window.setInterval(refreshCurrentMarket, 60_000);
-    document.addEventListener('visibilitychange', refreshCurrentMarket);
-    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', refreshCurrentMarket); };
-  }, [id]);
-  const market = useRetainedData(async () => {
-    const response = await api.getMarket(id);
-    if (response.data && response.data.id !== id) throw new Error('Market identity could not be verified.');
-    return response;
-  }, `${mode}:${id}`, `${refresh}:${marketRetry}`);
+  const identity=`${mode}:${id}`,revision=`${refresh}:${marketRetry}`;
+  const revisionRef=useRef(revision);revisionRef.current=revision;
+  const readerRef=useRef<ReturnType<typeof createMarketRefresh>|null>(null);
+  const previousRefresh=useRef({identity,revision});
+  const [marketState,setMarketState]=useState<ScopedMarketRead>({identity,revision,value:null,error:'',loading:true});
+  useEffect(()=>{
+    const reader=createMarketRefresh({id,load:()=>api.getMarket(id),visible:()=>document.visibilityState==='visible',
+      publish:state=>setMarketState(previous=>mergeMarketRead(previous,state,identity,revisionRef.current))});
+    readerRef.current=reader;
+    const visible=()=>{if(document.visibilityState==='visible')void reader.retry();};
+    document.addEventListener('visibilitychange',visible);void reader.retry();
+    return ()=>{reader.stop();readerRef.current=null;document.removeEventListener('visibilitychange',visible);};
+  },[identity,id]);
+  useEffect(()=>{
+    const previous=previousRefresh.current;previousRefresh.current={identity,revision};
+    if(previous.identity===identity&&previous.revision!==revision)void readerRef.current?.retry();
+  },[identity,revision]);
+  const market=currentMarketRead(marketState,identity,revision);
   const connected = useConnectedWallet(walletClient);
   const walletAddress = connected?.account.address ?? null;
   const [profileRefresh, setProfileRefresh] = useState(0);
@@ -253,7 +259,7 @@ function MarketPage({ id, refresh, changed, mode, section = 'call', compact = fa
   const duplicate = !open && profile.value?.openRecords.some((record) => record.marketId === m.id);
   return <div className={`page${compact ? ' au-order-page' : ''}`}>
     {refreshBlocked && <Notice tone={market.error ? 'red' : 'blue'}>{market.error ? <><span>Could not verify the latest market data. New actions are blocked. {market.error}</span> <button type="button" className="button button-dark" onClick={() => setMarketRetry(value => value + 1)}>Retry market data</button></> : 'Refreshing market data. New actions are temporarily blocked.'}</Notice>}
-    {status?.delayed && <Notice tone="red">A current verified index price is unavailable. Paid quotes resume after the index is verified again. Chips stay available; taking one back now may record N/A.</Notice>}
+    {status?.delayed && !refreshBlocked && <Notice tone={m.priceReadiness?.state==='SYNCING'?'orange':'red'}><span role="status">{m.priceReadiness?.state==='SYNCING'?'Syncing the latest observation. Paid quotes are paused while we verify it. Checking again automatically.':m.priceReadiness?.state==='STALE'?'The latest observation is delayed. Paid quotes resume after fresh data is verified.':'A current verified index price is unavailable. Paid quotes resume after the index is verified again.'} {m.priceReadiness?.dataThrough?`Last observation: ${date(m.priceReadiness.dataThrough)}. `:''}</span><button type="button" className="button button-dark" onClick={()=>setMarketRetry(value=>value+1)}>Retry market data</button></Notice>}
     {compact && <div className="au-order-context"><div className="tag-row"><Tag tone="blue">{phaseText[m.phase]}</Tag><Tag tone={status!.tone}>{status!.label}</Tag>{!m.supported && <Tag tone="orange">Data coverage pending</Tag>}</div>{section !== 'call' && <div className="au-order-price"><span>{m.price?.kind === 'curve' ? 'Curve quote' : 'Index reference'}</span><strong>{m.price ? `${atoms(m.price.atoms)} tUSD` : 'Unavailable'}</strong><small>Final price confirmed in your quote</small></div>}{section === 'liquidity' && <p className="tiny muted">Reference price and vault NAV are separate. Load your balances below for current vault NAV and shares.</p>}</div>}
     {!compact && <><div className="detail-title"><span className="eyebrow blue-text">MARKET</span><div className="tag-row"><Tag tone="blue">{phaseText[m.phase]}</Tag><Tag tone={status!.tone}>{status!.label}</Tag>{!m.supported && <Tag tone="orange">Data coverage pending</Tag>}</div></div>
     <div className="detail-grid"><div className="metric-card primary-metric"><span className="eyebrow">{m.price?.kind === 'curve' ? 'Curve quote' : 'Index reference'}</span><strong>{m.price ? atoms(m.price.atoms) : '—'}<small>{m.price ? ' tUSD' : ''}</small></strong><p>{isFixture ? 'Sample reference · not an execution price' : m.price?.executable ? 'Published snapshot · rechecked at execution' : 'Reference only · unavailable for execution'}</p></div><div className="metric-card"><span className="eyebrow">Fixed price cap</span><strong>{m.anchor ? `${atoms(m.anchor.maxPriceAtoms)} tUSD` : '—'}</strong><p>{m.anchor ? 'Graduation anchor' : 'Before graduation / no anchor'}</p></div></div>
