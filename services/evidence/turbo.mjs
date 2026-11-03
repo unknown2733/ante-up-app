@@ -53,9 +53,12 @@ export async function retryTurboRead(read,code,{attempts=3,wait=ms=>new Promise(
 // turbo is an authenticated @ardrive/turbo-sdk client. receiptVerifier must
 // implement the allowlisted service key + receipt-version signature rules.
 export function createTurboStorageAdapter({turbo,fetcher=globalThis.fetch,
-  gatewayUrl='https://turbo-gateway.com',arweaveUrl='https://arweave.net',receiptVerifier,inclusionVerifier}) {
+  gatewayUrl='https://turbo-gateway.com',arweaveUrl='https://arweave.net',receiptVerifier,inclusionVerifier,
+  maxVerifiedContentBytes=64*1024*1024}) {
   check(turbo && typeof turbo.upload === 'function');
   check(typeof fetcher === 'function' && typeof receiptVerifier === 'function','RECEIPT_VERIFIER_REQUIRED');
+  check(Number.isSafeInteger(maxVerifiedContentBytes) && maxVerifiedContentBytes>0 &&
+    maxVerifiedContentBytes<=64*1024*1024,'INVALID_CONTENT_CACHE_LIMIT');
   // Parent confirmation is mutable. Share only short-lived reads across items
   // in one bundle; never persist it with the immutable inclusion cache.
   const parentStatuses=new Map();
@@ -71,6 +74,7 @@ export function createTurboStorageAdapter({turbo,fetcher=globalThis.fetch,
       let status;
       try{status=await fetcher(statusUrl,{headers:{Accept:'application/json','Cache-Control':'no-cache'},cache:'no-store',signal:AbortSignal.timeout(45_000)});}
       catch(error){if(error?.name==='TimeoutError'||error?.name==='AbortError')throw Error('PARENT_STATUS_TIMEOUT');throw error;}
+      if(status.status===429||status.status>=500)throw Error('PARENT_STATUS_UNAVAILABLE');
       if(!status.ok||status.status===202)return null;
       const type=status.headers?.get('content-type');
       if(type&&!type.toLowerCase().includes('json')){
@@ -82,7 +86,12 @@ export function createTurboStorageAdapter({turbo,fetcher=globalThis.fetch,
       return json.number_of_confirmations;
     })();
     parentStatuses.set(parent,{observedAt:current,pending});
-    try{return await pending;}catch(error){parentStatuses.delete(parent);throw error;}
+    try{return await pending;}catch(error){
+      parentStatuses.delete(parent);
+      if(error?.name==='TimeoutError'||error?.name==='AbortError')throw Error('PARENT_STATUS_TIMEOUT');
+      if(error instanceof TypeError && error.message==='fetch failed')throw Error('PARENT_STATUS_UNAVAILABLE');
+      throw error;
+    }
   }
   const raw = async id => {
     check(itemId(id));
@@ -116,7 +125,8 @@ export function createTurboStorageAdapter({turbo,fetcher=globalThis.fetch,
     },
     async fetch(ref) {
       const cached=verifiedContentCache.get(ref.arweaveItemId);
-      if(cached && cached.contentHash===ref.contentHash)return cached.content;
+      if(cached && cached.contentHash===ref.contentHash &&
+        cached.parentTransactionId===ref.parentTransactionId)return cached.content;
       if(inclusionVerifier && typeof inclusionVerifier.readVerified==='function'){
         const bytes=await inclusionVerifier.readVerified(ref);
         check(bytes && sha256(bytes)===ref.contentHash,'CONTENT_MISMATCH');
@@ -143,13 +153,18 @@ export function createTurboStorageAdapter({turbo,fetcher=globalThis.fetch,
       const parent=inclusionVerifier?ref.parentTransactionId:response.headers.get('x-ar-io-root-transaction-id');
       check(parent===ref.parentTransactionId,'PARENT_MISMATCH');
       const content=response.bytes.toString('utf8');
-      if(inclusionVerifier && response.included){
+      const contentBytes=Buffer.byteLength(content,'utf8');
+      // A single oversized calculation must not flush every small raw item.
+      // Keep at most 64 MiB: a normal 28-day packet can be reused by the SAS
+      // semantic gate without downloading its already verified bundles again.
+      if(inclusionVerifier && response.included && contentBytes<=maxVerifiedContentBytes){
         const prior=verifiedContentCache.get(ref.arweaveItemId);
         if(prior)verifiedContentBytes-=prior.bytes;
-        const bytes=Buffer.byteLength(content,'utf8');
-        verifiedContentCache.set(ref.arweaveItemId,{contentHash:ref.contentHash,content,bytes});
+        const bytes=contentBytes;
+        verifiedContentCache.set(ref.arweaveItemId,{contentHash:ref.contentHash,
+          parentTransactionId:ref.parentTransactionId,content,bytes});
         verifiedContentBytes+=bytes;
-        while(verifiedContentCache.size>2000 || verifiedContentBytes>16*1024*1024){
+        while(verifiedContentCache.size>2000 || verifiedContentBytes>maxVerifiedContentBytes){
           const oldest=verifiedContentCache.keys().next().value;
           verifiedContentBytes-=verifiedContentCache.get(oldest).bytes;
           verifiedContentCache.delete(oldest);

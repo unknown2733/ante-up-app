@@ -118,3 +118,58 @@ test('parent confirmation timeout has a distinct error and is retried on the nex
  assert.equal((await adapter.verify(ref,receipt)).confirmations,21);
  assert.equal(calls,2);
 });
+
+test('verified content cache cannot authenticate a different parent reference',async()=>{
+ let reads=0;
+ const adapter=createTurboStorageAdapter({turbo:{upload:async()=>({id:item})},receiptVerifier:async()=>true,
+  inclusionVerifier:{async readVerified(ref){reads++;if(ref.parentTransactionId!==parent)throw Error('BUNDLE_ITEM_MISSING');return Buffer.from(content);}},
+  fetcher:async()=>({ok:true,json:async()=>({number_of_confirmations:21})})});
+ const ref={contentHash,arweaveItemId:item,parentTransactionId:parent};
+ await adapter.verify(ref,{id:item});assert.equal(await adapter.fetch(ref),content);assert.equal(reads,1);
+ await assert.rejects(()=>adapter.fetch({...ref,parentTransactionId:'z'.repeat(43)}),/BUNDLE_ITEM_MISSING/);
+ assert.equal(reads,2);
+});
+
+test('parent status network and body timeouts retry, but malformed status remains an integrity error',async()=>{
+ let mode='network',calls=0;
+ const adapter=createTurboStorageAdapter({turbo:{upload:async()=>({id:item})},receiptVerifier:async()=>true,
+  inclusionVerifier:{async readVerified(){return Buffer.from(content);}},
+  fetcher:async()=>{calls++;if(mode==='network')throw new TypeError('fetch failed');
+   if(mode==='unavailable')return {ok:false,status:503};
+   return {ok:true,json:async()=>{
+    if(mode==='timeout')throw Object.assign(Error('body timeout'),{name:'TimeoutError'});
+    return {number_of_confirmations:mode==='invalid'?-1:21};
+   }};
+  }});
+ const ref={contentHash,arweaveItemId:item,parentTransactionId:parent};
+ await assert.rejects(()=>adapter.verify(ref,{id:item}),/PARENT_STATUS_UNAVAILABLE/);
+ mode='unavailable';await assert.rejects(()=>adapter.verify(ref,{id:item}),/PARENT_STATUS_UNAVAILABLE/);
+ mode='timeout';await assert.rejects(()=>adapter.verify(ref,{id:item}),/PARENT_STATUS_TIMEOUT/);
+ mode='invalid';await assert.rejects(()=>adapter.verify(ref,{id:item}),/INVALID_CONFIRMATIONS/);
+ mode='valid';assert.equal((await adapter.verify(ref,{id:item})).confirmations,21);assert.equal(calls,5);
+});
+
+test('oversized verified content does not evict small items and cache bytes remain bounded',async()=>{
+ const contents=new Map([['small','a'.repeat(40)],['large','b'.repeat(101)],['second','c'.repeat(80)]]),reads=new Map();
+ const ref=id=>({arweaveItemId:id,parentTransactionId:parent,contentHash:sha256(Buffer.from(contents.get(id)))});
+ const adapter=createTurboStorageAdapter({turbo:{upload:async()=>({})},receiptVerifier:async()=>true,maxVerifiedContentBytes:100,
+  inclusionVerifier:{async readVerified(r){reads.set(r.arweaveItemId,(reads.get(r.arweaveItemId)??0)+1);return Buffer.from(contents.get(r.arweaveItemId));}},
+  fetcher:async()=>({ok:true,json:async()=>({number_of_confirmations:21})})});
+ await adapter.verify(ref('small'),{id:'small'});await adapter.verify(ref('large'),{id:'large'});
+ assert.equal(await adapter.fetch(ref('small')),contents.get('small'));assert.equal(reads.get('small'),1);
+ await adapter.fetch(ref('large'));assert.equal(reads.get('large'),2);
+ await adapter.verify(ref('second'),{id:'second'});
+ await adapter.fetch(ref('small'));assert.equal(reads.get('small'),2);
+});
+
+test('a calculation larger than the old 16 MiB cache is reused without another bundle read',async()=>{
+ const large='x'.repeat(17*1024*1024),hash=sha256(Buffer.from(large));let reads=0;
+ const adapter=createTurboStorageAdapter({turbo:{upload:async()=>({})},receiptVerifier:async()=>true,
+  inclusionVerifier:{async readVerified(){reads++;return Buffer.from(large);}},
+  fetcher:async()=>({ok:true,json:async()=>({number_of_confirmations:21})})});
+ const ref={arweaveItemId:item,parentTransactionId:parent,contentHash:hash};
+ await adapter.verify(ref,{id:item});assert.equal((await adapter.fetch(ref)).length,large.length);
+ assert.equal(reads,1);
+ assert.throws(()=>createTurboStorageAdapter({turbo:{upload:async()=>({})},receiptVerifier:async()=>true,
+  maxVerifiedContentBytes:64*1024*1024+1}),/INVALID_CONTENT_CACHE_LIMIT/);
+});
