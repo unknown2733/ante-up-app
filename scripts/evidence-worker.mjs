@@ -4,7 +4,7 @@ import {spawn} from 'node:child_process';
 import {evidenceRetryDelaySeconds} from './evidence-retry-policy.mjs';
 import {join} from 'node:path';
 import {setTimeout as sleep} from 'node:timers/promises';
-import {ReadOnlyProjection,readJson,durableJson,pendingRecords,evidenceScope} from '../services/evidence/worker-support.mjs';
+import {ReadOnlyProjection,readJson,durableJson,pendingRecords,evidenceScope,evidenceWorkSummary,isCompletionPending,shouldReconcileCompletion} from '../services/evidence/worker-support.mjs';
 import {reconcileIntake} from '../services/evidence/intake.mjs';
 import {archiveLinkedCompletedJobs} from '../services/evidence/archive.mjs';
 import {heartbeat,checkStorage} from './runtime-status.mjs';
@@ -48,7 +48,7 @@ const guardTimer=preflight?null:setInterval(()=>{if(!stopping)void runAdmissionG
 async function run(id,script='scripts/prove-devnet.mjs'){
  return new Promise(resolve=>{
   child=spawn(process.execPath,script==='scripts/prove-devnet.mjs'?
-   [script,'--supervised',preflight?'--preflight':'--execute']:[script],{
+   [script,'--supervised',preflight?'--preflight':'--execute']:[script,'--reconcile-completion'],{
    env:{...process.env,ANTE_UP_RECORD_ID:id},stdio:['ignore','inherit','inherit'],windowsHide:true});
   const timeout=setTimeout(()=>child?.kill('SIGTERM'),jobTimeout);
   child.once('error',()=>{clearTimeout(timeout);child=null;resolve(1);});
@@ -75,18 +75,26 @@ try{
   if(!preflight)await checkStorage(directory,{existingObligations:autoDiscover});
   const due=pendingRecords(records,jobs,now,{limit:200,allowlist})
    .filter(r=>preflight||!state.attempts[r.id]?.retryAt||state.attempts[r.id].retryAt<=now).slice(0,limit);
-  detail.completed=records.filter(r=>r.proofId).length;
-  detail.held=Object.values(state.attempts).filter(a=>a.exitCode!==0).length;
+  Object.assign(detail,evidenceWorkSummary(records,jobs,state.attempts));
   let failedInPass=false;
+  let latestJobs=jobs;
   for(const record of due){
    if(stopping)break;
    detail.state=preflight?'PREFLIGHT':'PROCESSING';detail.activeRecord=record.id;
    console.log(JSON.stringify({state:detail.state,recordId:record.id}));
-   const exitCode=await run(record.id);
+   const reconcile=!preflight&&shouldReconcileCompletion(jobs[`proof:${record.id}:original`]);
+   const exitCode=await run(record.id,reconcile?'scripts/verify-devnet-proof.mjs':'scripts/prove-devnet.mjs');
    if(exitCode!==0)failedInPass=true;
-   if(!preflight){state.attempts[record.id]={at:Math.floor(Date.now()/1000),exitCode,
-     retryAt:Math.floor(Date.now()/1000)+evidenceRetryDelaySeconds(exitCode)};await durableJson(statePath,state);}
+   if(!preflight){
+    latestJobs=await readJson(join(evidence,'jobs.json'),{});
+    state.attempts[record.id]={at:Math.floor(Date.now()/1000),exitCode,
+     retryAt:Math.floor(Date.now()/1000)+evidenceRetryDelaySeconds(exitCode,
+      {completionPending:isCompletionPending(latestJobs[`proof:${record.id}:original`])})};
+    await durableJson(statePath,state);
+   }
   }
+  if(!preflight)Object.assign(detail,evidenceWorkSummary(projection.records('devnet',ANTE_UP_PROGRAM_ADDRESS),
+   latestJobs,state.attempts));
   detail.state=detail.admissionGuard==='UNSAFE'?'ADMISSION_UNSAFE':'WAITING';detail.activeRecord=null;
   if(!preflight)await heartbeat('evidence',detail);
   if(preflight||args.includes('--once')){if(failedInPass)process.exitCode=1;break;}

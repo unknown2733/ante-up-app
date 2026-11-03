@@ -8,6 +8,7 @@ import { FileCandidateRepository } from '../data/publisher.mjs';
 import { FileJobRepository, canonical, payloadHash } from './index.mjs';
 import { createEvidenceRuntime, createSemanticReaders, projectionReaders } from './runtime.mjs';
 import { verifySemanticPacket } from './semantic.mjs';
+import {shouldReconcileCompletion} from './worker-support.mjs';
 
 const start=Math.floor(1_700_000_000/300)*300,end=start+HISTORY_MINUTES*60;
 const marketId=ANTE_UP_PROGRAM_ADDRESS, queryHash='a'.repeat(64);
@@ -76,9 +77,20 @@ test('real raw repository to candidate to archived packet; completion reconciles
     await jobRepo.write(jobs);
     const first=await runtime.complete(job.id);
     assert.equal(first.state,'SUBMITTED');assert.equal(sends,1);
+    assert.equal((await runtime.complete(job.id)).state,'SUBMITTED');assert.equal(sends,1);
+    // Recovered SAS-only crash with PREPARED is a separate fixture: the first
+    // program completion must still be submitted, rather than read forever.
+    const prepared=await jobRepo.read();prepared[job.id].completion={state:'PREPARED'};
+    await jobRepo.write(prepared);
+    assert.equal(shouldReconcileCompletion(prepared[job.id]),false);
+    assert.equal((await runtime.complete(job.id)).state,'SUBMITTED');assert.equal(sends,2);
+    const uncertain=await jobRepo.read();uncertain[job.id].completion={state:'REQUESTING',signature:null};
+    await jobRepo.write(uncertain);
+    assert.equal(shouldReconcileCompletion(uncertain[job.id]),true);
+    assert.equal((await runtime.complete(job.id)).state,'REQUESTING');assert.equal(sends,2);
     proofState={proofComplete:true,proofHash:payloadHash(payload)};
     const final=await runtime.complete(job.id);
-    assert.equal(final.state,'FINALIZED');assert.equal(sends,1);
+    assert.equal(final.state,'FINALIZED');assert.equal(sends,2);
     proofState={proofComplete:true,proofHash:'0'.repeat(64)};
     await assert.rejects(()=>runtime.complete(job.id),/ONCHAIN_PROOF_CONFLICT/);
   } finally {await rm(dir,{recursive:true,force:true});}

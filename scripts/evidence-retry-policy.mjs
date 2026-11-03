@@ -18,6 +18,7 @@ export function isTransientTurboRead(error) {
   return TURBO_READ_CODES.has(error?.message);
 }
 
-export function evidenceRetryDelaySeconds(exitCode) {
+export function evidenceRetryDelaySeconds(exitCode,{completionPending=false}={}) {
+  if(exitCode===0 && completionPending)return 60;
   return exitCode === 0 || exitCode === TURBO_READ_EXIT_CODE ? 300 : 3600;
 }
