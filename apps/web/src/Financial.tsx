@@ -10,6 +10,7 @@ import { displayConsumerError } from './consumer-ui/copy';
 import { marketDisplayTitle } from './consumer-ui/catalog';
 import { transactionHref } from './sharing/proofLinks';
 import './financialPresentation.css';
+import {marketSigningBlocked} from './financialSigning';
 
 function atomAmount(input: string): string {
   const value = input.trim();
@@ -116,6 +117,7 @@ export function FinancialMarket({ market, section, onFinalized, refreshBlocked =
   const capability = market.capabilities[action as Action];
   const stageProblem = capability?.allowed !== true ? `${actionLabel[action]} unavailable: ${displayConsumerError(capability?.reason, 'Execution unavailable')}` : null;
   const unavailable = refreshBlocked ? 'Refreshing market conditions. Wait for a current quote.' : stageProblem ?? modeProblem;
+  const signingBlocked=marketSigningBlocked({busy,unavailable,pending,canExecute:!!liveFinancialFlow?.canExecute(action),remaining:quoteRemaining});
   const activePosition = portfolio?.positions.filter((item) => item.marketId === market.id && item.owner === wallet?.address && item.status === 'OPEN') ?? [];
   const unpaidClaims = portfolio?.claims.filter((item) => item.marketId === market.id && item.owner === wallet?.address && item.status === 'UNPAID') ?? [];
   const emptySelection = portfolio?.wallet === wallet?.address && portfolio && !modeProblem && !refreshBlocked && !busy && !error
@@ -156,7 +158,7 @@ export function FinancialMarket({ market, section, onFinalized, refreshBlocked =
     finally { setBusy(false); setProgress(null); }
   }
   async function execute() {
-    if (!liveFinancialFlow || !quote || busy || refreshBlocked) return;
+    if (!liveFinancialFlow || !quote || signingBlocked) return;
     setBusy(true); setError('');
     try {
       const result = await liveFinancialFlow.signReviewed(quote, setProgress);
@@ -197,7 +199,7 @@ export function FinancialMarket({ market, section, onFinalized, refreshBlocked =
     {!quote && !emptySelection && <button className="button button-blue full" disabled={busy || !!unavailable || !!pending} onClick={() => void getQuote()}>{busy && progress === 'QUOTING' ? 'Getting quote…' : `${actionLabel[action]} · review quote`}</button>}
     {quote && <div className="finance-quote">{!busy && <QuoteExpiry remaining={quoteRemaining} />}<h3>Review quote before signing</h3><div className="finance-facts"><Fact label="Action">{actionLabel[quote.intent.action]}</Fact>{quote.intent.action === 'openPro' && <><Fact label="Direction">{quote.intent.direction === 'long' ? 'Long' : 'Short'}</Fact><Fact label="Leverage">{Number(quote.intent.leverageBps) / 10000}×</Fact></>}<Fact label="Market · stage">{marketDisplayTitle(market.keyword)} · {quote.phase ?? 'N/A'}</Fact><Fact label="Price">{amount(quote.priceAtoms)} tUSD</Fact><Fact label="Gross amount">{amount(quote.grossAtoms)} tUSD</Fact><Fact label="Trading fee">{amount(quote.tradeFeeAtoms)} tUSD</Fact><Fact label="Prepaid time cost">{amount(quote.timePrepaidAtoms)} tUSD</Fact><Fact label="Maximum payment">{amount(quote.maxPaymentAtoms)} tUSD</Fact><Fact label="Minimum received">{amount(quote.minReceiveAtoms)}</Fact><Fact label="Maximum payout reserve">{amount(quote.maxPayoutAtoms)} tUSD</Fact><Fact label="Maturity">{date(quote.maturityAt)}</Fact><Fact label="Quote expiry">{date(quote.expiresAt)}</Fact><Fact label="Config · state version">{quote.configVersion} · {quote.stateVersion}</Fact><Fact label="Snapshot">{quote.snapshot?.sequence ?? 'N/A'}</Fact></div><p>A quote does not reserve capital. Execution checks current state again and may fail or require a new quote.</p>
       {!liveFinancialFlow?.canExecute(action) && <Notice>Signing is unavailable because this action's chain accounts or data verifier is not connected.</Notice>}
-      <div className="finance-buttons"><button className="button button-dark" disabled={busy || (quoteRemaining === 0 && (!!unavailable || !!pending))} onClick={() => quoteRemaining === 0 ? void getQuote() : setQuote(null)}>{quoteRemaining === 0 ? 'Get fresh quote' : 'Cancel'}</button><button className="button button-blue" disabled={busy || refreshBlocked || !liveFinancialFlow?.canExecute(action) || quoteRemaining === 0} onClick={() => void execute()}>{busy ? `${progress ?? 'Processing'}…` : 'Review and sign in wallet'}</button></div>
+      <div className="finance-buttons"><button className="button button-dark" disabled={busy || (quoteRemaining === 0 && (!!unavailable || !!pending))} onClick={() => quoteRemaining === 0 ? void getQuote() : setQuote(null)}>{quoteRemaining === 0 ? 'Get fresh quote' : 'Cancel'}</button><button className="button button-blue" disabled={signingBlocked} onClick={() => void execute()}>{busy ? `${progress ?? 'Processing'}…` : 'Review and sign in wallet'}</button></div>
     </div>}
   </section>;
 }
