@@ -405,10 +405,12 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
     if(drill){
       if(drill.kind!=='isolated-restore-drill'||drill.hashes!=='matched'||drill.servicesStarted!==false||drill.backupSha256!==receipt?.sha256)add('RESTORE_DRILL_MISMATCH','backup');
       age(Math.floor(Date.parse(drill.verifiedAt)/1000),c.backup.maxAgeSeconds,'RESTORE_DRILL_STALE','backup');
-      if(c.backup.requiredFiles){
+      if(c.backup.requiredFiles||'requiredFiles' in drill){
         const required=drill.requiredFiles;
-        const valid=Array.isArray(required)&&required.every(p=>safeRelative(p)&&p.includes('/')&&!/[\x00-\x1f]/.test(p))&&new Set(required).size===required.length;
-        if(!valid||c.backup.requiredFiles.some(path=>!required.includes(path)))add('RESTORE_REQUIREMENTS_MISSING','backup');
+        const valid=Array.isArray(required)&&required.length>0&&required.every(p=>safeRelative(p)&&p.includes('/')&&!/[\x00-\x1f]/.test(p))&&new Set(required).size===required.length;
+        if(!valid||c.backup.requiredFiles?.some(path=>!required.includes(path)))add('RESTORE_REQUIREMENTS_MISSING','backup');
+      }
+      if(c.backup.requiredFiles||'backupCreatedAt' in drill||'requiredFiles' in drill){
         // Re-copying/re-verifying an old artifact must not reset its recovery-point age.
         const created=typeof drill.backupCreatedAt==='string'?Date.parse(drill.backupCreatedAt):NaN;
         if(!Number.isFinite(created)||created>now||created>Date.parse(drill.verifiedAt))add('INPUT_INVALID','backup-created-at');

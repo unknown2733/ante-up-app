@@ -76,9 +76,10 @@ async function exclusiveJson(path,value) {
 
 export async function createBackup({config,keyFile,output,quiesced=false}) {
   check(quiesced===true,'QUIESCED_WRITERS_REQUIRED');
-  check(config.version===1&&typeof config.release==='string'&&config.release.length>0,'BACKUP_CONFIG_INVALID');
+  check(config.version===1&&typeof config.release==='string'&&config.release.trim().length>0,'BACKUP_CONFIG_INVALID');
   check(config.roots&&['state','secrets','deployment'].every(k=>typeof config.roots[k]==='string'),'BACKUP_ROOTS_REQUIRED');
-  check(Array.isArray(config.required)&&config.required.length>0&&config.required.every(safePath),'BACKUP_REQUIREMENTS_REQUIRED');
+  check(Array.isArray(config.required)&&config.required.length>0&&config.required.every(p=>safePath(p)&&p.includes('/'))&&
+    new Set(config.required.map(p=>p.toLowerCase())).size===config.required.length,'BACKUP_REQUIREMENTS_REQUIRED');
   const immutableSqlite=config.immutableSqlite??[];
   check(Array.isArray(immutableSqlite)&&immutableSqlite.every(path=>safePath(path)&&config.required.includes(path))&&
     new Set(immutableSqlite).size===immutableSqlite.length,'IMMUTABLE_SQLITE_CONFIG_INVALID');
@@ -176,11 +177,19 @@ export async function restoreDrill({input,keyFile,target,requiredFiles=[]}) {
       let position=0;
       async function read(n){const b=Buffer.alloc(n);let offset=0;while(offset<n){const r=await payload.read(b,offset,n-offset,position);check(r.bytesRead>0,'TRUNCATED_BACKUP');position+=r.bytesRead;offset+=r.bytesRead;}return b;}
       const n=(await read(4)).readUInt32BE();check(n>0&&n<=MAX_MANIFEST,'INVALID_MANIFEST_SIZE');manifest=JSON.parse((await read(n)).toString());
-      check(manifest.version===1&&Array.isArray(manifest.entries)&&manifest.entries.length>0&&Array.isArray(manifest.required),'INVALID_MANIFEST');
+      check(manifest&&manifest.version===1&&manifest.consistency==='operator-quiesced'&&
+        typeof manifest.release==='string'&&manifest.release.trim().length>0&&
+        typeof manifest.createdAt==='string'&&Number.isFinite(Date.parse(manifest.createdAt))&&
+        new Date(manifest.createdAt).toISOString()===manifest.createdAt&&
+        Array.isArray(manifest.entries)&&manifest.entries.length>0&&
+        Array.isArray(manifest.required)&&manifest.required.length>0&&
+        manifest.required.every(p=>safePath(p)&&p.includes('/'))&&
+        new Set(manifest.required.map(p=>p.toLowerCase())).size===manifest.required.length,'INVALID_MANIFEST');
       // Check today's recovery contract, not just the contract saved by an older backup.
       for(const path of requiredFiles)check(manifest.required.includes(path),'RESTORE_REQUIREMENT_NOT_DECLARED');
       const seen=new Set();
       for(const entry of manifest.entries){
+        check(entry&&typeof entry==='object'&&!Array.isArray(entry),'INVALID_MANIFEST_ENTRY');
         check(safePath(entry.path)&&entry.path.split('/').length>=2&&entry.path!=='.authenticated-payload'&&!seen.has(entry.path.toLowerCase()),'UNSAFE_ARCHIVE_PATH');
         check(Number.isSafeInteger(entry.bytes)&&entry.bytes>=0&&/^[a-f0-9]{64}$/.test(entry.sha256),'INVALID_MANIFEST_ENTRY');seen.add(entry.path.toLowerCase());
         const path=join(target,entry.path);check(inside(target,path),'UNSAFE_ARCHIVE_PATH');await mkdir(dirname(path),{recursive:true,mode:0o700});
