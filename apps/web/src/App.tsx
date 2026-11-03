@@ -9,7 +9,7 @@ import type { FreeOutcome, FreeProgress, FreeRequest, FreeReview } from './liveF
 import { FinancialFaucet, FinancialMarket, FinancialRegistration, PrivateFinancialPanel } from './Financial';
 import { displayConsumerError } from './consumer-ui/copy';
 import { marketStatusView } from './marketStatus';
-import {createMarketRefresh,type MarketReadState} from './marketRefresh';
+import {createMarketRefresh,mergeMarketRead,currentMarketRead,type ScopedMarketRead} from './marketRefresh';
 import type { ConsumerAction, ConsumerMarket, ConsumerMode, ConsumerNote, ConsumerPeriod, ConsumerSeriesKind, MarketHistory } from '../../../contracts/consumer';
 import { ConsumerShell, MarketDiscovery, ActionTabs, mergeConsumerMarkets } from './consumer-ui';
 import type { ActionTab, ConsumerRoute } from './consumer-ui';
@@ -195,16 +195,24 @@ function LiveFreeAction({ market, recordId, mode, profileLoading, limitReached, 
 function MarketPage({ id, refresh, changed, mode, section = 'call', compact = false }: { id: string; refresh: number; changed: () => void; mode: Mode | null; section?: ActionTab; compact?: boolean }) {
   const [marketRetry, setMarketRetry] = useState(0);
   const [profileRetry, setProfileRetry] = useState(0);
-  const identity=`${mode}:${id}:${refresh}:${marketRetry}`;
-  const [marketState,setMarketState]=useState<MarketReadState & {identity:string}>({identity,value:null,error:'',loading:true});
+  const identity=`${mode}:${id}`,revision=`${refresh}:${marketRetry}`;
+  const revisionRef=useRef(revision);revisionRef.current=revision;
+  const readerRef=useRef<ReturnType<typeof createMarketRefresh>|null>(null);
+  const previousRefresh=useRef({identity,revision});
+  const [marketState,setMarketState]=useState<ScopedMarketRead>({identity,revision,value:null,error:'',loading:true});
   useEffect(()=>{
     const reader=createMarketRefresh({id,load:()=>api.getMarket(id),visible:()=>document.visibilityState==='visible',
-      publish:state=>setMarketState({...state,identity})});
+      publish:state=>setMarketState(previous=>mergeMarketRead(previous,state,identity,revisionRef.current))});
+    readerRef.current=reader;
     const visible=()=>{if(document.visibilityState==='visible')void reader.retry();};
     document.addEventListener('visibilitychange',visible);void reader.retry();
-    return ()=>{reader.stop();document.removeEventListener('visibilitychange',visible);};
+    return ()=>{reader.stop();readerRef.current=null;document.removeEventListener('visibilitychange',visible);};
   },[identity,id]);
-  const market=marketState.identity===identity?marketState:{value:null,error:'',loading:true};
+  useEffect(()=>{
+    const previous=previousRefresh.current;previousRefresh.current={identity,revision};
+    if(previous.identity===identity&&previous.revision!==revision)void readerRef.current?.retry();
+  },[identity,revision]);
+  const market=currentMarketRead(marketState,identity,revision);
   const connected = useConnectedWallet(walletClient);
   const walletAddress = connected?.account.address ?? null;
   const [profileRefresh, setProfileRefresh] = useState(0);
