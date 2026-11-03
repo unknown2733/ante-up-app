@@ -41,3 +41,21 @@ test('accepted parent metadata waits for indexing without parsing text as JSON',
  }});
  assert.equal(await verifier.verify({arweaveItemId:id,parentTransactionId:id,contentHash:'b'.repeat(64)}),false);
 });
+
+test('metadata network failure is classified and an unsuccessful parent is not cached',async()=>{
+ const id='a'.repeat(43);let calls=0;
+ const verifier=createArweaveInclusionVerifier({fetcher:async()=>{
+  calls++;if(calls===1)throw new TypeError('fetch failed');
+  return {ok:true,status:202};
+ }});
+ const ref={arweaveItemId:id,parentTransactionId:id,contentHash:'b'.repeat(64)};
+ await assert.rejects(()=>verifier.readVerified(ref),/PARENT_METADATA_UNAVAILABLE/);
+ assert.equal(await verifier.readVerified(ref),null);assert.equal(calls,2);
+});
+
+test('parent metadata rate limits and server errors do not masquerade as unconfirmed inclusion',async()=>{
+ for(const status of [429,503]){
+  const id='a'.repeat(43),verifier=createArweaveInclusionVerifier({fetcher:async()=>({ok:false,status})});
+  await assert.rejects(()=>verifier.readVerified({arweaveItemId:id,parentTransactionId:id,contentHash:'b'.repeat(64)}),/PARENT_METADATA_UNAVAILABLE/);
+ }
+});

@@ -11,6 +11,7 @@ const check=(ok,code)=>{if(!ok)throw Error(code);};
 async function timeoutStage(work,code){
  try{return await work();}catch(error){
   if(error?.name==='TimeoutError'||error?.name==='AbortError')throw Error(code);
+  if(error instanceof TypeError && error.message==='fetch failed')throw Error(code.replace(/_TIMEOUT$/,'_UNAVAILABLE'));
   throw error;
  }
 }
@@ -22,6 +23,7 @@ export function createArweaveInclusionVerifier({fetcher=globalThis.fetch,maxBund
  async function loadParentBytes(id){
   if(verifiedParents.has(id))return verifiedParents.get(id);
   const txResponse=await timeoutStage(()=>fetcher(`https://arweave.net/tx/${id}`,{signal:AbortSignal.timeout(30000)}),'PARENT_METADATA_TIMEOUT');
+  if(txResponse.status===429||txResponse.status>=500)throw Error('PARENT_METADATA_UNAVAILABLE');
   // An accepted parent can be known to Turbo before Arweave exposes its JSON.
   if(!txResponse.ok||txResponse.status===202)return null;
   const raw=await timeoutStage(()=>txResponse.json(),'PARENT_METADATA_TIMEOUT');
@@ -30,6 +32,7 @@ export function createArweaveInclusionVerifier({fetcher=globalThis.fetch,maxBund
   check(await arweave.transactions.verify(new Transaction(raw)),'PARENT_SIGNATURE_INVALID');
   const bytes=await timeoutStage(async()=>{
    const response=await fetcher(`https://turbo-gateway.com/raw/${id}`,{signal:AbortSignal.timeout(120000)});
+   if(response.status===429||response.status>=500)throw Error('PARENT_BUNDLE_FETCH_UNAVAILABLE');
    if(!response.ok)return null;
    const chunks=[];let length=0;
    for await(const chunk of response.body){length+=chunk.length;check(length<=size,'BUNDLE_LENGTH_MISMATCH');chunks.push(Buffer.from(chunk));}
