@@ -83,6 +83,35 @@ test('a current X spending-cap failure is distinct from an unrelated HTTP 403',a
   assert.ok(!unknown.alerts.some(alert=>alert.code==='X_PROVIDER_SPEND_CAP'));
 });
 
+test('new drill metadata rejects old artifacts and partial reports even before requirements activation',async t=>{
+  const f=await fixture(t),path=f.config.backup.drillReport,drill=JSON.parse(await readFile(path,'utf8'));
+  assert.equal(f.config.backup.requiredFiles,undefined);
+  drill.backupCreatedAt=new Date(now-3*86400_000).toISOString();
+  drill.requiredFiles=['deployment/run-backup.sh'];await f.save(path,drill);
+  assert.ok((await collect(f.config,{now,fetcher:f.fetcher})).alerts.some(a=>a.code==='BACKUP_ARTIFACT_STALE'));
+  delete drill.backupCreatedAt;await f.save(path,drill);
+  assert.ok((await collect(f.config,{now,fetcher:f.fetcher})).alerts.some(a=>a.id==='INPUT_INVALID:backup-created-at'));
+  drill.backupCreatedAt=new Date(now-6000).toISOString();drill.requiredFiles=null;await f.save(path,drill);
+  assert.ok((await collect(f.config,{now,fetcher:f.fetcher})).alerts.some(a=>a.code==='RESTORE_REQUIREMENTS_MISSING'));
+  delete drill.requiredFiles;await f.save(path,drill);
+  assert.deepEqual((await collect(f.config,{now,fetcher:f.fetcher})).alerts,[]);
+});
+
+test('failed preparation or PC drill leaves prior success stale instead of resolving backup alerts',async t=>{
+  const f=await fixture(t),copyPath=f.config.backup.copyReceipt,drillPath=f.config.backup.drillReport;
+  const copy=JSON.parse(await readFile(copyPath,'utf8')),drill=JSON.parse(await readFile(drillPath,'utf8'));
+  // A failed worker publishes no replacement. The previous reports age out naturally.
+  const later=now+3*86400_000;
+  const failed=await collect(f.config,{now:later,fetcher:f.fetcher});
+  assert.ok(failed.alerts.some(a=>a.code==='BACKUP_COPY_STALE'));
+  assert.ok(failed.alerts.some(a=>a.code==='RESTORE_DRILL_STALE'));
+  // A new copy with an old successful drill must also remain a failure.
+  copy.sha256='b'.repeat(64);copy.verifiedAt=new Date(later).toISOString();await f.save(copyPath,copy);
+  const mismatch=await collect(f.config,{now:later,fetcher:f.fetcher});
+  assert.ok(mismatch.alerts.some(a=>a.code==='RESTORE_DRILL_MISMATCH'));
+  assert.deepEqual(JSON.parse(await readFile(drillPath,'utf8')),drill);
+});
+
 test('publisher snapshot rent warning scales with approved market count and remaining runway',async t=>{
   const f=await fixture(t);
   f.config.snapshotFunding={rentLamports:'1991360',reserveLamports:'500000000',

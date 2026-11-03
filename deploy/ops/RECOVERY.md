@@ -19,6 +19,41 @@ The report includes `backupCreatedAt` from the authenticated manifest and
 are not added to the report. The report is local operational evidence, not a
 cryptographic attestation of the PC or its physical separation.
 
+Authenticated manifests still need a complete version, release, canonical creation
+time, quiescence marker and nonempty, unambiguous required list. An incomplete
+manifest fails the drill and its target is removed. Fresh verification does not
+make an old artifact recent: when a report includes the new creation metadata,
+the monitor validates its age even before `backup.requiredFiles` is activated.
+Legacy reports without either new field keep their existing verification-age
+checks until the full coverage gate is activated.
+
+Run the isolated failure matrix with:
+
+```sh
+node --test scripts/ops/recovery-failures.test.mjs scripts/ops/backup.test.mjs scripts/ops/monitor.test.mjs scripts/ops/telegram-chat.test.mjs
+```
+
+It uses synthetic data with 42 required roles and a five-path PC contract,
+including missing inputs, altered encrypted payloads, partial authenticated
+manifests and CLI failure output. Its image archive is synthetic bytes: these
+tests verify inclusion and file integrity, not Docker image loadability. They
+exercise the backup-tool boundary and report handling, not the host's live
+prepare wrapper, Windows scheduler or service quiescence. Keep the natural
+scheduled backup/drill and deployment image-inventory checks as separate gates.
+
+For an offline Linux check of a reviewed host prepare wrapper, run:
+
+```sh
+python3 scripts/ops/test-host-prepare-failures.py /path/to/reviewed-run-backup-cycle.sh
+```
+
+This copies the wrapper into a temporary fixture, rewrites its deployment paths,
+and stubs Docker, cron, systemd, filesystem-capacity and JSON-tool commands. It
+injects missing configuration and image-save failure, checks nonzero exit before
+any service action, and verifies the prior result remains intact. It prints the
+source hash so a changed host wrapper can be reviewed and retested. It never
+invokes the real prepare cycle or scheduled backup.
+
 The Keeper recovery bundle needs the active runner, its actual cron entry,
 market configuration, required RPC files and signer files. The examples list
 the primary RPC and publisher key in the general backup contract, and the
