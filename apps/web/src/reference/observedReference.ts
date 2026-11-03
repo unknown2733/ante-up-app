@@ -5,6 +5,7 @@ import { referenceConsumerReadApi } from './referenceData.ts';
 import { createIllustrativeHistory } from './illustrativeHistory.ts';
 
 const DAY = 86_400_000;
+const FIVE_MINUTES = 300_000;
 const PREFIX = 'reference:market:';
 const span = (period: MarketHistory['period']) => period === '1D' ? DAY : period === '1W' ? 7 * DAY : period === '1M' ? 30 * DAY : Infinity;
 const observationId = (item: ReferenceObservation) => `public:${item.rawSha256}:${item.observedAtMs}`;
@@ -32,7 +33,9 @@ export function mergeReferenceHistory(base: MarketHistory, observations: Referen
   const byTime = new Map<number, ReferenceObservation>();
   for (const item of matching) {
     const previous = byTime.get(item.observedAtMs);
-    if (!previous || item.capturedAtMs > previous.capturedAtMs) byTime.set(item.observedAtMs, item);
+    if (!previous || item.capturedAtMs > previous.capturedAtMs ||
+        item.capturedAtMs === previous.capturedAtMs && item.rawSha256 > previous.rawSha256)
+      byTime.set(item.observedAtMs, item);
   }
   for (const item of byTime.values()) known.set(item.observedAtMs, {
     atMs: item.observedAtMs, value: item.value, observationId: observationId(item),
@@ -44,7 +47,11 @@ export function mergeReferenceHistory(base: MarketHistory, observations: Referen
   const cutoff = market.source.asOfMs - span(base.period);
   const points = all.filter(point => point.atMs >= cutoff);
   const series: ConsumerSeries = { ...base.series[0], source: market.source, points,
-    gaps: points.slice(1).flatMap((point, i) => point.atMs - points[i].atMs > DAY
+    // The YouTube feed reserves UTC five-minute slots. Startup jitter does not
+    // make adjacent slots missing, but a skipped slot must break the line.
+    gaps: points.slice(1).flatMap((point, i) => (newest.kind === 'YOUTUBE_VIEWS' && !newest.reportedDate
+      ? Math.floor(point.atMs / FIVE_MINUTES) - Math.floor(points[i].atMs / FIVE_MINUTES) > 1
+      : point.atMs - points[i].atMs > DAY)
       ? [{ fromMs: points[i].atMs, toMs: point.atMs }] : []) };
   // A single measured point has no trend. Remove the optional preview as soon as
   // a second dated observation makes a measured trend possible.
@@ -89,7 +96,10 @@ export function createObservedReferenceReadApi(baseUrl: string, fetcher: typeof 
         const latest = latestBySlug.get(slug);
         return latest ? mergeReferenceHistory(base, [latest]) : base;
       }
-      return mergeReferenceHistory(base, observations);
+      // A successful history read can still precede the latest read (or carry
+      // an older revision of a dated report). Reconcile both by source time.
+      const latest = latestBySlug.get(slug);
+      return mergeReferenceHistory(base, latest ? [...observations, latest] : observations);
     },
   };
 }

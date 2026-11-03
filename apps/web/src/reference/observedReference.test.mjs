@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createObservedReferenceReadApi } from './observedReference.ts';
+import { createObservedReferenceReadApi, mergeReferenceHistory } from './observedReference.ts';
+import { referenceConsumerReadApi } from './referenceData.ts';
 
 test('new measured count refreshes the public catalog and chart without enabling trades', async () => {
   const capturedAtMs = Date.now() - 1000;
@@ -100,4 +101,40 @@ test('older provider report dates are fetched without a synthetic trend once two
   assert.equal(history.series[0].points.at(-1).value, observation.value);
   assert.equal(history.series.length, 1);
   assert.equal(history.series[0].points.at(-1).atMs, observation.observedAtMs);
+  assert.equal(history.series[0].timeBasis, 'REPORT_DATE');
+  assert.equal(history.series[0].label, 'Spotify cumulative streams');
+});
+
+test('YouTube skipped five-minute slots remain chart gaps despite startup jitter',async()=>{
+  const start=Date.parse('2026-11-03T08:00:00Z');
+  const rows=[1000,329000,601000,1201000].map((offset,index)=>({
+    slug:'youtube-S0Q4gqBUs7c',kind:'YOUTUBE_VIEWS',aggregation:'cumulative',
+    value:String(14200000+index),observedAtMs:start+offset,capturedAtMs:start+offset,
+    reportedDate:null,provider:'YouTube Data API',sourceUrl:'https://www.youtube.com/watch?v=S0Q4gqBUs7c',
+    rawSha256:String(index).repeat(64),
+  }));
+  const base=await referenceConsumerReadApi.getHistory('reference:market:youtube-S0Q4gqBUs7c','1D');
+  const history=mergeReferenceHistory(base,rows);
+  assert.deepEqual(history.series[0].gaps,[{fromMs:start+601000,toMs:start+1201000}]);
+  assert.equal(history.series[0].points.length,4);
+});
+
+test('a successful older history cannot undo the latest dated report revision',async()=>{
+  const old={slug:'spotify-2ZaL63zLMDr6H18El2EIt9',kind:'SPOTIFY_STREAMS',aggregation:'cumulative',
+    value:'49024100',observedAtMs:Date.parse('2026-11-01T00:00:00Z'),
+    capturedAtMs:Date.parse('2026-11-02T01:00:00Z'),reportedDate:'2026-11-01',provider:'Kworb',
+    sourceUrl:'https://kworb.net/spotify/artist/0cmWgDlu9CwTgxPhf403hb_songs.html',rawSha256:'a'.repeat(64)};
+  const latest={...old,value:'49024000',capturedAtMs:old.capturedAtMs+1000,rawSha256:'b'.repeat(64)};
+  const api=createObservedReferenceReadApi('https://example.test',async url=>new Response(JSON.stringify({
+    schemaVersion:'0.1',mode:'devnet',asOf:Math.floor(Date.now()/1000),data:[url.endsWith('/latest')?latest:old],
+  })));
+  const id=`reference:market:${old.slug}`;
+  const market=(await api.listMarkets()).find(item=>item.id===id);
+  const history=await api.getHistory(id,'ALL');
+  assert.equal(market.activity.value,latest.value);
+  assert.equal(history.market.activity.value,latest.value);
+  assert.equal(history.series[0].points.at(-1).value,latest.value);
+  assert.equal(history.series[0].points.at(-1).atMs,old.observedAtMs);
+  assert.equal(history.market.phase,'PREVIEW');
+  assert.equal(history.market.latestPrice,null);
 });

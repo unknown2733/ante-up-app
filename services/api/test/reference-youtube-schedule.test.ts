@@ -116,3 +116,25 @@ test('YouTube scheduler accepts only one approved batch per interval and keeps f
     finally { store.close(); }
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test('a timed-out YouTube request keeps its slot reserved and writes no observations',async t=>{
+  const dir=await mkdtemp(join(tmpdir(),'ante-up-youtube-timeout-'));
+  let calls=0;
+  t.mock.method(AbortSignal,'timeout',(milliseconds:number)=>{
+    assert.equal(milliseconds,15_000);
+    return AbortSignal.abort(new DOMException('Timed out','TimeoutError'));
+  });
+  try{
+    const dbPath=join(dir,'api.sqlite');
+    const fetcher=(async (_url:unknown,init?:RequestInit)=>{
+      calls++; init?.signal?.throwIfAborted(); throw Error('MISSING_TIMEOUT');
+    }) as typeof fetch;
+    const input={dbPath,apiKey:'fixture',cadence:'oracle-prep' as const,fetcher,nowMs:()=>t0};
+    await assert.rejects(runBoundedYouTubeReferenceViews(input),{name:'TimeoutError'});
+    assert.deepEqual(await runBoundedYouTubeReferenceViews({...input,nowMs:()=>t0+60_000}),
+      {status:'SKIPPED',reason:'MIN_INTERVAL'});
+    assert.equal(calls,1);
+    const store=new ReferenceObservationStore(dbPath);
+    try{assert.deepEqual(store.latest(),[]);}finally{store.close();}
+  }finally{await rm(dir,{recursive:true,force:true});}
+});

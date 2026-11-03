@@ -16,7 +16,7 @@ export async function collectYouTubeReferenceViews(input: {
   url.searchParams.set('part', 'statistics');
   url.searchParams.set('id', videos.map(item => new URL(item.subjectUrl).searchParams.get('v')).join(','));
   const response = await (input.fetcher ?? fetch)(url.toString(), {
-    cache: 'no-store', headers: { 'x-goog-api-key': input.apiKey },
+    cache: 'no-store', headers: { 'x-goog-api-key': input.apiKey }, signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw new Error(`YOUTUBE_PROVIDER_HTTP_${response.status}`);
   const raw = Buffer.from(await response.arrayBuffer());
