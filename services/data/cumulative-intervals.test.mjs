@@ -49,3 +49,20 @@ test('rejects invalid cumulative values instead of coercing them',()=>{
   assert.throws(()=>deriveCumulativeIntervals([row(0,'-1')]),/CUMULATIVE_READING_INVALID/);
   assert.throws(()=>deriveCumulativeIntervals([row(0,'1.5')]),/CUMULATIVE_READING_INVALID/);
 });
+
+test('a correction inside the first bucket retains its baseline into later buckets',()=>{
+  const {intervals}=deriveCumulativeIntervals([row(0,100),row(1,90),row(5,95),
+    row(10,101),row(15,104)].reverse());
+  assert.deepEqual(intervals.map(interval=>[interval.kind,interval.deltaCount]),[
+    ['REVISION_RECOVERY',null],['REVISION_RECOVERY',null],['OBSERVED_DELTA','3']]);
+});
+
+test('a same-bucket drop and full rebound cannot look like uninterrupted growth',()=>{
+  const {intervals}=deriveCumulativeIntervals([row(0,100),row(5,110),row(6,90),
+    row(7,115),row(10,120)]);
+  assert.equal(intervals[0].kind,'DOWNWARD_REVISION');
+  assert.equal(intervals[0].revisionMagnitude,'20');
+  assert.equal(intervals[0].deltaCount,null);
+  assert.equal(intervals[1].kind,'OBSERVED_DELTA');
+  assert.equal(intervals[1].deltaCount,'5');
+});

@@ -9,23 +9,27 @@ const copy = <T>(value: T): T => structuredClone(value);
 
 const snapshots = platformReferences.map(subject => {
   const metric = subject.metric;
-  const asOfMs = Date.parse(metric.asOf);
+  const asOfMs = Date.parse(metric.reportedDate ? `${metric.reportedDate}T00:00:00Z` : metric.asOf);
+  const label = metric.kind === 'SPOTIFY_STREAMS' ? 'Spotify cumulative streams' : metric.label;
   const source: ConsumerSource = {
     mode: 'REFERENCE', asOfMs, sourceUrl: metric.sourceUrl,
-    label: `${metric.label} · ${metric.provider}${metric.sourceType === 'THIRD_PARTY' ? ' (third-party report)' : ''} · captured ${metric.capturedAt}`,
+    label: `${label} · ${metric.provider}${metric.sourceType === 'THIRD_PARTY' ? ' (third-party report)' : ''} · captured ${metric.capturedAt}`,
     observationLabel: metric.reportedDate ? `${metric.provider} report dated ${metric.reportedDate} (time zone not supplied)` : 'Captured platform count · the source counter may be cached',
   };
   const market: ConsumerMarket = {
     id: `${REFERENCE_MARKET_PREFIX}${subject.slug}`, title: subject.title, subject: subject.subject,
-    subtitle: metric.label, creatorLabel: subject.creatorLabel, subjectUrl: subject.subjectUrl,
+    subtitle: label, creatorLabel: subject.creatorLabel, subjectUrl: subject.subjectUrl,
     thumbnailUrl: subject.imageUrl, imageAlt: subject.imageAlt, imageSourceUrl: subject.imageSourceUrl,
     phase: 'PREVIEW', source, latestPrice: null, priceUnit: 'tUSD', changeFraction: null,
-    activity: { value: metric.value, unit: metric.unit, label: metric.label, changeFraction: null, asOfMs },
+    activity: { value: metric.value, unit: metric.unit, label, changeFraction: null, asOfMs },
   };
   const series: ConsumerSeries = {
-    id: `reference:series:${subject.slug}:${metric.kind}`, kind: 'ACTIVITY_COUNT', label: metric.label,
+    id: `reference:series:${subject.slug}:${metric.kind}`, kind: 'ACTIVITY_COUNT', label,
     unit: metric.unit, source, gaps: [],
-    points: [{ atMs: asOfMs, value: metric.value, observationId: `public:${metric.rawSha256}` }],
+    points: [{ atMs: asOfMs, value: metric.value, observationId: `public:${metric.rawSha256}`,
+      ...(metric.reportedDate ? { reportedDate: metric.reportedDate, sourceUrl: metric.sourceUrl } : {}) }],
+    ...(metric.reportedDate ? { timeBasis: 'REPORT_DATE' as const, aggregation: 'cumulative' as const,
+      observationNote: 'Cumulative streams at the recorded dates. Unobserved intervals are left blank.' } : {}),
   };
   return { market, series };
 });
