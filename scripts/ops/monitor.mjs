@@ -36,6 +36,10 @@ export function validateConfig(c) {
     check(safeRelative(v.ledgerPath)&&DECIMAL.test(v.grantLamports)&&DECIMAL.test(v.dailyCapLamports)&&DECIMAL.test(v.totalCapLamports)&&
       BigInt(v.grantLamports)>0n&&BigInt(v.grantLamports)<=BigInt(v.dailyCapLamports)&&BigInt(v.dailyCapLamports)<=BigInt(v.totalCapLamports),
       'MONITOR_VISITOR_FAUCET_INVALID');
+    if(v.reserveLamports!==undefined)
+      check(DECIMAL.test(v.reserveLamports)&&Array.isArray(c.wallets)&&
+        c.wallets.some(wallet=>wallet.role==='visitor-sol'),
+        'MONITOR_VISITOR_FAUCET_INVALID');
   }
   if(c.referenceKworb){
     const k=c.referenceKworb;
@@ -340,6 +344,17 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
         if(BigInt(result.value)<BigInt(wallet.minLamports))add('WALLET_LOW',wallet.role,'critical',{lamports:String(result.value),minLamports:wallet.minLamports});
       }catch{add('WALLET_UNAVAILABLE',wallet.role);}
     }));
+    if(c.visitorFaucet?.reserveLamports!==undefined&&metrics.visitorSolReservedLamports&&
+       metrics.walletLamports['visitor-sol']!==undefined){
+      const v=c.visitorFaucet,grant=BigInt(v.grantLamports);
+      const remaining=(limit,used)=>limit>used?(limit-used)/grant:0n;
+      const funding=remaining(BigInt(metrics.walletLamports['visitor-sol']),BigInt(v.reserveLamports));
+      const daily=remaining(BigInt(v.dailyCapLamports),BigInt(metrics.visitorSolReservedLamports.today));
+      const total=remaining(BigInt(v.totalCapLamports),BigInt(metrics.visitorSolReservedLamports.total));
+      const available=[funding,daily,total].reduce((min,value)=>value<min?value:min);
+      metrics.visitorSolRemainingGrants={funding:funding.toString(),daily:daily.toString(),
+        total:total.toString(),available:available.toString()};
+    }
     if(c.snapshotFunding&&metrics.walletLamports.publisher!==undefined){
       const f=c.snapshotFunding,balance=BigInt(metrics.walletLamports.publisher);
       const rent=BigInt(f.rentLamports),reserve=BigInt(f.reserveLamports),count=BigInt(c.markets.length);
