@@ -59,6 +59,20 @@ const signedWire=(unsigned:string)=>{
   return {signature:getBase58Decoder().decode(sig),wireBase64:Buffer.from(getTransactionEncoder().encode({...transaction,signatures:{...transaction.signatures,[wallet]:sig}} as any)).toString('base64')};
 };
 
+test('public faucet capacity uses finalized reader data and rejects inconsistent limits',async()=>{
+  const store=new LiveStore(resolve(work,`${randomUUID()}.sqlite`));
+  const capacity={payoutAtoms:'1000000000',mintedAtoms:'14000000000',totalLimitAtoms:'100000000000',remainingClaims:'86'};
+  const make=(value:typeof capacity | null)=>createApp({mode:'localnet',programId,read,
+    financial:{...financial,async faucetCapacity(){return value;}},liveStore:store,chain,now:()=>now});
+  try {
+    const response=await make(capacity).handle(new Request(`${base}/v1/financial/faucet-capacity`));
+    assert.equal(response.status,200);
+    assert.deepEqual((await json(response)).data,capacity);
+    const invalid=await make({...capacity,remainingClaims:'87'}).handle(new Request(`${base}/v1/financial/faucet-capacity`));
+    assert.notEqual(invalid.status,200);
+  } finally { store.close(); }
+});
+
 test('injected exact financial builder persists preparation and recovers verified receipt after restart',async()=>{
   const db=resolve(work,`${randomUUID()}.sqlite`);
   let store=new LiveStore(db);

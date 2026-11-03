@@ -177,6 +177,14 @@ export class FirstSliceFinancialReader implements FinancialReader {
   readonly now:()=>number;
   readonly clock?:FinancialClock;
   constructor(state:FinalizedFinancialAccounts,registrations:SqliteFinancialRegistrationStore,now:()=>number=()=>Math.floor(Date.now()/1000),clock?:FinancialClock) {this.state=state;this.registrations=registrations;this.now=now;this.clock=clock;}
+  async faucetCapacity() {
+    const config=await this.state.financeConfig();
+    if(config.faucetAmount<=0n || config.faucetMinted>config.faucetTotalLimit)
+      throw new Error('FINANCIAL_FAUCET_CAPACITY_INVALID');
+    return {payoutAtoms:config.faucetAmount.toString(),mintedAtoms:config.faucetMinted.toString(),
+      totalLimitAtoms:config.faucetTotalLimit.toString(),
+      remainingClaims:((config.faucetTotalLimit-config.faucetMinted)/config.faucetAmount).toString()};
+  }
   async portfolio(wallet:string) {
     const scan=await this.state.programAccounts();if (!scan) return null;
     const finance=await this.state.financeConfig();
