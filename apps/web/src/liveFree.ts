@@ -6,6 +6,8 @@ import { sendPreparedTransaction } from './transactionBoundary';
 import type { Cluster, ExecutablePrepare, SendResult, WalletContext } from './transactionBoundary';
 
 type FreeAction = 'openFree' | 'closeFree';
+// The API enforces 30 seconds; allow a small clock lead in its prepared response.
+const PREPARED_EXPIRY_SKEW_SECONDS = 15;
 type Challenge = { nonce: string; expiresAt: number; message: string };
 export type FreeProgress = 'AUTH' | 'PREPARING' | 'AWAITING_SIGNATURE' | 'SUBMITTED' | 'CONFIRMED';
 export type FreeOutcome = (
@@ -153,7 +155,10 @@ export function createLiveFreeFlow(options: FreeFlowOptions) {
       requireWallet(wallet);
       const prepared = object(preparePage.data);
       if (prepared.kind === 'notExecutable') return { state: 'UNAVAILABLE', reason: typeof prepared.reason === 'string' ? prepared.reason : 'API execution adapter is unavailable.', requestId, signature: null };
-      if (prepared.kind !== 'transaction' || prepared.wallet !== wallet.address || prepared.cluster !== wallet.cluster || prepared.programId !== ANTE_UP_PROGRAM_ADDRESS || prepared.action !== requestValue.action || prepared.requestId !== requestId || typeof prepared.recordId !== 'string' || !prepared.recordId || (requestValue.action === 'closeFree' && prepared.recordId !== requestValue.recordId) || !Number.isSafeInteger(prepared.expiresAt) || (prepared.expiresAt as number) <= now() || (prepared.expiresAt as number) > now() + 30) return { state: 'AWAITING_SIGNATURE', reason: 'Prepared transaction identity or expiry is invalid.', requestId, signature: null };
+      const invalidIdentity = prepared.kind !== 'transaction' || prepared.wallet !== wallet.address || prepared.cluster !== wallet.cluster || prepared.programId !== ANTE_UP_PROGRAM_ADDRESS || prepared.action !== requestValue.action || prepared.requestId !== requestId || typeof prepared.recordId !== 'string' || !prepared.recordId || (requestValue.action === 'closeFree' && prepared.recordId !== requestValue.recordId);
+      if (invalidIdentity) return { state: 'AWAITING_SIGNATURE', reason: 'Prepared transaction does not match this chip request.', requestId, signature: null };
+      if (!Number.isSafeInteger(prepared.expiresAt) || (prepared.expiresAt as number) <= now()) return { state: 'AWAITING_SIGNATURE', reason: 'Chip request expired before review. Request a fresh transaction.', requestId, signature: null };
+      if ((prepared.expiresAt as number) > now() + 30 + PREPARED_EXPIRY_SKEW_SECONDS) return { state: 'AWAITING_SIGNATURE', reason: 'Prepared transaction time limit is invalid.', requestId, signature: null };
       const executable = prepared as unknown as ExecutablePrepare;
       const review: FreeReview = Object.freeze({ requestId, expiresAt: executable.expiresAt, action: requestValue.action });
       reviews.set(review, { requestValue, wallet, authorized, executable });
