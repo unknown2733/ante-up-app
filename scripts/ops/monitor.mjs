@@ -75,6 +75,9 @@ export function validateConfig(c) {
   check(typeof c.rpcUrlFile==='string','MONITOR_RPC_REQUIRED');
   if(c.httpChecks)check(Array.isArray(c.httpChecks)&&c.httpChecks.every(h=>/^[a-z0-9-]+$/.test(h.name)&&/^https?:\/\//.test(h.url)&&(!h.expectMode||h.expectMode==='devnet')),'MONITOR_HTTP_CHECKS_INVALID');
   if(c.backup)check(typeof c.backup.copyReceipt==='string'&&typeof c.backup.drillReport==='string'&&positive(c.backup.maxAgeSeconds)&&typeof c.backup.destinationId==='string','MONITOR_BACKUP_CONFIG_INVALID');
+  if(c.backup?.requiredFiles!==undefined)check(Array.isArray(c.backup.requiredFiles)&&c.backup.requiredFiles.length>0&&
+    c.backup.requiredFiles.every(p=>safeRelative(p)&&p.includes('/')&&!/[\x00-\x1f]/.test(p))&&
+    new Set(c.backup.requiredFiles).size===c.backup.requiredFiles.length,'MONITOR_BACKUP_REQUIREMENTS_INVALID');
   if(c.telegramTokenFile!==undefined||c.telegramChatIdFile!==undefined)
     check(typeof c.telegramTokenFile==='string'&&c.telegramTokenFile.length>0&&typeof c.telegramChatIdFile==='string'&&c.telegramChatIdFile.length>0&&!c.webhookUrlFile,'MONITOR_ALERT_CHANNEL_INVALID');
   return c;
@@ -402,6 +405,15 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
     if(drill){
       if(drill.kind!=='isolated-restore-drill'||drill.hashes!=='matched'||drill.servicesStarted!==false||drill.backupSha256!==receipt?.sha256)add('RESTORE_DRILL_MISMATCH','backup');
       age(Math.floor(Date.parse(drill.verifiedAt)/1000),c.backup.maxAgeSeconds,'RESTORE_DRILL_STALE','backup');
+      if(c.backup.requiredFiles){
+        const required=drill.requiredFiles;
+        const valid=Array.isArray(required)&&required.every(p=>safeRelative(p)&&p.includes('/')&&!/[\x00-\x1f]/.test(p))&&new Set(required).size===required.length;
+        if(!valid||c.backup.requiredFiles.some(path=>!required.includes(path)))add('RESTORE_REQUIREMENTS_MISSING','backup');
+        // Re-copying/re-verifying an old artifact must not reset its recovery-point age.
+        const created=typeof drill.backupCreatedAt==='string'?Date.parse(drill.backupCreatedAt):NaN;
+        if(!Number.isFinite(created)||created>now||created>Date.parse(drill.verifiedAt))add('INPUT_INVALID','backup-created-at');
+        else age(Math.floor(created/1000),c.backup.maxAgeSeconds,'BACKUP_ARTIFACT_STALE','backup');
+      }
     }
   }else add('BACKUP_MONITOR_UNCONFIGURED','backup','warning');
   alerts.sort((a,b)=>a.id.localeCompare(b.id));

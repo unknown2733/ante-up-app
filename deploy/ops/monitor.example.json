@@ -86,6 +86,13 @@
     "copyReceipt": "/backup-reports/latest-copy.json",
     "drillReport": "/backup-reports/latest-drill.json",
     "destinationId": "REPLACE_WITH_OFF_HOST_DESTINATION_ID",
-    "maxAgeSeconds": 172800
+    "maxAgeSeconds": 172800,
+    "requiredFiles": [
+      "state/keeper-auto/markets.json",
+      "secrets/devnet-rpc.secondary.url",
+      "secrets/devnet-keeper.json",
+      "deployment/keeper-runner/run-weekly-keeper.sh",
+      "deployment/keeper-runner/crontab.entry"
+    ]
   }
 }
