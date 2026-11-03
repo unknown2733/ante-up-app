@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createObservedReferenceReadApi } from '../apps/web/src/reference/observedReference.ts';
 import { marketDisplayTitle, withVerifiedSubjectMedia } from '../apps/web/src/consumer-ui/catalog.ts';
+import { createPublicQaFetcher } from './public-qa-fetch.mjs';
 
 const args = process.argv.slice(2);
 const focusTrends = args.includes('--focus-trends');
@@ -14,19 +15,23 @@ const focusIllustrative = args.includes('--focus-illustrative');
 const focusCompact = args.includes('--focus-compact');
 const focusPages = args.includes('--focus-pages');
 const focusTransactions = args.includes('--focus-transactions');
+const focusSync = args.includes('--focus-sync');
 const desktopOnly = args.includes('--desktop-only');
+const directLive=args.includes('--direct-live');
+if(directLive&&focusSync)throw Error('Fault injection requires the isolated localhost proxy');
 const option = flag => { const i = args.indexOf(flag); return i < 0 ? null : args[i + 1]; };
 if (!option('--dist')) throw new Error('Usage: node scripts/consumer-real-browser.mjs --dist apps/web/dist [--api-origin https://ante-up.fun] [--source-sha SHA]');
 const dist = path.resolve(option('--dist'));
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const upstream = new URL(option('--api-origin') ?? 'https://ante-up.fun');
-const referenceReadApi = createObservedReferenceReadApi(new URL('/api', upstream).href);
+const publicFetch = createPublicQaFetcher();
+const referenceReadApi = createObservedReferenceReadApi(new URL('/api', upstream).href,publicFetch);
 const localReadOnlyProxy = upstream.protocol === 'http:' && upstream.hostname === '127.0.0.1' && upstream.port;
 if ((!localReadOnlyProxy && upstream.origin !== 'https://ante-up.fun') || upstream.pathname !== '/' ||
     upstream.username || upstream.password || upstream.search || upstream.hash)
   throw new Error('Only the public https://ante-up.fun origin or an explicit local read-only QA proxy is allowed.');
 const getPublic = async pathname => {
-  const response = await fetch(new URL(pathname, upstream), { redirect: 'error', signal: AbortSignal.timeout(20_000) });
+  const response = await publicFetch(new URL(pathname, upstream));
   if (!response.ok) throw new Error(`Public GET ${pathname}: ${response.status}`);
   return response.json();
 };
@@ -62,7 +67,9 @@ await writeFile(path.join(run, 'live-preview-histories.json'), JSON.stringify(li
 await writeFile(path.join(run, 'public-leaderboard.json'), JSON.stringify(publicBoard, null, 2));
 await readFile(path.join(dist, 'index.html'));
 const results = [], failures = [], blockedRequests = [], browserErrors = [], publicReads = [];
+const expectedBrowserErrors=[];
 const servedHistories = new Map();
+let syncScenario=null;
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
 const server = createServer(async (request, response) => {
@@ -76,7 +83,21 @@ const server = createServer(async (request, response) => {
     if (url.pathname.startsWith('/api/')) {
       if (!url.pathname.startsWith('/api/v1/') || /\/auth(?:\/|$)/.test(url.pathname)) { send(403, 'text/plain', 'Public reads only'); return; }
       const target = new URL(url.pathname + url.search, upstream);
-      const result = await fetch(target, { method: request.method, redirect: 'error', signal: AbortSignal.timeout(20_000) });
+      if(syncScenario && target.pathname===`/api/v1/markets/${syncScenario.market.id}`){
+        const scenario=syncScenario;
+        scenario.reads++;
+        const state=scenario.mode==='recover'&&scenario.released?'CURRENT':scenario.mode==='stale'?'STALE':'SYNCING';
+        const market=structuredClone(scenario.market);
+        market.priceReadiness={state,dataThrough:market.snapshot?.payload.dataThrough??0};
+        if(state!=='CURRENT'){
+          market.price=null;market.dataStatus='STALE';
+          for(const [action,capability] of Object.entries(market.capabilities))if(!['openFree','closeFree'].includes(action))market.capabilities[action]={allowed:false,reason:'DATA_NOT_READY'};
+        }
+        if(scenario.delay)await new Promise(r=>setTimeout(r,scenario.delay));
+        if(scenario.mode==='fail'){send(503,'application/json',JSON.stringify({message:'QA market read unavailable'}));return;}
+        send(200,'application/json',JSON.stringify({schemaVersion:'0.1',mode:'devnet',asOf:Math.floor(Date.now()/1000),nextCursor:null,data:market}));return;
+      }
+      const result = await publicFetch(target, { method: request.method });
       const body = Buffer.from(await result.arrayBuffer());
       const record = { path: target.pathname + target.search, status: result.status };
       if (result.ok && /\/history$/.test(target.pathname)) {
@@ -99,7 +120,7 @@ const server = createServer(async (request, response) => {
   } catch (error) { send(502, 'application/json', JSON.stringify({ error: error.message })); }
 });
 await new Promise((resolve, reject) => server.once('error', reject).listen(0, '127.0.0.1', resolve));
-const base = new URL(`http://127.0.0.1:${server.address().port}`);
+const base = directLive ? upstream : new URL(`http://127.0.0.1:${server.address().port}`);
 const chromePath = process.env.ANTE_UP_CHROMIUM ?? path.join(process.env.USERPROFILE ?? homedir(), 'AppData/Local/ms-playwright/chromium-1243/chrome-win64/chrome.exe');
 const chrome = spawn(chromePath, ['--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run', '--disable-extensions',
   '--remote-debugging-port=0', `--user-data-dir=${path.join(run, 'chrome-profile')}`, 'about:blank'], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
@@ -127,7 +148,11 @@ try {
     const message = JSON.parse(event.data);
     if (message.id && pending.has(message.id)) { const item = pending.get(message.id); pending.delete(message.id); clearTimeout(item.timer); message.error ? item.reject(new Error(message.error.message)) : item.resolve(message.result); }
     if (message.method === 'Runtime.exceptionThrown') browserErrors.push(message.params.exceptionDetails.text);
-    if (message.method === 'Log.entryAdded' && message.params.entry.level === 'error') browserErrors.push(message.params.entry.text);
+    if (message.method === 'Log.entryAdded' && message.params.entry.level === 'error') {
+      const entry=message.params.entry;
+      const injected503=focusSync&&syncScenario?.mode==='fail'&&entry.url===`${base.origin}/api/v1/markets/${syncScenario.market.id}`&&entry.text==='Failed to load resource: the server responded with a status of 503 (Service Unavailable)';
+      (injected503?expectedBrowserErrors:browserErrors).push(entry.text);
+    }
     if (message.method === 'Fetch.requestPaused') {
       const { requestId, request, resourceType } = message.params;
       const target = new URL(request.url);
@@ -261,6 +286,42 @@ try {
     if (focusCompact && !viewport.mobile) continue;
     await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile });
     await send('Emulation.setTouchEmulationEnabled', { enabled: viewport.mobile, maxTouchPoints: viewport.mobile ? 5 : 1 });
+    if(focusSync){
+      const chosen=live.filter(item=>item.id===item.liveMarketId && /^(solana|tariff)$/i.test(item.title));
+      if(chosen.length<2)throw Error('Sync regression requires two public market identities');
+      const market=(await getPublic(`/api/v1/markets/${encodeURIComponent(chosen[0].id)}`)).data;
+      const route=`/markets/${encodeURIComponent(market.id)}/trade`;
+      syncScenario={mode:'recover',market,reads:0};
+      const paused=await visit(route,viewport,'sync-paused',s=>s.text.includes('Syncing the latest observation'));
+      paused.check(!paused.probe.text.includes('Connect wallet to trade'),'sync state exposes executable trading');
+      const readsWhilePaused=syncScenario.reads;syncScenario.released=true;
+      const recovered=await visit(route,viewport,'sync-recovered',s=>s.text.includes('Connect wallet to trade'),false);
+      recovered.check(syncScenario.reads>readsWhilePaused,'sync did not automatically requery after release');
+      recovered.check(!recovered.probe.text.includes('Syncing the latest observation'),'sync notice remained after recovery');
+      syncScenario={mode:'stale',market,reads:0};
+      const stale=await visit(route,viewport,'sync-stale',s=>s.text.includes('The latest observation is delayed'));
+      stale.check(!stale.probe.text.includes('Connect wallet to trade'),'stale state exposes executable trading');
+      syncScenario.mode='recover';syncScenario.reads=1;syncScenario.released=true;
+      await evaluate("[...document.querySelectorAll('button')].find(e=>e.textContent.trim()==='Retry market data')?.click()");
+      const retry=await visit(route,viewport,'sync-manual-retry',s=>s.text.includes('Connect wallet to trade'),false);
+      retry.check(!retry.probe.text.includes('The latest observation is delayed'),'manual retry retained stale state');
+      syncScenario={mode:'fail',market,reads:0};
+      const failed=await visit(route,viewport,'sync-failed',s=>s.text.includes('Could not reach the market data service'));
+      failed.check(!failed.probe.text.includes('Connect wallet to trade'),'failed read reused executable price');
+      syncScenario={mode:'recover',market,reads:1,released:true};
+      await evaluate("[...document.querySelectorAll('button')].find(e=>e.textContent.trim()==='Retry market data')?.click()");
+      await visit(route,viewport,'sync-failure-retry',s=>s.text.includes('Connect wallet to trade'),false);
+      syncScenario={mode:'recover',market,reads:0,delay:2000};
+      await send('Page.navigate',{url:new URL(route,base).href});await delay(200);
+      const otherRoute=`/markets/${encodeURIComponent(chosen[1].id)}/trade`;
+      await evaluate(`history.pushState(null,'',${JSON.stringify(otherRoute)});window.dispatchEvent(new PopStateEvent('popstate'))`);
+      const switched=await visit(otherRoute,viewport,'sync-market-switched',s=>s.actionTabs.length===4,false);
+      await delay(2200);
+      switched.check(await evaluate('location.pathname')===otherRoute,'late old market response changed route');
+      switched.check(!await evaluate("document.body.innerText.includes('Syncing the latest observation')"),'late old market response leaked into new market');
+      syncScenario=null;
+      console.log(JSON.stringify({viewport:viewport.name,capturedViews:results.length,failures:failures.length}));continue;
+    }
     if (focusCompact) {
       const titles = viewport.width === 320 ? ['Bonobo - Kerala (Official Audio)', 'NASA’s Artemis I Moon Mission: Launch to Splashdown Highlights', 'Awake', 'Rosewood', 'May Ninth'] : ['Bonobo - Kerala (Official Audio)'];
       for (const [index, title] of titles.entries()) {
@@ -483,8 +544,9 @@ try {
   const output = path.join(run, 'report.json');
   await writeFile(output, JSON.stringify({ sourceSha: option('--source-sha'), baseUrl: base.origin, upstream: upstream.origin, run,
     allowedImageOrigins, liveCount: live.length, referenceCount: references.length, walletCount: board.rows.length,
-    results, failures, browserErrors, blockedRequests, publicReads,
-    boundary: 'Built local App with public GET API data and catalog media only. No user browser, wallet, authentication, write request, or transaction.' }, null, 2));
+    results, failures, browserErrors, expectedBrowserErrors, blockedRequests, publicReads,
+    boundary: directLive?'Direct public origin in an isolated browser. GETs only; no user profile, wallet, authentication or write.':
+      'Built local App with public GET API data and catalog media only. No user browser, wallet, authentication, write request, or transaction.' }, null, 2));
   console.log(JSON.stringify({ output, views: results.length, failureCount: failures.length, firstFailures: failures.slice(0, 30) }, null, 2));
   if (failures.length) process.exitCode = 1;
 } catch (error) {
