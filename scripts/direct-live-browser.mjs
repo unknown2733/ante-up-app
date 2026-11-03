@@ -20,7 +20,7 @@ try{
   if(m.method==='Network.responseReceived'){const r=m.params.response,u=new URL(r.url);if(u.origin==='https://ante-up.fun'&&u.pathname.startsWith('/api/'))responses.push({at:new Date().toISOString(),path:u.pathname+u.search,status:r.status,retryAfter:Object.entries(r.headers).find(([key])=>key.toLowerCase()==='retry-after')?.[1]??null});}
   if(m.method==='Fetch.requestPaused'){
     const p=m.params,u=new URL(p.request.url),allowed=['GET','HEAD'].includes(p.request.method)&&
-      (u.origin==='https://ante-up.fun'||p.resourceType==='Image'&&['https://i.ytimg.com','https://i.scdn.co','https://pbs.twimg.com','https://images.unsplash.com'].includes(u.origin));
+      (u.origin==='https://ante-up.fun'||p.resourceType==='Image'&&['https://i.ytimg.com','https://i.scdn.co','https://pbs.twimg.com','https://images.unsplash.com','https://solana.com'].includes(u.origin));
     if(!allowed)blocked.push({method:p.request.method,origin:u.origin});
     const headers=Object.entries(p.request.headers).filter(([key])=>!/^(cookie|authorization|proxy-authorization)$/i.test(key)).map(([name,value])=>({name,value}));
     void send(allowed?'Fetch.continueRequest':'Fetch.failRequest',allowed?{requestId:p.requestId,headers}:{requestId:p.requestId,errorReason:'BlockedByClient'});
