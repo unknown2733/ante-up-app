@@ -215,6 +215,9 @@ export function FinancialFaucet({ onFinalized }: { onFinalized: () => void }) {
   const [solError, setSolError] = useState('');
   const [solBusy, setSolBusy] = useState(false);
   const [solRefresh, setSolRefresh] = useState(0);
+  const [tusdCapacity, setTusdCapacity] = useState<Awaited<ReturnType<NonNullable<typeof liveFinancialFlow>['faucetCapacity']>> | null>(null);
+  const [tusdCapacityError, setTusdCapacityError] = useState(false);
+  const [tusdRefresh, setTusdRefresh] = useState(0);
   const quoteGeneration = useQuoteGeneration(JSON.stringify([connected?.account.address, wallet?.cluster]), wallet?.signer);
   const pending = wallet && liveFinancialFlow?.pending(wallet);
   useEffect(() => { setQuote(null); setOutcome(null); setError(''); }, [connected?.account.address]);
@@ -226,6 +229,17 @@ export function FinancialFaucet({ onFinalized }: { onFinalized: () => void }) {
       .catch(cause => { if (current) setSolError(textError(cause)); });
     return () => { current = false; };
   }, [connected?.account.address, wallet?.cluster, solRefresh]);
+  useEffect(() => {
+    const flow = liveFinancialFlow;
+    if (!flow) return;
+    let current = true;
+    const read = () => { void flow.faucetCapacity()
+      .then(value => { if (current) { setTusdCapacity(value); setTusdCapacityError(false); } })
+      .catch(() => { if (current) { setTusdCapacity(null); setTusdCapacityError(true); } }); };
+    read();
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') read(); }, 60_000);
+    return () => { current = false; window.clearInterval(timer); };
+  }, [tusdRefresh]);
   async function requestSol() {
     if (!visitorSolFlow) return;
     setSolBusy(true); setSolError('');
@@ -259,13 +273,13 @@ export function FinancialFaucet({ onFinalized }: { onFinalized: () => void }) {
   async function execute() {
     if (!liveFinancialFlow || !quote) return;
     setBusy(true); setError('');
-    try { const result = await liveFinancialFlow.signReviewed(quote); setOutcome(result); setQuote(null); if (result.state === 'FINALIZED') onFinalized(); }
+    try { const result = await liveFinancialFlow.signReviewed(quote); setOutcome(result); setQuote(null); if (result.state === 'FINALIZED') { setTusdRefresh(value => value + 1); onFinalized(); } }
     catch (cause) { setError(textError(cause)); } finally { setBusy(false); }
   }
   async function recheck() {
     if (!liveFinancialFlow) return;
     setBusy(true); setError('');
-    try { const result = await liveFinancialFlow.recheck(); setOutcome(result); if (result.state === 'FINALIZED') onFinalized(); }
+    try { const result = await liveFinancialFlow.recheck(); setOutcome(result); if (result.state === 'FINALIZED') { setTusdRefresh(value => value + 1); onFinalized(); } }
     catch (cause) { setError(textError(cause)); } finally { setBusy(false); }
   }
   return <div className="page"><div className="profile-header"><span className="eyebrow orange-text">FUNDS</span><h1>Get ready to play<span className="title-dot">.</span></h1><p>Devnet SOL pays network fees. tUSD is the test asset for trading.</p></div>
@@ -285,7 +299,10 @@ export function FinancialFaucet({ onFinalized }: { onFinalized: () => void }) {
       {solPending && <button className="button button-dark" disabled={solBusy} onClick={() => void recheckSol()}>Check existing SOL request</button>}
       {solReadiness?.needsSol && (solReadiness.serverGrantAvailable || solPending) && <button className="button button-blue" disabled={solBusy} onClick={() => void requestSol()}>{solPending ? 'Retry same SOL request' : 'Get Devnet SOL'}</button>}</div>}
     <p className="tiny muted">{wallet ? <>You can also use the <a href="https://faucet.solana.com/" target="_blank" rel="noopener noreferrer">Solana Devnet faucet ↗</a> for {wallet.address}. Copy your wallet address in your wallet before opening it.</> : <>Or use the <a href="https://faucet.solana.com/" target="_blank" rel="noopener noreferrer">Solana Devnet faucet ↗</a> after connecting a wallet.</>}</p>
-  </section><section className="detail-panel finance-panel"><h2>2 · Request tUSD</h2><p>Review the amount, then confirm in your wallet.</p><details className="au-evidence-details"><summary>Asset details</summary><p>Network: Devnet · tUSD is a test asset. Devnet SOL covers network fees. Your balance updates after confirmation; request limits and retry times apply.</p></details>
+  </section><section className="detail-panel finance-panel"><h2>2 · Request tUSD</h2><p>Review the amount, then confirm in your wallet.</p>
+    {tusdCapacity && <p className="tiny muted">{tusdCapacity.remainingClaims} payouts available across Devnet · {amount(tusdCapacity.payoutAtoms)} tUSD each. Your wallet's eligibility is checked when you request; availability can change.</p>}
+    {tusdCapacityError && <p className="tiny muted">Current tUSD capacity is unavailable. A quote will check the latest limit.</p>}
+    <details className="au-evidence-details"><summary>Asset details</summary><p>Network: Devnet · tUSD is a test asset. Devnet SOL covers network fees. Your balance updates after confirmation; request limits and retry times apply.</p></details>
     {isFixture || !liveFinancialFlow ? <Notice>tUSD is unavailable.</Notice> : !wallet ? <WalletConnectPrompt label="Connect wallet to get tUSD" /> : wallet.cluster !== walletCluster ? <Notice>Wallet network does not match.</Notice> : null}
     {pending && <Notice>Unresolved request ID: {pending.requestId}{pending.signature && ` · Signature: ${pending.signature}`}</Notice>}
     {error && <Notice error>{error}</Notice>}

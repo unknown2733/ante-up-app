@@ -2,6 +2,10 @@ import type { ChainRef, Envelope, EpochPhase, NotExecutable, Phase, SnapshotRef,
 
 /** Financial execution contract; test assets only. Public profiles remain free-record-only. */
 export type FinancialAction = 'faucet' | 'registerMarket' | 'curveBuy' | 'curveSell' | 'graduate' | 'spotBuy' | 'spotSell' | 'openPro' | 'closePro' | 'claim' | 'depositLP' | 'withdrawLP';
+/** Finalized, network-wide tUSD faucet capacity. An individual wallet is checked at quote time. */
+export interface FaucetCapacity {
+  payoutAtoms: UInt; mintedAtoms: UInt; totalLimitAtoms: UInt; remainingClaims: UInt;
+}
 export interface FinancialIntent {
   requestId: string; wallet: string; action: FinancialAction;
   marketId: string | null;

@@ -1,4 +1,4 @@
-import type { FinancialAction, FinancialIntent, FinancialPortfolio, FinancialQuote, FinancialVault } from '../../../contracts/financial.ts';
+import type { FaucetCapacity, FinancialAction, FinancialIntent, FinancialPortfolio, FinancialQuote, FinancialVault } from '../../../contracts/financial.ts';
 import type { MarketView } from '../../../contracts/types.ts';
 import { InputError } from './validate.ts';
 import { decodeBase58 } from './auth.ts';
@@ -55,9 +55,20 @@ export function validateFinancialIntent(raw: unknown): FinancialIntent {
 
 /** The adapter must read finalized chain accounts; SQLite is only a quote/operation cache. */
 export interface FinancialReader {
+  faucetCapacity?(): Promise<FaucetCapacity | null>;
   portfolio(wallet: string): Promise<{ value: FinancialPortfolio; slot: string; cluster: 'localnet'|'devnet'; programId: string; finality: 'finalized' } | null>;
   vault(marketId: string): Promise<{ value: FinancialVault; slot: string; cluster: 'localnet'|'devnet'; programId: string; finality: 'finalized' } | null>;
   quote(intent: FinancialIntent, market: MarketView | null, now: number): Promise<FinancialQuote | null>;
+}
+
+export function validateFaucetCapacity(value: FaucetCapacity | null): FaucetCapacity {
+  if (!value || !u64(value.payoutAtoms) || value.payoutAtoms === '0' ||
+      !u64(value.mintedAtoms) || !u64(value.totalLimitAtoms) || !u64(value.remainingClaims) ||
+      BigInt(value.mintedAtoms) > BigInt(value.totalLimitAtoms) ||
+      BigInt(value.remainingClaims) !==
+        (BigInt(value.totalLimitAtoms) - BigInt(value.mintedAtoms)) / BigInt(value.payoutAtoms))
+    throw new Error('DATA_NOT_READY');
+  return value;
 }
 
 /** FinancialIntent is flat except ordered aliases; key order is not part of its identity. */

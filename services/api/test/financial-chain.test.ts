@@ -37,6 +37,9 @@ test('B quotes, registration reservation and prepared instructions share the con
     async config(){return {configVersion:3n};},async tokenAt(a:string,m:string,o:string){return {address:a,mint:m,owner:o,amount:100_000_000_000n};}}) as unknown as FinalizedFinancialAccounts;
   let clockTime=now-1;
   const reader=new FirstSliceFinancialReader(state,store,()=>now,async()=>({unixTimestamp:clockTime,observedAt:now}));
+  assert.deepEqual(await reader.faucetCapacity(),{
+    payoutAtoms:'1000000000',mintedAtoms:'0',totalLimitAtoms:'10000000000',remainingClaims:'10'
+  });
   const tx=new KitFirstSliceFinancialTransactionAdapter({state,reader,blockhashes:{async latest(){return {blockhash:wallet,lastValidBlockHeight:999n};}},now:()=>now});
   const faucetIntent=validateFinancialIntent({requestId:randomUUID(),wallet,action:'faucet',marketId:null});
   const faucet=await reader.quote(faucetIntent,null,now);

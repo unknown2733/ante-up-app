@@ -2,7 +2,7 @@ import { ANTE_UP_PROGRAM_ADDRESS } from '@ante-up/chain-client';
 import { getBase58Decoder, getBase64Encoder, getCompiledTransactionMessageDecoder, getTransactionDecoder } from '@solana/kit';
 import type { Transaction } from '@solana/kit';
 import type { Envelope, Operation, WalletSession } from '../../../contracts/types';
-import type { FinancialAction, FinancialIntent, FinancialPortfolio, FinancialPrepared, FinancialQuote, FinancialQuoteResult, FinancialVault } from '../../../contracts/financial';
+import type { FaucetCapacity, FinancialAction, FinancialIntent, FinancialPortfolio, FinancialPrepared, FinancialQuote, FinancialQuoteResult, FinancialVault } from '../../../contracts/financial';
 import type { WalletContext } from './transactionBoundary';
 import { isWalletRejection } from './walletErrors';
 import { startFinancialTiming } from './financialTiming';
@@ -88,6 +88,25 @@ export function createLiveFinancialFlow(options: FinancialFlowOptions) {
     return page.data;
   }
   const post = <T,>(path: string, wallet: WalletContext, body: unknown, existingSession?: WalletSession) => request<T>(path, wallet, { method: 'POST', body: JSON.stringify(body) }, existingSession);
+  async function faucetCapacity(): Promise<FaucetCapacity> {
+    const started=performance.now();
+    const response=await fetcher(`${origin}/v1/financial/faucet-capacity`,{cache:'no-store',headers:{Accept:'application/json'}});
+    const raw:unknown=await response.json();
+    if(!response.ok) throw new Error(raw && typeof raw==='object' && 'message' in raw && typeof raw.message==='string'
+      ? raw.message : `Faucet capacity request failed (${response.status}).`);
+    if(!raw || typeof raw!=='object' || !('schemaVersion' in raw) || !('mode' in raw) ||
+      !('asOf' in raw) || !('nextCursor' in raw) || !('data' in raw))
+      throw new Error('Faucet capacity response is invalid.');
+    const page=raw as Envelope<FaucetCapacity>,value=page.data;
+    if(page.schemaVersion!=='0.1' || page.mode!=='devnet' || !Number.isSafeInteger(page.asOf) ||
+      page.nextCursor!==null || !value || !positive(value.payoutAtoms) ||
+      !uint(value.mintedAtoms) || !uint(value.totalLimitAtoms) || !uint(value.remainingClaims) ||
+      BigInt(value.mintedAtoms)>BigInt(value.totalLimitAtoms) ||
+      BigInt(value.remainingClaims)!==(BigInt(value.totalLimitAtoms)-BigInt(value.mintedAtoms))/BigInt(value.payoutAtoms))
+      throw new Error('Faucet capacity response is invalid.');
+    options.onServerTime?.(page.asOf,started);
+    return value;
+  }
   function pending(wallet: WalletContext): FinancialPending | null {
     let value: string | null | undefined;
     try { value = storage?.getItem(pendingKey(wallet)); } catch { return null; }
@@ -317,5 +336,5 @@ export function createLiveFinancialFlow(options: FinancialFlowOptions) {
     } finally { active = false; }
   }
 
-  return { portfolio, vault, quote, prepareQuote, signReviewed, cancelReview, execute, recheck, pending, canExecute };
+  return { portfolio, vault, faucetCapacity, quote, prepareQuote, signReviewed, cancelReview, execute, recheck, pending, canExecute };
 }

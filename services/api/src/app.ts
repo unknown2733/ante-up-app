@@ -8,7 +8,7 @@ import { freeReturn } from '../../../contracts/reference.mjs';
 import { notExecutable, validateCompiledFree, validatePreparedForWallet, type TransactionAdapter } from './transaction.ts';
 import { LiveStore } from './live-store.ts';
 import { BoundedOperationReconciler, verifyReceipt, type OperationChain } from './operation-chain.ts';
-import { financialIntentKey, financialQuoteKey, validateFinancialIntent, validateFinancialPortfolio, validateFinancialQuote, validateFinancialVault, validatePreparedFinancial, type FinancialReader, type FinancialTransactionAdapter } from './financial.ts';
+import { financialIntentKey, financialQuoteKey, validateFaucetCapacity, validateFinancialIntent, validateFinancialPortfolio, validateFinancialQuote, validateFinancialVault, validatePreparedFinancial, type FinancialReader, type FinancialTransactionAdapter } from './financial.ts';
 import type { FinancialPrepareRequest } from '../../../contracts/financial.ts';
 import { ExistingMarket } from './registration.ts';
 import { createConsumerApiRoutes, type ConsumerApiBindings } from './consumer-api.ts';
@@ -146,6 +146,11 @@ export function createApp(options: {
         }
       }
       if (parts[1] === 'financial') {
+        if (request.method === 'GET' && parts.length === 3 && parts[2] === 'faucet-capacity') {
+          if (mode === 'fixture' || !options.financial?.faucetCapacity)
+            return fail('DATA_NOT_READY', 'financial chain reader unavailable');
+          return json(envelope(validateFaucetCapacity(await options.financial.faucetCapacity()),asOf));
+        }
         if (request.method === 'GET' && parts.length === 3 && parts[2] === 'portfolio') {
           const wallet = url.searchParams.get('wallet');
           if (!wallet || !(await signed(request, wallet))) return fail('UNAUTHORIZED', 'portfolio owner required');
