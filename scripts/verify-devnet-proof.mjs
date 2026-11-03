@@ -1,5 +1,7 @@
 // Read-only verification: RPC URL file, durable proof job and index DB only.
 // No payer, issuer or upload private key is accepted by this command.
+// The sole worker may explicitly reconcile its completion journal after all
+// finalized SAS/claim/program checks. Default invocation stays read-only.
 import {readFile,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {createRequire} from 'node:module';
@@ -8,6 +10,7 @@ import {canonical,payloadHash} from '../services/evidence/index.mjs';
 import {decodeAnteUpClaims,nonceForProofJob,projectionReaders} from '../services/evidence/runtime.mjs';
 import {ReadOnlyProjection} from '../services/evidence/worker-support.mjs';
 import {readProofJob} from '../services/evidence/archive.mjs';
+import {reconcileCompletion} from '../services/evidence/completion.mjs';
 const require=createRequire(new URL('../services/evidence/package.json',import.meta.url));
 const kit=require('@solana/kit'),sas=require('sas-lib');
 const check=(ok,code)=>{if(!ok)throw Error(code);};
@@ -15,6 +18,9 @@ const required=name=>{check(process.env[name],`MISSING_${name}`);return process.
 const json=async path=>JSON.parse(await readFile(path,'utf8'));
 let projection;
 try{
+ const args=process.argv.slice(2),reconcile=args.includes('--reconcile-completion');
+ check(args.every(a=>a==='--reconcile-completion'),'INVALID_ARGUMENT');
+ if(reconcile)check(process.env.ANTE_UP_EVIDENCE_LOCKED==='yes','EVIDENCE_WORKER_LOCK_REQUIRED');
  const directory=required('ANTE_UP_LIVE_DIRECTORY'),recordId=required('ANTE_UP_RECORD_ID');
  const endpoint=(await readFile(required('ANTE_UP_RPC_URL_FILE'),'utf8')).trim();
  const rpc=kit.createSolanaRpc(endpoint);
@@ -52,6 +58,9 @@ try{
   report={...report,state:'SAS_FINALIZED',claims,issuer:account.data.signer,expiry:account.data.expiry.toString()};
   if(record.data.proofComplete){
    check(hash===job.payloadHash,'PROTOCOL_HASH_MISMATCH');
+   if(reconcile){
+    job.completion=await reconcileCompletion(join(directory,'evidence/jobs.json'),{recordId,proofHash:hash,sasId:address});
+   }
    projection=new ReadOnlyProjection(join(directory,'index.sqlite'));
    const indexed=await projectionReaders(projection,{cluster:'devnet',programId:chain.ANTE_UP_PROGRAM_ADDRESS}).getFinalizedRecord(recordId);
    check(indexed?.proofId===job.id,'INDEXED_PROOF_MISMATCH');
