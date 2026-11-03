@@ -99,6 +99,20 @@ is reconciled; no signed transaction is replayed to the other endpoint.
 The secondary file is optional for local read-only testing. Keep both URLs
 outside the repository and validate the host wrapper before enabling cron.
 
+Scheduled execution reconciles unresolved attempts in existing cycle journals
+before checking whether another financial action is due. A finalized LP window
+must not leave its attempt marked `SUBMITTED` just because the market is now idle.
+`UNKNOWN` and unconfirmed signatures remain held; they are never resent by the
+reconciler. A failed RPC read stops that market's pass without a new signature.
+Earlier cycle journals are also checked after scope rotation.
+
+For an operator-controlled journal repair, the Keeper CLI accepts `--reconcile`
+with `--scope`, `--journal`, `--attempts`, and `--expected-genesis-hash` (and the
+existing RPC environment). This mode writes only the existing attempt journal,
+loads no signing keys, and cannot be combined with `--execute` or keypair flags.
+First validate it against a consistent SQLite backup of the journal. The default
+plan mode does not reconcile or change attempt state.
+
 ## Paid X market approval
 
 Before approving a newly registered market, use the read-only Devnet inspector
