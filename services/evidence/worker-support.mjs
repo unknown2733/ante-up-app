@@ -43,6 +43,25 @@ export function pendingRecords(records,jobs,now,{limit=3,allowlist=null}={}){
  .sort((a,b)=>a.exit.executedAt-b.exit.executedAt||a.id.localeCompare(b.id)).slice(0,limit);
 }
 
+export function evidenceWorkSummary(records,jobs,attempts={}){
+ const closed=records.filter(r=>r.finality==='finalized'&&r.exit&&['CLOSED_RESULT','CLOSED_NA'].includes(r.status));
+ const pending=closed.filter(r=>{
+  const job=jobs[`proof:${r.id}:original`];
+  return !r.proofId || (job && (job.state!=='ISSUED'||job.completion?.state!=='FINALIZED'));
+ });
+ return {completed:closed.length-pending.length,obligations:pending.length,
+  held:pending.filter(r=>{
+   const job=jobs[`proof:${r.id}:original`];
+   return !(job?.state==='ISSUED'&&job.completion?.state==='FINALIZED')&&
+    attempts[r.id]?.exitCode!==undefined&&attempts[r.id].exitCode!==0;
+  }).length};
+}
+
+export function isCompletionPending(job){return job?.state==='ISSUED'&&job.completion?.state!=='FINALIZED';}
+// No completion journal/PREPARED still needs its first completion submission.
+export function shouldReconcileCompletion(job){return job?.state==='ISSUED'&&
+ ['REQUESTING','SUBMITTED'].includes(job.completion?.state);}
+
 // Quote reservations survive crashes and UTC day changes. A known signed item
 // retries under its original reservation; no second item is signed on ambiguity.
 export function budgetedTransport({path,totalLimit,dailyLimit,perRecordLimit,recordId,quote,balance,send,now=()=>Date.now()}){
