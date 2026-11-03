@@ -35,7 +35,8 @@ export async function financialEpochPhase(state:FinalizedFinancialAccounts,marke
   if (time>=fm.lpWindowStart && time<fm.lpWindowEnd && fm.openPositions===0 && fm.lpGeneration===market.validityGeneration)
     return fm.currentCycle===0n?'INITIAL_LP':'LP_WINDOW';
   const currentMonday=(time-345_600n)/604_800n*604_800n+345_600n;
-  if (time>=fm.proReopenAt && time>=fm.lpWindowEnd && fm.lpGeneration===market.validityGeneration && currentMonday<=fm.lastLpMaturity) return 'PRO_OPEN';
+  if (time>=fm.proReopenAt && time>=fm.lpWindowEnd && fm.lpGeneration===market.validityGeneration && currentMonday<=fm.lastLpMaturity)
+    return time>=currentMonday+604_800n-1800n?'OPEN_CUTOFF':'PRO_OPEN';
   return null;
 }
 
