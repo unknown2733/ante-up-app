@@ -48,8 +48,6 @@ export class KitFreeTransactionAdapter implements TransactionAdapter {
     const market = await this.options.read.market(input.marketId);
     if (!market || market.id !== input.marketId || market.chain?.address !== market.id || market.chain.programId !== this.options.programId || market.chain.cluster !== this.options.cluster) throw new Error('MARKET_IDENTITY_MISMATCH');
     if (market.snapshot && (market.snapshot.finality !== 'finalized' || market.snapshot.chain.programId !== this.options.programId || market.snapshot.payload.marketId !== market.id)) throw new Error('SNAPSHOT_NOT_FINALIZED');
-    const now = this.options.now();
-    if (!Number.isSafeInteger(now)) throw new Error('INVALID_TIME');
     const owner = createNoopSigner(address(input.wallet));
     let recordId: string;
     let instruction;
@@ -73,6 +71,9 @@ export class KitFreeTransactionAdapter implements TransactionAdapter {
         setTransactionMessageFeePayer(address(input.wallet), createTransactionMessage({version: 0}))));
     const transaction = compileTransaction(message);
     const unsignedTransaction = Buffer.from(getTransactionEncoder().encode(transaction)).toString('base64');
+    // Start the 30-second wallet review only after the final RPC read completes.
+    const now = this.options.now();
+    if (!Number.isSafeInteger(now)) throw new Error('INVALID_TIME');
     return {kind:'transaction',action:input.action,requestId:input.requestId,wallet:input.wallet,
       cluster:this.options.cluster,programId:this.options.programId,expiresAt:now+30,recordId,
       unsignedTransaction,lastValidBlockHeight:lifetime.lastValidBlockHeight.toString(),

@@ -117,7 +117,7 @@ test('free prepare uses completion time after real RPC latency, while expired pa
   const store=new LiveStore(':memory:');
   const slowRead={...read,async market(){clock+=2;return market;}};
   const adapter=new KitFreeTransactionAdapter({cluster:'localnet',programId,read:slowRead,
-    blockhashes:{async latest(){clock+=1;return {blockhash:marketId,lastValidBlockHeight:999n};}},now:()=>clock,nextRecordNonce:()=>77n});
+    blockhashes:{async latest(){clock+=23;return {blockhash:marketId,lastValidBlockHeight:999n};}},now:()=>clock,nextRecordNonce:()=>77n});
   const api=createApp({mode:'localnet',programId,read,transactions:adapter,liveStore:store,chain,
     now:()=>clock,verifier:{async verify(){return true;}}});
   try{
@@ -125,7 +125,8 @@ test('free prepare uses completion time after real RPC latency, while expired pa
     const response=await post(api,'/v1/transactions/prepare',intent,token);
     assert.equal(response.status,200,JSON.stringify(await response.clone().json()));
     const prepared=(await json(response)).data;
-    assert.equal(prepared.expiresAt,now+32);
+    assert.equal(prepared.expiresAt,now+55);
+    assert.equal(prepared.expiresAt-clock,30);
     clock=prepared.expiresAt;
     assert.equal((await post(api,'/v1/transactions/prepare',intent,token)).status,409);
   }finally{store.close();}
