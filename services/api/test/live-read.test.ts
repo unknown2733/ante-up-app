@@ -60,7 +60,7 @@ test('indexed market price requires matching fresh finalized snapshot and blocks
   const [marketAddress]=await findMarketPda({marketId:seed},{programAddress:address(programId)});
   const [admissionAddress]=await findAdmissionPda({programAddress:address(programId)});
   const now=1_800_000_000,hash=new Uint8Array(32).fill(7);
-  let status=DataStatus.Valid,through=now-100;
+  let status=DataStatus.Valid,through=now-100,projectedSequence='3',rpcFailed=false;
   const accountReader={async get(id:string){
     if (id===String(admissionAddress)) return {ownerProgramId:programId,data:getAdmissionEncoder().encode({admin:address(programId),open:true,outstanding:0,recent:Array(100).fill(0n),fundedOpenCap:1n,fundedOpenCount:0n})};
     if (id===String(marketAddress)) return {ownerProgramId:programId,data:getMarketEncoder().encode({id:seed,admin:address(programId),
@@ -70,14 +70,14 @@ test('indexed market price requires matching fresh finalized snapshot and blocks
     return null;
   }};
   const store=new SqliteProjectionStore(':memory:'),repositories=new SqliteEventRepositories(':memory:',accountReader);
-  store.snapshots=()=>[{payload:{marketId:String(marketAddress),sequence:'3'},payloadHash:Buffer.from(hash).toString('hex'),finality:'finalized'}] as any;
+  store.snapshots=()=>[{payload:{marketId:String(marketAddress),sequence:projectedSequence},payloadHash:Buffer.from(hash).toString('hex'),finality:'finalized'}] as any;
   const fm={anchorPg:1_000_000n,anchorSg:1_000_000_000_000n,anchorDg:1_000_000_000_000n,pmax:5_000_000n,
     lpWindowStart:BigInt(now-100),lpWindowEnd:BigInt(now+100),proReopenAt:BigInt(now+100),
     currentMaturity:0n,currentCycle:1n,openPositions:0,lpGeneration:0n,lastLpMaturity:BigInt(now),
     paymentVault:'vault',vaultInventory:'inventory',keywordMint:programId,externalQ:1000_000000n,
     proReserved:0n,otherReserved:0n,totalShares:7100_000000n,lockedShares:7100_000000n};
   let settled=false;
-  const financial=({async financeMarket(){return fm;},async settlement(){return settled?{}:null;},
+  const financial=({async financeMarket(){if(rpcFailed)throw Error('HTTP 429');return fm;},async settlement(){return settled?{}:null;},
     async financeConfig(){return {paymentMint:programId};},async tokenAt(id:string){return {amount:id==='vault'?8300_000000n:1000_000000n};}}) as unknown as FinalizedFinancialAccounts;
   const read=new SqliteFinalizedReadAdapter({mode:'localnet',programId,store,repositories,accounts:accountReader,financial,
     registry:[{address:String(marketAddress),seedHex:Buffer.from(seed).toString('hex'),keyword:'test',aliases:[]}],now:()=>now});
@@ -93,6 +93,20 @@ test('indexed market price requires matching fresh finalized snapshot and blocks
   assert.deepEqual((await read.markets(0))[0].price,{kind:'indexed',atoms:'1000000',executable:false});
   through=now-600;
   assert.equal((await read.markets(0))[0].price,null);
+  assert.equal((await read.markets(0))[0].priceReadiness?.state,'STALE');
+  projectedSequence='2';through=now-100;status=DataStatus.Valid;
+  const syncing=(await read.markets(0))[0];
+  assert.equal(syncing.snapshot,null);assert.equal(syncing.price,null);
+  assert.deepEqual(syncing.priceReadiness,{state:'SYNCING',dataThrough:through});
+  assert.equal(syncing.capabilities.openPro?.allowed,false);
+  assert.equal(syncing.capabilities.spotSell?.allowed,false);
+  through=now-600;
+  assert.equal((await read.markets(0))[0].priceReadiness?.state,'STALE','staleness takes precedence over projection mismatch');
+  through=now-100;projectedSequence='3';
+  assert.equal((await read.markets(0))[0].priceReadiness?.state,'CURRENT');
+  assert.equal((await read.markets(0))[0].price?.executable,true);
+  rpcFailed=true;
+  await assert.rejects(read.markets(0),/429/);
   repositories.close();store.close();
 });
 

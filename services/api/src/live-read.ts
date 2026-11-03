@@ -9,6 +9,7 @@ import type { FreeStateReader } from './transaction.ts';
 import { FinalizedFinancialAccounts, financialEpochPhase } from './financial-chain.ts';
 import type { SqliteFinancialRegistrationStore } from './registration.ts';
 import { UNIT, indexPrice, freeCapital } from '../../../contracts/reference.mjs';
+import {isRpcRateLimited} from '../../indexer/src/rpc-retry.ts';
 
 export interface MarketRegistryEntry {address:string;seedHex:string;keyword:string;aliases:string[];dataProvenance?:'SYNTHETIC_QA'}
 export function mergeMarketRegistry(registry:MarketRegistryEntry[],registrations:MarketRegistryEntry[]):MarketRegistryEntry[] {
@@ -57,6 +58,7 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
   async market(marketId: string) {return (await this.markets(0)).find(m=>m.id===marketId)??null;}
   async record(recordId: string) {return (await this.records()).find(r=>r.id===recordId)??null;}
   async markets(maxAgeMs=30_000): Promise<MarketView[]> {
+    if(this.marketCache?.value.some(m=>m.priceReadiness?.state==='SYNCING'))maxAgeMs=Math.min(maxAgeMs,2000);
     if (maxAgeMs>0 && this.marketCache && Date.now()-this.marketCache.atMs<maxAgeMs) return this.marketCache.value;
     if (this.marketRead) return this.marketRead;
     const current=this.readMarkets();
@@ -109,6 +111,7 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
       const matched=latest && latest.payload.sequence===chain.latestSequence.toString() && Buffer.from(chain.latestHash).toString('hex')===latest.payloadHash;
       const snapshot=matched?latest:null;
       let anchor=null,price=null,epochPhase=null;
+      let priceReadiness:MarketView['priceReadiness'];
       let financialCaps:MarketView['capabilities']={};
       if (this.financial) {
         try {
@@ -138,11 +141,20 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
               free,nav,externalQ:fm.externalQ,inventory:inventory.amount,totalShares:fm.totalShares,lockedShares:fm.lockedShares,
               openPositions:fm.openPositions,otherReserved:fm.otherReserved});
           }
-        } catch (error) { if (this.registrations?.finalized().some(r=>r.address===entry.address)) throw error; }
+        } catch (error) {
+          if(isRpcRateLimited(error) || error instanceof Error && /fetch failed|network|timeout|timed out/i.test(error.message) ||
+            this.registrations?.finalized().some(r=>r.address===entry.address)) throw error;
+        }
+      }
+      if(phase==='INDEXED'){
+        const through=Number(chain.latestDataThrough),age=this.now()-through;
+        priceReadiness={state:price?'CURRENT':![DataStatus.Valid,DataStatus.LowActivity].includes(chain.dataStatus)?'UNAVAILABLE':through>0 && age>=600?'STALE':
+          age>=0 && through>0 && !matched && [DataStatus.Valid,DataStatus.LowActivity].includes(chain.dataStatus)?'SYNCING':'UNAVAILABLE',dataThrough:through};
       }
       result.push({id:entry.address,keyword:entry.keyword,aliases:entry.aliases,phase,dataStatus,epochPhase,supported:true,
         ...(entry.dataProvenance==='SYNTHETIC_QA'?{dataProvenance:'SYNTHETIC_QA' as const}:{}),
         chain:{cluster:this.mode,programId:this.programId,address:entry.address},snapshot,anchor,price,freeChipCapacity,
+        ...(priceReadiness?{priceReadiness}:{}),
         capabilities:{...financialCaps,curveBuy:{allowed:phase==='CURVE',reason:phase==='CURVE'?null:'WRONG_PHASE'},curveSell:{allowed:phase==='CURVE',reason:phase==='CURVE'?null:'WRONG_PHASE'},
           openFree:entry.dataProvenance==='SYNTHETIC_QA'?{allowed:false,reason:'ENTRY_PAUSED'}:freeEntry,
           closeFree:{allowed:true,reason:null}}});

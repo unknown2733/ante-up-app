@@ -50,6 +50,12 @@ export function validateMarket(v: unknown): MarketView {
     oneOf(p.kind, ['curve', 'indexed'] as const, 'price.kind'); uint(p.atoms, 'price.atoms');
     if (typeof p.executable !== 'boolean') throw new InputError('price.executable invalid');
   }
+  if(m.priceReadiness!==undefined){
+    const readiness=object(m.priceReadiness);
+    oneOf(readiness.state,['CURRENT','SYNCING','STALE','UNAVAILABLE'] as const,'priceReadiness.state');
+    seconds(readiness.dataThrough,'priceReadiness.dataThrough');
+    if(readiness.state!=='CURRENT' && m.price!==null) throw new InputError('unverified price must be absent');
+  }
   if (m.snapshot !== null) {
     const s = object(m.snapshot);
     oneOf(s.finality, ['confirmed', 'finalized'] as const, 'snapshot.finality');
