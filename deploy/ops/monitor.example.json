@@ -47,15 +47,25 @@
   },
   "referenceKworb": {
     "ledgerPath": "live-smoke/index.sqlite",
-    "maxAgeSeconds": 129600
+    "maxAgeSeconds": 129600,
+    "maxReportAgeSeconds": 259200,
+    "slugs": [
+      "spotify-5MhMXTuVODDF234VDvSxQx",
+      "spotify-2ZaL63zLMDr6H18El2EIt9",
+      "spotify-5yVGW2o9LXaiiS4I3HUM3k"
+    ]
   },
   "referenceYouTube": {
     "ledgerPath": "live-smoke/index.sqlite",
-    "maxAgeSeconds": 900
+    "maxAgeSeconds": 900,
+    "maxObservationAgeSeconds": 900,
+    "slugs": ["youtube-S0Q4gqBUs7c", "youtube-sTcHbELHYCk", "youtube-jrDv0OdMt5s"]
   },
   "referenceX": {
     "ledgerPath": "live-smoke/index.sqlite",
-    "maxAgeSeconds": 28800
+    "maxAgeSeconds": 28800,
+    "maxObservationAgeSeconds": 28800,
+    "slugs": ["x-1557433517579141121", "x-1858854362614763615", "x-2043769559614656588"]
   },
   "rpcUrlFile": "/run/secrets/rpc.url",
   "wallets": [

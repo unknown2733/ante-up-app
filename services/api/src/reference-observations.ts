@@ -47,14 +47,18 @@ export class ReferenceObservationStore {
       SELECT *, ROW_NUMBER() OVER (PARTITION BY slug ORDER BY observed_at_ms DESC, captured_at_ms DESC, raw_sha256 DESC) AS rank
       FROM reference_observations) WHERE rank=1 ORDER BY slug`);
   }
-  history(slug: string, sinceMs = 0, limit = 5000): ReferenceObservation[] {
+  history(slug: string, sinceMs = 0, limit = 10000): ReferenceObservation[] {
     if (!/^[A-Za-z0-9-]{1,100}$/.test(slug) || !Number.isSafeInteger(sinceMs) || sinceMs < 0 ||
-        !Number.isSafeInteger(limit) || limit < 1 || limit > 5000) throw new Error('INVALID_REFERENCE_QUERY');
-    const rows = this.rows(`SELECT * FROM reference_observations WHERE slug=? AND observed_at_ms>=?
-      ORDER BY observed_at_ms DESC, captured_at_ms DESC, raw_sha256 DESC LIMIT ?`, slug, sinceMs, limit);
-    const seen = new Set<number>();
-    return rows.filter(item => { if (seen.has(item.observedAtMs)) return false; seen.add(item.observedAtMs); return true; })
-      .sort((a, b) => a.observedAtMs - b.observedAtMs);
+        !Number.isSafeInteger(limit) || limit < 1 || limit > 10000) throw new Error('INVALID_REFERENCE_QUERY');
+    // A 30-day chart sampled every five minutes has 8,641 distinct points.
+    // Rank revisions before limiting, so corrected source reports cannot evict
+    // older timestamps from that window.
+    const rows = this.rows(`SELECT * FROM (
+      SELECT *, ROW_NUMBER() OVER (PARTITION BY observed_at_ms
+        ORDER BY captured_at_ms DESC, raw_sha256 DESC) AS revision_rank
+      FROM reference_observations WHERE slug=? AND observed_at_ms>=?
+    ) WHERE revision_rank=1 ORDER BY observed_at_ms DESC LIMIT ?`, slug, sinceMs, limit);
+    return rows.reverse();
   }
   private rows(sql: string, ...args: Array<string | number>): ReferenceObservation[] {
     const result = this.db.prepare(sql).all(...args) as Array<Record<string, string | number | null>>;

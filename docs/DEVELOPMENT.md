@@ -67,6 +67,14 @@ Run `deploy/run-reference-kworb.sh <reviewed-image-tag>` with
 several days late. These counts are third-party display references and do not
 set a market price or settle a position.
 
+The operations monitor checks both collection attempts and the latest observed
+point for each approved reference subject. Configure `maxReportAgeSeconds`
+for the dated Kworb reports and `maxObservationAgeSeconds` for the YouTube/X
+subjects, with the corresponding fixed slug lists in the monitor config. A
+successful batch request can omit one subject, so request success alone does
+not establish that every public chart has a recent measured value. These
+checks read the local evidence database and make no paid provider calls.
+
 Devnet deployment requires explicit operator setup and current chain checks.
 Do not infer live service health or economic safety from a passing local test.
 

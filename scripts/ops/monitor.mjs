@@ -10,6 +10,9 @@ const DECIMAL=/^(0|[1-9][0-9]*)$/;
 const positive=x=>Number.isSafeInteger(x)&&x>0;
 const address=x=>typeof x==='string'&&/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(x);
 const safeRelative=x=>typeof x==='string'&&x.split('/').every(p=>p&&p!=='.'&&p!=='..'&&!/[\\:\x00]/.test(p));
+const referenceSlugs=slugs=>Array.isArray(slugs)&&slugs.length>0&&slugs.length<=20&&
+  slugs.every(slug=>typeof slug==='string'&&/^[A-Za-z0-9-]{1,80}$/.test(slug))&&
+  new Set(slugs).size===slugs.length;
 export function validateConfig(c) {
   check(c.version===1&&typeof c.monitorId==='string'&&/^[a-z0-9-]{1,64}$/.test(c.monitorId),'MONITOR_CONFIG_INVALID');
   check(typeof c.stateDirectory==='string'&&typeof c.runtimeDirectory==='string'&&!inside(c.stateDirectory,c.runtimeDirectory)&&!inside(c.runtimeDirectory,c.stateDirectory),'MONITOR_DIRECTORIES_REQUIRED');
@@ -46,16 +49,20 @@ export function validateConfig(c) {
     check(safeRelative(k.ledgerPath)&&positive(k.maxAgeSeconds),
       'MONITOR_REFERENCE_KWORB_INVALID');
     if(k.maxReportAgeSeconds!==undefined)
-      check(positive(k.maxReportAgeSeconds)&&Array.isArray(k.slugs)&&k.slugs.length>0&&k.slugs.length<=20&&
-        k.slugs.every(slug=>typeof slug==='string'&&/^[A-Za-z0-9-]{1,80}$/.test(slug))&&
-        new Set(k.slugs).size===k.slugs.length,'MONITOR_REFERENCE_KWORB_INVALID');
+      check(positive(k.maxReportAgeSeconds)&&referenceSlugs(k.slugs),'MONITOR_REFERENCE_KWORB_INVALID');
   }
-  if(c.referenceYouTube)
-    check(safeRelative(c.referenceYouTube.ledgerPath)&&positive(c.referenceYouTube.maxAgeSeconds),
+  if(c.referenceYouTube){
+    const y=c.referenceYouTube;
+    check(safeRelative(y.ledgerPath)&&positive(y.maxAgeSeconds)&&
+      (y.maxObservationAgeSeconds===undefined||positive(y.maxObservationAgeSeconds)&&referenceSlugs(y.slugs)),
       'MONITOR_REFERENCE_YOUTUBE_INVALID');
-  if(c.referenceX)
-    check(safeRelative(c.referenceX.ledgerPath)&&positive(c.referenceX.maxAgeSeconds),
+  }
+  if(c.referenceX){
+    const x=c.referenceX;
+    check(safeRelative(x.ledgerPath)&&positive(x.maxAgeSeconds)&&
+      (x.maxObservationAgeSeconds===undefined||positive(x.maxObservationAgeSeconds)&&referenceSlugs(x.slugs)),
       'MONITOR_REFERENCE_X_INVALID');
+  }
   check(Array.isArray(c.wallets)&&c.wallets.length>0&&c.wallets.every(w=>typeof w.role==='string'&&/^[a-z0-9-]+$/.test(w.role)&&address(w.address)&&DECIMAL.test(w.minLamports)),'MONITOR_WALLETS_INVALID');
   check(new Set(c.markets.map(m=>m.id)).size===c.markets.length&&new Set(c.wallets.map(w=>w.role)).size===c.wallets.length&&new Set(c.services.map(s=>s.name)).size===c.services.length,'DUPLICATE_MONITOR_SCOPE');
   if(c.snapshotFunding){
@@ -86,6 +93,22 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
   function age(seconds,limit,code,scope){
     if(!Number.isSafeInteger(seconds)||seconds<=0||seconds>at+30){add('TIMESTAMP_INVALID',scope);return;}
     if(at-seconds>=limit)add(code,scope,'critical',{ageSeconds:at-seconds,limitSeconds:limit});
+  }
+  function referenceObservationAges(db,config,kind,provider){
+    if(config.maxObservationAgeSeconds===undefined)return;
+    const rows=db.prepare(`SELECT slug,MAX(observed_at_ms) AS observed_at_ms FROM reference_observations
+      WHERE kind=? AND provider=? GROUP BY slug`).all(kind,provider);
+    const bySlug=new Map(rows.map(row=>[row.slug,row.observed_at_ms]));
+    for(const slug of config.slugs){
+      const observedAtMs=bySlug.get(slug);
+      if(observedAtMs===undefined){add('REFERENCE_OBSERVATION_MISSING',slug,'warning');continue;}
+      if(!Number.isSafeInteger(observedAtMs)||observedAtMs<=0||observedAtMs>now+30_000){
+        add('TIMESTAMP_INVALID',slug);continue;
+      }
+      if(now-observedAtMs>=config.maxObservationAgeSeconds*1000)
+        add('REFERENCE_OBSERVATION_STALE',slug,'warning',{
+          ageSeconds:Math.floor((now-observedAtMs)/1000),limitSeconds:config.maxObservationAgeSeconds});
+    }
   }
   for(const service of c.services){
     const health=await load(join(c.stateDirectory,service.path),`service-${service.name}`);if(!health)continue;
@@ -314,6 +337,7 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
         age(Math.floor(row.attempted_at_ms/1000),c.referenceYouTube.maxAgeSeconds,'REFERENCE_COLLECTION_STALE','youtube');
         if(row.status!=='SUCCESS')add('REFERENCE_COLLECTION_FAILED','youtube','critical',{status:row.status,errorCode:row.error_code??null});
       }
+      referenceObservationAges(referenceDb,c.referenceYouTube,'YOUTUBE_VIEWS','YouTube Data API');
     }catch{add('INPUT_UNAVAILABLE','youtube');}
     finally{referenceDb?.close();}
   }
@@ -329,6 +353,7 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
         age(Math.floor(row.attempted_at_ms/1000),c.referenceX.maxAgeSeconds,'REFERENCE_COLLECTION_STALE','x-posts');
         if(row.status!=='SUCCESS')add('REFERENCE_COLLECTION_FAILED','x-posts','critical',{status:row.status,errorCode:row.error_code??null});
       }
+      referenceObservationAges(referenceDb,c.referenceX,'X_LIKES','X API');
     }catch{add('INPUT_UNAVAILABLE','x-posts');}
     finally{referenceDb?.close();}
   }

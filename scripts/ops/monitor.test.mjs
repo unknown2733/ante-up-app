@@ -159,6 +159,41 @@ test('X post reference health reflects the last paid attempt, including provider
     /MONITOR_REFERENCE_X_INVALID/);
 });
 
+test('successful reference requests cannot hide missing or stale approved subject observations',async t=>{
+  const f=await fixture(t);
+  f.config.referenceYouTube={ledgerPath:'live-smoke/index.sqlite',maxAgeSeconds:900,
+    maxObservationAgeSeconds:900,slugs:['youtube-A','youtube-B']};
+  f.config.referenceX={ledgerPath:'live-smoke/index.sqlite',maxAgeSeconds:8*3600,
+    maxObservationAgeSeconds:8*3600,slugs:['x-A','x-B']};
+  const db=new DatabaseSync(f.dbPath);
+  try{
+    db.exec('CREATE TABLE reference_youtube_oracle_prep_requests (id INTEGER PRIMARY KEY, attempted_at_ms INTEGER, status TEXT, error_code TEXT)');
+    db.exec('CREATE TABLE reference_x_requests (id INTEGER PRIMARY KEY, attempted_at_ms INTEGER, status TEXT, error_code TEXT)');
+    db.exec('CREATE TABLE reference_observations (slug TEXT, kind TEXT, provider TEXT, observed_at_ms INTEGER)');
+    db.prepare('INSERT INTO reference_youtube_oracle_prep_requests VALUES (1,?,?,NULL)').run(now-60_000,'SUCCESS');
+    db.prepare('INSERT INTO reference_x_requests VALUES (1,?,?,NULL)').run(now-60_000,'SUCCESS');
+    const insert=db.prepare('INSERT INTO reference_observations VALUES (?,?,?,?)');
+    insert.run('youtube-A','YOUTUBE_VIEWS','YouTube Data API',now-1_800_000);
+    insert.run('x-A','X_LIKES','X API',now-60_000);
+  }finally{db.close();}
+  const report=await collect(f.config,{now,fetcher:f.fetcher});
+  assert.ok(report.alerts.some(a=>a.id==='REFERENCE_OBSERVATION_STALE:youtube-A'));
+  assert.ok(report.alerts.some(a=>a.id==='REFERENCE_OBSERVATION_MISSING:youtube-B'));
+  assert.ok(report.alerts.some(a=>a.id==='REFERENCE_OBSERVATION_MISSING:x-B'));
+  assert.ok(!report.alerts.some(a=>a.id==='REFERENCE_OBSERVATION_STALE:x-A'));
+  const updated=new DatabaseSync(f.dbPath);
+  try{
+    const insert=updated.prepare('INSERT INTO reference_observations VALUES (?,?,?,?)');
+    insert.run('youtube-A','YOUTUBE_VIEWS','YouTube Data API',now-60_000);
+    insert.run('youtube-B','YOUTUBE_VIEWS','YouTube Data API',now-60_000);
+    insert.run('x-B','X_LIKES','X API',now-60_000);
+  }finally{updated.close();}
+  assert.ok(!(await collect(f.config,{now,fetcher:f.fetcher})).alerts.some(a=>
+    a.code==='REFERENCE_OBSERVATION_MISSING'||a.code==='REFERENCE_OBSERVATION_STALE'));
+  assert.throws(()=>validateConfig({...f.config,referenceX:{...f.config.referenceX,slugs:['x-A','x-A']}}),
+    /MONITOR_REFERENCE_X_INVALID/);
+});
+
 test('an evidence admission guard failure raises an operational alert',async t=>{
   const f=await fixture(t);
   f.config.services.push({name:'evidence',path:'health/evidence.json',maxAgeSeconds:180});
