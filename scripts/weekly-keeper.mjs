@@ -1,10 +1,11 @@
 /** Bounded Devnet settlement and validity recovery driver. One instruction per market/pass. */
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {readFile,readdir,mkdir,mkdtemp,writeFile,rename,rm} from 'node:fs/promises';
+import {readFile,readdir,stat,mkdir,mkdtemp,writeFile,rename,rm} from 'node:fs/promises';
 import {join,dirname,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createRequire} from 'node:module';
+import {DatabaseSync} from 'node:sqlite';
 import {KitFinalizedAccountReader} from '../services/indexer/src/repositories.ts';
 import {isRpcRateLimited} from '../services/indexer/src/rpc-retry.ts';
 import {FinalizedFinancialAccounts} from '../services/api/src/financial-chain.ts';
@@ -108,6 +109,30 @@ async function command(args,env,timeout=90_000){
 const exact=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 async function readJson(path){return JSON.parse(await readFile(path,'utf8'));}
 
+/** Check existing cycle journals before any idle shortcut or new signature. No scope rotation. */
+export async function reconcileWeeklyAttempts(market,env,run=command){
+ const entries=await readdir(market.autoRoot).catch(error=>{if(error.code==='ENOENT')return [];throw error;});
+ const scopes=[market.initialScopePath,...entries.filter(name=>/^cycle-[1-9][0-9]*$/.test(name))
+   .sort().map(name=>join(market.autoRoot,name,'keeper-scope.json'))];
+ for(const scopePath of scopes){
+  const directory=dirname(scopePath),attemptsPath=join(directory,'keeper-attempts.sqlite');
+  // Missing journals mean no attempt was made. Other read failures must stop the pass.
+  try{await stat(attemptsPath);}catch(error){if(error.code==='ENOENT')continue;throw error;}
+  const db=new DatabaseSync(attemptsPath,{readOnly:true});
+  let pending;
+  try{pending=db.prepare("SELECT COUNT(*) AS n FROM keeper_attempts WHERE market_id=? AND state IN ('UNKNOWN','SUBMITTED')")
+    .get(market.marketId).n;}finally{db.close();}
+  if(!pending)continue;
+  const scope=await readJson(scopePath);
+  if(scope.marketId!==market.marketId||scope.programId!==PROGRAM||scope.cluster!=='devnet')fail('WEEKLY_SCOPE_INVALID');
+  const result=await run(['services/api/src/keeper-run.ts','--scope',scopePath,
+    '--journal',join(directory,'settlements.json'),'--attempts',attemptsPath,
+    '--expected-genesis-hash',GENESIS,'--reconcile'],env);
+  if(result.mode!=='reconcile'||result.marketId!==market.marketId||result.epoch!==scope.epoch||
+    result.state!=='complete'||result.pending!==0)fail('WEEKLY_ATTEMPTS_UNRESOLVED');
+ }
+}
+
 /** New cycle files are published atomically and never overwrite an older scope. */
 export async function resolveWeeklyScope(market,finance,env,run=command){
  const root=market.autoRoot,entries=await readdir(root).catch(error=>{
@@ -165,6 +190,7 @@ export async function runWeeklyPass({now,markets,accounts,env,execute=false,run=
  const output=[];
  for(const market of markets){
   try{
+   if(execute)await reconcileWeeklyAttempts(market,env,run);
    const [finance,chainMarket]=await Promise.all([accounts.financeMarket(market.marketId),accounts.market(market.marketId)]);
    const settlement=asInt(finance.currentMaturity)>now && accounts.settlement?
      await accounts.settlement(market.marketId,finance.currentCycle):null;
@@ -205,6 +231,7 @@ export async function runValidityRecoveryPass({now,markets,accounts,env,execute=
  const output=[];
  for(const market of markets){
   try{
+   if(execute)await reconcileWeeklyAttempts(market,env,run);
    const [finance,chainMarket]=await Promise.all([accounts.financeMarket(market.marketId),accounts.market(market.marketId)]);
    if(!validityRecoveryDue(finance,chainMarket,now)){
     output.push({marketId:market.marketId,state:'idle',reason:'NO_VALIDITY_RESET'});continue;

@@ -4,8 +4,9 @@ import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {weeklyDue,inWeeklyServiceWindow,inValidityRecoveryTick,validityRecoveryDue,validateWeeklyMarkets,resolveWeeklyScope,
-  runWeeklyPass,runValidityRecoveryPass,selectWeeklyRpc,missedObservedDeadline} from './weekly-keeper.mjs';
+  runWeeklyPass,runValidityRecoveryPass,selectWeeklyRpc,missedObservedDeadline,reconcileWeeklyAttempts} from './weekly-keeper.mjs';
 import {openOutage} from '../services/data/outage.mjs';
+import {SqliteKeeperAttempts} from '../services/keeper/src/attempts.ts';
 
 const program='FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr';
 const marketId='CyYjBcb4LyuyLN1Akaf2eXXJV5GhFUkaPNb7caLCuHN6';
@@ -206,4 +207,60 @@ test('same-week validity reset reopens LP only with no maturity or open position
   assert.equal(quiet[0].reason,'NO_VALIDITY_RESET');
   assert.equal(calls.length,3);
  }finally{await rm(f.root,{recursive:true,force:true});}
+});
+
+test('idle weekly and validity passes reconcile submitted LP attempts without signer arguments',async()=>{
+ const f=await fixture();
+ const attempts=new SqliteKeeperAttempts(join(f.base,'keeper-attempts.sqlite'));
+ try{
+  const key={action:'RECOVER_LP_WINDOW',marketId,cycle:'3',entity:`${week}:1`};
+  const attempt=attempts.reserve(key,'a'.repeat(64),1).attempt;
+  attempts.attachSignature(attempt,'existing-signature',2);
+  const now=week+3600,accounts={financeMarket:async()=>finance({currentMaturity:0n,
+    lastLpMaturity:BigInt(week),lpWindowStart:BigInt(week+960),lpWindowEnd:BigInt(week+1860)}),
+    market:async()=>chainMarket};
+  let calls=0;
+  const run=async args=>{
+    calls++;
+    assert.ok(args.includes('--reconcile'));
+    assert.equal(args.includes('--execute'),false);
+    assert.equal(args.includes('--publisher-keypair'),false);
+    assert.equal(args.includes('--keeper-keypair'),false);
+    return {mode:'reconcile',marketId,epoch:'3',state:'complete',pending:0};
+  };
+  assert.equal((await runWeeklyPass({now,markets:[f.market],accounts,env:{},execute:true,run}))[0].reason,'LP_ALREADY_OPENED');
+  assert.equal((await runValidityRecoveryPass({now,markets:[f.market],accounts,env:{},execute:true,run}))[0].reason,'NO_VALIDITY_RESET');
+  assert.equal(calls,2);
+  // The dry-run remains read-only, including the local attempt journal.
+  await runWeeklyPass({now,markets:[f.market],accounts,env:{},run:async()=>{throw Error('PREFLIGHT_MUTATED');}});
+  assert.equal(attempts.get(key).state,'SUBMITTED');
+  for(const pass of [runWeeklyPass,runValidityRecoveryPass]){
+    const result=await pass({now,markets:[f.market],accounts,env:{},execute:true,
+      run:async()=>({mode:'reconcile',marketId,epoch:'3',state:'unknown',pending:1})});
+    assert.equal(result[0].state,'blocked');assert.match(result[0].error,/WEEKLY_ATTEMPTS_UNRESOLVED/);
+  }
+ }finally{attempts.close();await rm(f.root,{recursive:true,force:true});}
+});
+
+test('reconciliation visits earlier cycle journals and fails closed on unreadable state',async()=>{
+ const f=await fixture();
+ const attempts=new SqliteKeeperAttempts(join(f.base,'keeper-attempts.sqlite'));
+ try{
+  const key={action:'START_LP_WINDOW',marketId,cycle:'3',entity:''};
+  attempts.attachSignature(attempts.reserve(key,'a'.repeat(64),1).attempt,'old-signature',2);
+  const next=join(f.market.autoRoot,'cycle-4');await mkdir(next,{recursive:true});
+  await writeFile(join(next,'keeper-scope.json'),JSON.stringify({...scope,epoch:'4'}));
+  const nextAttempts=new SqliteKeeperAttempts(join(next,'keeper-attempts.sqlite'));
+  nextAttempts.attachSignature(nextAttempts.reserve({...key,cycle:'4'},'b'.repeat(64),1).attempt,'new-signature',2);
+  nextAttempts.close();
+  const epochs=[];
+  await reconcileWeeklyAttempts(f.market,{},async args=>{
+    const saved=JSON.parse(await readFile(args[args.indexOf('--scope')+1],'utf8'));epochs.push(saved.epoch);
+    return {mode:'reconcile',marketId,epoch:saved.epoch,state:'complete',pending:0};
+  });
+  assert.deepEqual(epochs,['3','4']);
+  await writeFile(join(next,'keeper-attempts.sqlite'),'broken database');
+  await assert.rejects(reconcileWeeklyAttempts(f.market,{},async()=>
+    ({mode:'reconcile',marketId,epoch:'3',state:'complete',pending:0})),/database/);
+ }finally{attempts.close();await rm(f.root,{recursive:true,force:true});}
 });

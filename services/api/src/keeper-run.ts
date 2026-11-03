@@ -1,5 +1,5 @@
-/** Financial keeper CLI. Default is read-only; --execute authorizes one on-chain instruction. */
-import {readFile} from 'node:fs/promises';
+/** Default is read-only; --reconcile only updates existing attempts; --execute permits one instruction. */
+import {readFile,stat} from 'node:fs/promises';
 import {KitFinalizedAccountReader} from '../../indexer/src/repositories.ts';
 import {SqliteKeeperAttempts} from '../../keeper/src/attempts.ts';
 import {advanceFinancialEpoch, planFinancialEpoch} from '../../keeper/src/flow.ts';
@@ -11,14 +11,17 @@ import {SqliteFinancialRegistrationStore} from './registration.ts';
 import {KitFinancialEpochChain, type KeeperInstructionTransport} from './keeper-chain.ts';
 import {KitKeeperInstructionTransport, loadKeeperKeypair} from './keeper-transport.ts';
 import {verifyKeeperRpcIdentity} from './keeper-rpc-identity.ts';
+import {createKitChainTransport} from '../../../clients/chain/dist/runtime.js';
+import {reconcileKeeperAttempts} from '../../keeper/src/reconcile.ts';
 
 type Options={scope:string;journal:string;rpc:string;expectedGenesisHash?:string;attempts?:string;
-  publisherKeypair?:string;keeperKeypair?:string;execute:boolean;follow:boolean;intervalMs:number;maxPasses:number};
+  publisherKeypair?:string;keeperKeypair?:string;execute:boolean;reconcile:boolean;follow:boolean;intervalMs:number;maxPasses:number};
 function parseArgs(args:string[]):Options {
-  const values=new Map<string,string>();let execute=false,follow=false;
+  const values=new Map<string,string>();let execute=false,reconcile=false,follow=false;
   for (let i=0;i<args.length;i++) {
     const key=args[i];
     if (key==='--execute') {execute=true;continue;}
+    if (key==='--reconcile') {reconcile=true;continue;}
     if (key==='--follow') {follow=true;continue;}
     if (!['--scope','--journal','--rpc','--expected-genesis-hash','--attempts','--publisher-keypair','--keeper-keypair',
       '--interval-seconds','--max-passes'].includes(key) ||
@@ -30,17 +33,22 @@ function parseArgs(args:string[]):Options {
   if (!scope || !journal || !rpc || !/^https?:\/\//.test(rpc)) throw new Error('KEEPER_CLI_REQUIRES_SCOPE_JOURNAL_RPC');
   if (execute && (!values.get('--attempts') || !values.get('--publisher-keypair') || !values.get('--keeper-keypair') ||
       !expectedGenesisHash)) throw new Error('KEEPER_EXECUTE_REQUIRES_ATTEMPTS_KEYPAIRS_AND_GENESIS');
+  if (reconcile && (execute || !values.get('--attempts') || !expectedGenesisHash ||
+      values.has('--publisher-keypair') || values.has('--keeper-keypair')))
+    throw new Error('KEEPER_RECONCILE_REQUIRES_ATTEMPTS_GENESIS_AND_NO_SIGNERS');
   const intervalSeconds=Number(values.get('--interval-seconds')??'30');
   const maxPasses=Number(values.get('--max-passes')??(follow?'9007199254740991':'1'));
   if (!Number.isSafeInteger(intervalSeconds) || intervalSeconds<1 || intervalSeconds>300 ||
       !Number.isSafeInteger(maxPasses) || maxPasses<1 || !follow && maxPasses!==1)
     throw new Error('KEEPER_CLI_BOUNDS_INVALID');
   return {scope,journal,rpc,expectedGenesisHash,attempts:values.get('--attempts'),publisherKeypair:values.get('--publisher-keypair'),
-    keeperKeypair:values.get('--keeper-keypair'),execute,follow,intervalMs:intervalSeconds*1000,maxPasses};
+    keeperKeypair:values.get('--keeper-keypair'),execute,reconcile,follow,intervalMs:intervalSeconds*1000,maxPasses};
 }
 async function main() {
   const options=parseArgs(process.argv.slice(2));
   await assertSettlementJournalFile(options.journal);
+  if(options.reconcile && !(await stat(options.attempts!)).isFile())
+    throw new Error('KEEPER_ATTEMPTS_FILE_REQUIRED');
   const loadScope=async()=>{
     const scope=JSON.parse(await readFile(options.scope,'utf8')) as SettlementScope;
     if (!scope || (scope.cluster!=='localnet' && scope.cluster!=='devnet') || !scope.programId || !scope.marketId ||
@@ -60,10 +68,15 @@ async function main() {
         loadKeeperKeypair(options.keeperKeypair!)]);
       transport=new KitKeeperInstructionTransport({endpoint:options.rpc,programId:initialScope.programId,publisher,keeper});
     } else {
+      const rpc=options.reconcile?createKitChainTransport(options.rpc):null;
       transport={publisherAddress:'',keeperAddress:'',send:async()=>{throw new Error('KEEPER_PLAN_ONLY');},
-        signatureStatus:async()=>{throw new Error('KEEPER_PLAN_ONLY');}};
+        signatureStatus:async signature=>{
+          if(!rpc) throw new Error('KEEPER_PLAN_ONLY');
+          const status=await rpc.getSignatureStatus(signature);
+          return status?.confirmationStatus==='finalized'?(status.err!=null?'FAILED':'FINALIZED'):'PENDING';
+        }};
     }
-    if (options.execute) attempts=new SqliteKeeperAttempts(options.attempts!);
+    if (options.execute || options.reconcile) attempts=new SqliteKeeperAttempts(options.attempts!);
     const pass=async()=>{
       const scope=await loadScope();
       if (scope.cluster!==initialScope.cluster || scope.programId!==initialScope.programId ||
@@ -73,6 +86,12 @@ async function main() {
       const state=new FinalizedFinancialAccounts({cluster:scope.cluster,programId:scope.programId,accounts});
       const reader=new FirstSliceFinancialReader(state,registrations);
       const chain=new KitFinancialEpochChain(state,reader,transport,scope),now=Math.floor(Date.now()/1000);
+      if(options.reconcile) {
+        const result=await reconcileKeeperAttempts({marketId:scope.marketId,attempts:attempts!,
+          verify:attempt=>chain.verifyAttempt(attempt),now});
+        return {mode:'reconcile',marketId:scope.marketId,epoch:scope.epoch,action:null,
+          state:result.pending?'unknown':'complete',...result};
+      }
       const empty=await chain.readEmptyWindow(scope.marketId);
       if (empty.cycle!==scope.epoch) throw new Error('KEEPER_SCOPE_CYCLE_MISMATCH');
       const recovery=planEmptyLpRecovery(empty,scope.marketId,now);
