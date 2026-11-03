@@ -42,6 +42,32 @@ test('semantic gate ties finalized record, published candidate, query and replay
   await assert.rejects(()=>verifySemanticPacket(altered,{...packet,record:altered.record,payloadHash:payloadHash(altered)},async()=>true,storage),/INVALID_EVIDENCE/);
 });
 
+test('semantic reads group interleaved parents without changing signed evidence or skipping hashes',async()=>{
+  const source=fixture(),payload=structuredClone(source.payload),archived=new Map(source.archived);
+  for(let i=0;i<15;i++){
+    const id=`extra-${i}`,content=rawCountsArtifact({data:[],meta:{total_tweet_count:i}});
+    archived.set(id,content);
+    payload.evidence.push({contentHash:hash(JSON.parse(content)),arweaveItemId:id,parentTransactionId:`parent-${i%3}`});
+  }
+  const before=canonical(payload),packet={...source.packet,payloadHash:payloadHash(payload)};
+  const cache=[],loads=new Map();let active=0,maximum=0;
+  const storage={fetch:async ref=>{
+    if(!cache.includes(ref.parentTransactionId)){
+      loads.set(ref.parentTransactionId,(loads.get(ref.parentTransactionId)??0)+1);
+      cache.push(ref.parentTransactionId);if(cache.length>2)cache.shift();
+    }
+    maximum=Math.max(maximum,++active);
+    await new Promise(resolve=>setImmediate(resolve));active--;
+    return archived.get(ref.arweaveItemId);
+  }};
+  assert.equal(await verifySemanticPacket(payload,packet,async()=>true,storage),true);
+  assert.equal(canonical(payload),before);
+  assert.equal(loads.size,4);assert.ok([...loads.values()].every(n=>n===1));
+  assert.ok(maximum<=4);
+  archived.set('extra-14','{}');
+  await assert.rejects(()=>verifySemanticPacket(payload,packet,async()=>true,storage),/CONTENT_MISMATCH/);
+});
+
 test('unrelated archived artifacts cannot authorize a valid semantic packet',async()=>{
   const {payload,packet,storage,archived}=fixture();
   const forged=structuredClone(payload), unrelated=canonical({kind:'calculation',schemaVersion:'0.1',recordId:'unrelated',points:{}});

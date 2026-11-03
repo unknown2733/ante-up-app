@@ -20,6 +20,7 @@ test('one approved YouTube statistics batch becomes three durable public observa
       assert.equal(request.searchParams.get('id')?.split(',').length, 3);
       assert.equal(request.searchParams.has('key'), false);
       assert.equal(new Headers(init?.headers).get('x-goog-api-key'), 'test-secret');
+      assert.ok(init?.signal instanceof AbortSignal);
       return new Response(JSON.stringify({ items: [
         { id: 'S0Q4gqBUs7c', statistics: { viewCount: '14200001' } },
         { id: 'sTcHbELHYCk', statistics: { viewCount: '2790000' } },

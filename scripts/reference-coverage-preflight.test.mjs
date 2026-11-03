@@ -52,6 +52,18 @@ test('invalid or noncumulative observations cannot be treated as market activity
   assert.throws(()=>analyzeCumulativeCoverage([{...row(20,1),aggregation:'daily'}],options),/COVERAGE_OBSERVATION_INVALID/);
 });
 
+test('complete endpoint coverage does not hide a provider correction inside one bucket',()=>{
+  const readings=[row(17,100),row(18,110),
+    {...row(18,90),observedAtMs:18*cadence+2000,capturedAtMs:18*cadence+2000},
+    {...row(18,115),observedAtMs:18*cadence+3000,capturedAtMs:18*cadence+3000},
+    row(19,120),row(20,125)];
+  const result=analyzeCumulativeCoverage(readings,options);
+  assert.equal(result.coverageComplete,true);
+  assert.equal(result.negativeDeltas,1);
+  assert.equal(result.status,'SOURCE_REVISION_DOWN');
+  assert.equal(result.readyForFiveMinuteDerivation,false);
+});
+
 test('YouTube source identity and exact raw bytes are prerequisites for coverage',()=>{
   const rawBytes=Buffer.from('{"items":[{"id":"S0Q4gqBUs7c","statistics":{"viewCount":"100"}}]}');
   const valid={...row(20,100),kind:'YOUTUBE_VIEWS',provider:'YouTube Data API',

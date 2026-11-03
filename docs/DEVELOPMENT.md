@@ -75,6 +75,17 @@ successful batch request can omit one subject, so request success alone does
 not establish that every public chart has a recent measured value. These
 checks read the local evidence database and make no paid provider calls.
 
+Reference charts preserve skipped YouTube five-minute slots as gaps and reconcile
+the latest observation with the history response by observation and capture time.
+A dated report's correction keeps its original report date. Bundled Spotify
+snapshots also use their report dates, separately from the original capture time;
+updated charts use an undated metric label. The cumulative input
+preflight examines every observation before choosing each bucket endpoint, so
+an intra-bucket drop/rebound cannot be counted as new activity. These guards do
+not backfill missing observations, authorize a media market, or define a media
+pricing formula. YouTube requests time out after 15 seconds without an immediate
+retry; the existing reservation and next scheduled slot remain authoritative.
+
 Devnet deployment requires explicit operator setup and current chain checks.
 Do not infer live service health or economic safety from a passing local test.
 

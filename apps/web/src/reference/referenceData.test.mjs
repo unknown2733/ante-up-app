@@ -64,13 +64,28 @@ test('all periods retain the actual captured point first and append only an expl
       const series = history.series[0];
       assert.equal(series.evidence, undefined);
       assert.equal(series.kind, 'ACTIVITY_COUNT');
-      assert.deepEqual(series.points, [{ atMs: Date.parse(item.metric.asOf), value: item.metric.value, observationId: `public:${item.metric.rawSha256}` }]);
+      assert.deepEqual(series.points, [{
+        atMs: Date.parse(item.metric.reportedDate ? `${item.metric.reportedDate}T00:00:00Z` : item.metric.asOf),
+        value: item.metric.value, observationId: `public:${item.metric.rawSha256}`,
+        ...(item.metric.reportedDate ? { reportedDate: item.metric.reportedDate, sourceUrl: item.metric.sourceUrl } : {}),
+      }]);
       assert.deepEqual(series.gaps, []);
       assert.equal(history.market.activity.changeFraction, null);
       assert.equal(history.series[1].evidence, 'ILLUSTRATIVE');
       assert.equal(history.series[1].unit, 'preview index');
     }
   }
+});
+
+test('Awake keeps its September report date separate from its October capture',async()=>{
+  const history=await api.getHistory('reference:market:spotify-5MhMXTuVODDF234VDvSxQx','ALL');
+  assert.equal(history.series[0].timeBasis,'REPORT_DATE');
+  assert.equal(history.series[0].aggregation,'cumulative');
+  assert.equal(history.series[0].points[0].reportedDate,'2026-09-25');
+  assert.equal(history.series[0].points[0].atMs,Date.parse('2026-09-25T00:00:00Z'));
+  assert.equal(history.source.asOfMs,history.series[0].points[0].atMs);
+  assert.match(history.source.label,/captured 2026-10-12/);
+  assert.equal(history.series[0].label,'Spotify cumulative streams');
 });
 
 test('historical adapter preserves exact reported dates, daily scope, sparse gaps and period bounds', async () => {
@@ -82,7 +97,7 @@ test('historical adapter preserves exact reported dates, daily scope, sparse gap
     assert.equal(all.series[0].timeBasis, 'REPORT_DATE');
     assert.equal(all.series[0].gaps.length, item.aggregation === 'cumulative' ? 2 : 0);
     assert.equal(all.market.activity.unit.endsWith('/day'), item.aggregation === 'daily');
-    assert.equal(all.series.length, item.points.length < 4 ? 2 : 1);
+    assert.equal(all.series.length, item.points.length < 2 ? 2 : 1);
     for (const [period, days] of [['1D', 1], ['1W', 7], ['1M', 30]]) {
       const history = await api.getHistory(all.market.id, period);
       const expected = all.series[0].points.filter(p => p.atMs >= all.source.asOfMs - days * 86400000);
@@ -90,7 +105,7 @@ test('historical adapter preserves exact reported dates, daily scope, sparse gap
       assert.equal(history.market.latestPrice, null);
       assert.equal(history.market.activity.changeFraction, null);
       assert.deepEqual(history.actions, []);
-      assert.equal(history.series.length, item.points.length < 4 ? 2 : 1, 'short period does not manufacture illustrative history for a complete source series');
+      assert.equal(history.series.length, item.points.length < 2 ? 2 : 1, 'short period does not manufacture illustrative history once two observed points exist');
     }
   }
 });
@@ -125,6 +140,6 @@ test('illustrative additions never alter catalog totals, permissions, source rec
       assert.ok(series.points.every(point => Object.keys(point).sort().join(',') === 'atMs,value'));
     }
   }
-  assert.equal(previews, 9);
+  assert.equal(previews, 7, 'only the seven single-point subjects need an illustrative preview');
   assert.deepEqual(await api.listMarkets(), before);
 });

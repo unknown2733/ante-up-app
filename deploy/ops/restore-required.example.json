@@ -1,0 +1,7 @@
+[
+  "state/keeper-auto/markets.json",
+  "secrets/devnet-rpc.secondary.url",
+  "secrets/devnet-keeper.json",
+  "deployment/keeper-runner/run-weekly-keeper.sh",
+  "deployment/keeper-runner/crontab.entry"
+]

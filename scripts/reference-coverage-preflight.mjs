@@ -81,22 +81,22 @@ export function analyzeCumulativeCoverage(rows,{nowMs=Date.now(),cadenceMs=FIVE_
   for(const bucket of byBucket.keys())if(bucket>latest)latest=bucket;
   const first=latest-windowMs;
   const requiredBuckets=windowMs/cadenceMs+1;
-  let observedBuckets=0,negativeDeltas=0,trailingIntervals=0,previous=null;
+  let observedBuckets=0,trailingIntervals=0;
   for(let bucket=first;bucket<=latest;bucket+=cadenceMs){
     const row=byBucket.get(bucket);
-    if(!row){previous=null;continue;}
+    if(!row)continue;
     observedBuckets++;
-    if(previous&&BigInt(row.value)<BigInt(previous.value))negativeDeltas++;
-    previous=row;
   }
   for(let bucket=latest;byBucket.has(bucket-cadenceMs);bucket-=cadenceMs)
     trailingIntervals++;
   // An increase after a downward provider correction can restore previously
   // counted activity. Continuous buckets alone do not make it a new delta.
-  const revisionRecoveryIntervals=deriveCumulativeIntervals(rows,{bucketMs:cadenceMs}).intervals
-    .filter(interval=>interval.kind==='REVISION_RECOVERY'&&
+  const intervals=deriveCumulativeIntervals(rows,{bucketMs:cadenceMs}).intervals
+    .filter(interval=>
       Math.floor(interval.toAtMs/cadenceMs)*cadenceMs>=first&&
-      Math.floor(interval.toAtMs/cadenceMs)*cadenceMs<=latest).length;
+      Math.floor(interval.toAtMs/cadenceMs)*cadenceMs<=latest);
+  const negativeDeltas=intervals.filter(interval=>interval.kind==='DOWNWARD_REVISION').length;
+  const revisionRecoveryIntervals=intervals.filter(interval=>interval.kind==='REVISION_RECOVERY').length;
   const latestAgeMs=nowMs-rows.reduce((max,row)=>Math.max(max,row.observedAtMs),0);
   const coverageComplete=observedBuckets===requiredBuckets;
   const fresh=latestAgeMs>=0&&latestAgeMs<2*cadenceMs;

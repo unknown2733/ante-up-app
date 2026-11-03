@@ -22,24 +22,33 @@ export async function verifySemanticPacket(payload,packet,chainVerifier,storage)
   // Archived evidence is a canonical JSON envelope. The manifest's refs must
   // lead to these exact bytes, rather than to unrelated uploaded text.
   check(Array.isArray(payload.evidence) && payload.evidence.length>0);
-  const artifacts=[];
+  const artifacts=new Array(payload.evidence.length);
   const seenRefs=new Set();
   for (const ref of payload.evidence) {
     check(ref && /^[a-f0-9]{64}$/.test(ref.contentHash) && typeof ref.arweaveItemId==='string' &&
       ref.arweaveItemId.length>0 && typeof ref.parentTransactionId==='string' && ref.parentTransactionId.length>0);
     check(!seenRefs.has(ref.arweaveItemId)); seenRefs.add(ref.arweaveItemId);
   }
-  // Bound gateway fan-out while preserving the payload's exact evidence order.
-  for (let offset=0; offset<payload.evidence.length; offset+=4) {
-    const batch=await Promise.all(payload.evidence.slice(offset,offset+4).map(async ref=>{
+  // The signed-parent cache holds only two bundles. Hash-ordered evidence can
+  // otherwise download the same large bundles hundreds of times after the
+  // bounded content cache evicts them. Read one parent at a time, keeping the
+  // signed payload and its exact evidence order unchanged.
+  const parents=new Map();
+  payload.evidence.forEach((ref,index)=>{
+    const group=parents.get(ref.parentTransactionId)??[];
+    group.push({ref,index});parents.set(ref.parentTransactionId,group);
+  });
+  for (const group of parents.values()) {
+   for (let offset=0; offset<group.length; offset+=4) {
+    await Promise.all(group.slice(offset,offset+4).map(async ({ref,index})=>{
       const bytes=await storage.fetch(ref);
       check(typeof bytes==='string' && sha256(Buffer.from(bytes,'utf8'))===ref.contentHash,'CONTENT_MISMATCH');
       let artifact;
       try { artifact=JSON.parse(bytes); } catch { throw new Error('INVALID_EVIDENCE'); }
       check(canonical(artifact)===bytes);
-      return artifact;
+      artifacts[index]=artifact;
     }));
-    artifacts.push(...batch);
+   }
   }
   const calculation=artifacts.filter(a=>a?.kind==='calculation');
   check(calculation.length===1 && canonical(calculation[0])===
