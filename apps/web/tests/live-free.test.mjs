@@ -221,11 +221,17 @@ test('unsupported wallet, disabled market, mismatched challenge, and notExecutab
   const result = await unavailable.flow.run({ market, action: 'openFree', recordId: null });
   assert.equal(result.state, 'UNAVAILABLE');
   assert.equal(unavailable.calls.filter((call) => call[0] === 'signAndSend').length, 0);
-  const stale = setup({ prepareResult: { kind: 'transaction', action: 'openFree', requestId: '00000000-0000-4000-8000-000000000001', wallet: owner, cluster: 'devnet', programId, recordId, expiresAt: now + 31, unsignedTransaction: unsignedTransaction('openFree'), lastValidBlockHeight: '10', quoteRef: null } });
+  const stale = setup({ prepareResult: { kind: 'transaction', action: 'openFree', requestId: '00000000-0000-4000-8000-000000000001', wallet: owner, cluster: 'devnet', programId, recordId, expiresAt: now + 46, unsignedTransaction: unsignedTransaction('openFree'), lastValidBlockHeight: '10', quoteRef: null } });
   assert.equal((await stale.flow.run({ market, action: 'openFree', recordId: null })).state, 'AWAITING_SIGNATURE');
   assert.equal(stale.calls.filter((call) => call[0] === 'signAndSend').length, 0);
 });
 
+test('a prepared chip request tolerates a small server clock lead', async () => {
+  const skewed = setup({ prepareResult: { kind: 'transaction', action: 'openFree', requestId: '00000000-0000-4000-8000-000000000001', wallet: owner, cluster: 'devnet', programId, recordId, expiresAt: now + 33, unsignedTransaction: unsignedTransaction('openFree'), lastValidBlockHeight: '10', quoteRef: null } });
+  const reviewed = await skewed.flow.prepare({ market, action: 'openFree', recordId: null });
+  assert.equal(reviewed.state, 'PREPARED');
+  assert.equal(skewed.calls.filter((call) => call[0] === 'signAndSend').length, 0);
+});
 test('ambiguous wallet send blocks repeat and permits request-ID recheck without resending', async () => {
   const { flow, calls } = setup({ signAndSend: async () => { throw new Error('wallet response lost'); } });
   const first = await flow.run({ market, action: 'openFree', recordId: null });
