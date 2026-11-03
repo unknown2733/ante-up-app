@@ -149,6 +149,11 @@ admission read and a Turbo balance read. Configure the optional operations
 slots and accepted proof duties exceed available Turbo credit or the total
 proof budget. A stale or invalid capacity report also raises an alert; it does
 not change the on-chain admission rule.
+When configuring `visitorFaucet` in the operations monitor, set
+`reserveLamports` to the API faucet policy's reserve. The monitor then reports
+the minimum of funding, UTC daily, and total remaining SOL grants using the
+same finalized funder balance and reservation ledger as public readiness.
+The metric is read-only and does not authorize or send a grant.
 The optional `snapshotFunding` settings in `deploy/ops/monitor.example.json`
 estimate the publisher balance needed for one and three days of publications,
 using the measured rent per snapshot and an explicit reserve. Recheck that

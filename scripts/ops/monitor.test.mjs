@@ -240,14 +240,21 @@ test('visitor SOL grant reservations warn before daily and total caps stop first
   insert.run('today','wallet-b','20000000','RESERVED',null,now-1000);
   db.close();
   f.config.visitorFaucet={ledgerPath:'live-smoke/index.sqlite.visitor-sol.sqlite',grantLamports:'20000000',dailyCapLamports:'40000000',totalCapLamports:'100000000'};
+  f.config.wallets.push({role:'visitor-sol',address:program,minLamports:'0'});
+  f.config.visitorFaucet.reserveLamports='10000000';
   const near=await collect(f.config,{now,fetcher:f.fetcher});
   assert.deepEqual(near.metrics.visitorSolReservedLamports,{total:'80000000',today:'20000000'});
+  assert.deepEqual(near.metrics.visitorSolRemainingGrants,{funding:'2',daily:'1',total:'1',available:'1'});
   assert.ok(near.alerts.some(a=>a.id==='BUDGET_NEAR_LIMIT:visitor-sol-total'));
   assert.ok(!near.alerts.some(a=>a.id==='BUDGET_EXHAUSTED:visitor-sol-daily'));
   const exhausted=await collect({...f.config,visitorFaucet:{...f.config.visitorFaucet,totalCapLamports:'90000000',dailyCapLamports:'30000000'}},{now,fetcher:f.fetcher});
   assert.ok(exhausted.alerts.some(a=>a.id==='BUDGET_EXHAUSTED:visitor-sol-total'));
   assert.ok(exhausted.alerts.some(a=>a.id==='BUDGET_EXHAUSTED:visitor-sol-daily'));
+  const fundingLimited=await collect({...f.config,visitorFaucet:{...f.config.visitorFaucet,
+    dailyCapLamports:'100000000',totalCapLamports:'200000000'}},{now,fetcher:f.fetcher});
+  assert.deepEqual(fundingLimited.metrics.visitorSolRemainingGrants,{funding:'2',daily:'4',total:'6',available:'2'});
   assert.throws(()=>validateConfig({...f.config,visitorFaucet:{...f.config.visitorFaucet,ledgerPath:'../private'}}),/MONITOR_VISITOR_FAUCET_INVALID/);
+  assert.throws(()=>validateConfig({...f.config,visitorFaucet:{...f.config.visitorFaucet,reserveLamports:'-1'}}),/MONITOR_VISITOR_FAUCET_INVALID/);
   await rm(path);
   assert.ok((await collect(f.config,{now,fetcher:f.fetcher})).alerts.some(a=>a.id==='INPUT_UNAVAILABLE:visitor-sol'));
 });
