@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { createApp } from '../src/app.ts';
 import { ReferenceObservationStore } from '../src/reference-observations.ts';
@@ -59,5 +60,47 @@ test('verified reference captures persist, reject invalid evidence, and remain r
     const reopened = new ReferenceObservationStore(dbPath);
     try { assert.equal(reopened.history(first.slug).length, 1); }
     finally { reopened.close(); }
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('thirty days of five-minute captures survive revision de-duplication and the public history limit', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ante-up-reference-window-'));
+  const dbPath = join(dir, 'reference.sqlite');
+  const slug = 'youtube-S0Q4gqBUs7c';
+  const start = Date.parse('2026-10-01T00:00:00Z');
+  const interval = 5 * 60_000;
+  const points = 30 * 24 * 12 + 1;
+  const initialized = new ReferenceObservationStore(dbPath);
+  initialized.close();
+  try {
+    const db = new DatabaseSync(dbPath);
+    try {
+      const insert = db.prepare(`INSERT INTO reference_observations
+        (slug,kind,aggregation,observed_at_ms,captured_at_ms,value,reported_date,provider,source_url,raw_sha256)
+        VALUES (?,'YOUTUBE_VIEWS','cumulative',?,?,?,NULL,'YouTube Data API',?,?)`);
+      db.exec('BEGIN');
+      try {
+        for (let i = 0; i < points; i++) {
+          const at = start + i * interval;
+          insert.run(slug, at, at, String(i), 'https://www.youtube.com/watch?v=S0Q4gqBUs7c', 'a'.repeat(64));
+        }
+        // Later source corrections share an observed timestamp and must not
+        // consume slots needed by older chart points.
+        for (let i = points - 50; i < points; i++) {
+          const at = start + i * interval;
+          insert.run(slug, at, at + 1000, String(i + 10), 'https://www.youtube.com/watch?v=S0Q4gqBUs7c', 'b'.repeat(64));
+        }
+        db.exec('COMMIT');
+      } catch (error) { db.exec('ROLLBACK'); throw error; }
+    } finally { db.close(); }
+    const store = new ReferenceObservationStore(dbPath);
+    try {
+      const history = store.history(slug);
+      assert.equal(history.length, points);
+      assert.equal(history[0].observedAtMs, start);
+      assert.equal(history.at(-1)?.value, String(points - 1 + 10));
+      assert.equal(store.history(slug, 0, 5000).length, 5000);
+      assert.throws(() => store.history(slug, 0, 10001), /INVALID_REFERENCE_QUERY/);
+    } finally { store.close(); }
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
