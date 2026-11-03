@@ -16,7 +16,10 @@
     "state/live-smoke/evidence/jobs.json",
     "state/live-smoke/evidence/budget.json",
     "state/markets.json",
+    "state/keeper-auto/markets.json",
     "secrets/devnet-rpc.url",
+    "secrets/devnet-rpc.secondary.url",
+    "secrets/devnet-keeper.json",
     "secrets/devnet-publisher.json",
     "secrets/devnet-deployer.json",
     "secrets/devnet-issuer.json",
@@ -25,6 +28,8 @@
     "secrets/visitor-sol.json",
     "deployment/release.env",
     "deployment/compose.resolved.yml",
-    "deployment/image-inventory.json"
+    "deployment/image-inventory.json",
+    "deployment/keeper-runner/run-weekly-keeper.sh",
+    "deployment/keeper-runner/crontab.entry"
   ]
 }

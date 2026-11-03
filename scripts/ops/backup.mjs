@@ -158,7 +158,8 @@ export async function createBackup({config,keyFile,output,quiesced=false}) {
 
 // Authentication completes before any manifest paths are parsed. Target must
 // not exist; the tool cannot overwrite a live state or secret directory.
-export async function restoreDrill({input,keyFile,target}) {
+export async function restoreDrill({input,keyFile,target,requiredFiles=[]}) {
+  check(Array.isArray(requiredFiles)&&requiredFiles.every(safePath)&&new Set(requiredFiles).size===requiredFiles.length,'RESTORE_REQUIREMENTS_INVALID');
   const key=await keyFrom(keyFile);target=resolve(target);
   await mkdir(target,{mode:0o700});const plain=join(target,'.authenticated-payload');
   try{
@@ -176,6 +177,8 @@ export async function restoreDrill({input,keyFile,target}) {
       async function read(n){const b=Buffer.alloc(n);let offset=0;while(offset<n){const r=await payload.read(b,offset,n-offset,position);check(r.bytesRead>0,'TRUNCATED_BACKUP');position+=r.bytesRead;offset+=r.bytesRead;}return b;}
       const n=(await read(4)).readUInt32BE();check(n>0&&n<=MAX_MANIFEST,'INVALID_MANIFEST_SIZE');manifest=JSON.parse((await read(n)).toString());
       check(manifest.version===1&&Array.isArray(manifest.entries)&&manifest.entries.length>0&&Array.isArray(manifest.required),'INVALID_MANIFEST');
+      // Check today's recovery contract, not just the contract saved by an older backup.
+      for(const path of requiredFiles)check(manifest.required.includes(path),'RESTORE_REQUIREMENT_NOT_DECLARED');
       const seen=new Set();
       for(const entry of manifest.entries){
         check(safePath(entry.path)&&entry.path.split('/').length>=2&&entry.path!=='.authenticated-payload'&&!seen.has(entry.path.toLowerCase()),'UNSAFE_ARCHIVE_PATH');
@@ -191,7 +194,8 @@ export async function restoreDrill({input,keyFile,target}) {
     }finally{await payload.close();}
     await validateHistory(target,manifest.entries);
     await rm(plain);await exclusiveJson(join(target,'restore-report.json'),{version:1,kind:'isolated-restore-drill',verifiedAt:new Date().toISOString(),
-      backupSha256:await digest(input),release:manifest.release,files:manifest.entries.length,databases:manifest.entries.filter(e=>e.sqlite).length,
+      backupSha256:await digest(input),backupCreatedAt:manifest.createdAt,requiredFiles:manifest.required,
+      release:manifest.release,files:manifest.entries.length,databases:manifest.entries.filter(e=>e.sqlite).length,
       hashes:'matched',sqlite:'quick_check-schema-row-counts-matched',servicesStarted:false,chainReconciled:false});
     return json(join(target,'restore-report.json'));
   }catch(e){await rm(target,{recursive:true,force:true});throw e;}
@@ -220,9 +224,10 @@ if(process.argv[1]&&pathToFileURL(resolve(process.argv[1])).href===import.meta.u
   try{
     process.umask(0o077);
     const [command,...argv]=process.argv.slice(2);
-    const a=args(argv,['--config','--key-file','--output','--input','--target','--destination','--destination-id','--failure-domain'],['--quiesced']);let result;
+    const a=args(argv,['--config','--key-file','--output','--input','--target','--destination','--destination-id','--failure-domain','--requirements-file'],['--quiesced']);let result;
     if(command==='create')result=await createBackup({config:await json(a['--config']),keyFile:a['--key-file'],output:a['--output'],quiesced:a['--quiesced']});
-    else if(command==='drill')result=await restoreDrill({input:a['--input'],keyFile:a['--key-file'],target:a['--target']});
+    else if(command==='drill')result=await restoreDrill({input:a['--input'],keyFile:a['--key-file'],target:a['--target'],
+      requiredFiles:a['--requirements-file']?await json(a['--requirements-file']):[]});
     else if(command==='copy')result=await copyBackup({input:a['--input'],destination:a['--destination'],destinationId:a['--destination-id'],failureDomain:a['--failure-domain']});
     else throw Error('INVALID_COMMAND');
     console.log(JSON.stringify(result));

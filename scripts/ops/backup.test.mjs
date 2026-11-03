@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {randomBytes} from 'node:crypto';
+import {randomBytes,createCipheriv,createDecipheriv} from 'node:crypto';
 import {createHash} from 'node:crypto';
 import {gzipSync} from 'node:zlib';
 import {mkdir, mkdtemp, writeFile, readFile, rm, readdir, symlink} from 'node:fs/promises';
@@ -33,11 +33,45 @@ test('encrypted complete snapshot includes committed WAL rows, secrets and confi
   assert.equal(receipt.sha256,created.sha256);assert.equal(receipt.physicalSeparationVerified,false);
   const target=join(f.dir,'restored'),report=await restoreDrill({input:join(f.dir,'remote/test.aub'),keyFile:f.keyFile,target});
   assert.equal(report.backupSha256,created.sha256);assert.equal(report.servicesStarted,false);
+  assert.equal(report.backupCreatedAt,created.createdAt);assert.deepEqual(report.requiredFiles,f.config.required);
   assert.equal(await readFile(join(target,'secrets/operator.json'),'utf8'),'synthetic-operator-secret');
   const db=new DatabaseSync(join(target,'state/live-smoke/index.sqlite'),{readOnly:true});
   try{assert.equal(db.prepare('SELECT state FROM ledger').get().state,'UNKNOWN');}finally{db.close();}
   assert.equal((await readdir(join(target,'state/live-smoke'))).some(p=>p.endsWith('-wal')),false);
   assert.equal((await readdir(join(f.dir,'output'))).some(p=>p.startsWith('.ante-backup')),false);
+});
+test('current Keeper recovery requirements reject an older backup and accept a complete round trip',async t=>{
+  const f=await fixture(t),requiredFiles=['deployment/keeper-runner/run-weekly-keeper.sh','deployment/keeper-runner/crontab.entry'];
+  await mkdir(join(f.dir,'deployment/keeper-runner'));
+  await writeFile(join(f.dir,requiredFiles[0]),'#!/bin/sh\nexit 0\n');
+  await writeFile(join(f.dir,requiredFiles[1]),'*/2 * * * * /example/run-weekly-keeper.sh\n');
+  // Being incidentally present is insufficient: the old backup did not require these files.
+  await createBackup({...f,quiesced:true});
+  const target=join(f.dir,'restored');
+  await assert.rejects(restoreDrill({input:f.output,keyFile:f.keyFile,target,requiredFiles}),/RESTORE_REQUIREMENT_NOT_DECLARED/);
+  assert.equal((await readdir(f.dir)).includes('restored'),false);
+  const output=join(f.dir,'output/new.aub');
+  await createBackup({...f,output,quiesced:true,config:{...f.config,required:[...f.config.required,...requiredFiles]}});
+  const report=await restoreDrill({input:output,keyFile:f.keyFile,target,requiredFiles});
+  for(const path of requiredFiles){assert.ok(report.requiredFiles.includes(path));assert.deepEqual(await readFile(join(target,path)),await readFile(join(f.dir,path)));}
+  await assert.rejects(restoreDrill({input:output,keyFile:f.keyFile,target:join(f.dir,'invalid'),requiredFiles:['../escape']}),/RESTORE_REQUIREMENTS_INVALID/);
+});
+test('an authenticated manifest declaration without the required file cannot pass a drill',async t=>{
+  const f=await fixture(t);await createBackup({...f,quiesced:true});
+  const archive=await readFile(f.output),key=await readFile(f.keyFile),header=archive.subarray(0,20);
+  const decipher=createDecipheriv('aes-256-gcm',key,header.subarray(8));
+  decipher.setAAD(header);decipher.setAuthTag(archive.subarray(-16));
+  const plain=Buffer.concat([decipher.update(archive.subarray(20,-16)),decipher.final()]);
+  const length=plain.readUInt32BE(),manifest=JSON.parse(plain.subarray(4,4+length));
+  const missing='deployment/keeper-runner/crontab.entry';manifest.required.push(missing);
+  const encoded=Buffer.from(JSON.stringify(manifest)),size=Buffer.alloc(4);size.writeUInt32BE(encoded.length);
+  const prefix=Buffer.concat([header.subarray(0,8),randomBytes(12)]),cipher=createCipheriv('aes-256-gcm',key,prefix.subarray(8));
+  cipher.setAAD(prefix);
+  const forged=join(f.dir,'output/missing.aub');
+  await writeFile(forged,Buffer.concat([prefix,cipher.update(Buffer.concat([size,encoded,plain.subarray(4+length)])),cipher.final(),cipher.getAuthTag()]));
+  const target=join(f.dir,'missing-restore');
+  await assert.rejects(restoreDrill({input:forged,keyFile:f.keyFile,target,requiredFiles:[missing]}),/RESTORE_REQUIRED_FILE_MISSING/);
+  assert.equal((await readdir(f.dir)).includes('missing-restore'),false);
 });
 test('immutable Snapshot SQLite is restored byte for byte while live WAL databases are normalized',async t=>{
   const f=await fixture(t),archivePath=join(f.dir,'state/archives/snapshots.sqlite');

@@ -43,6 +43,32 @@ test('healthy observer accepts partial price coverage and makes only Devnet read
   assert.deepEqual(f.calls.map(c=>c.method),['getGenesisHash','getBalance']);assert.equal(f.calls[1].params[1].commitment,'finalized');
 });
 
+test('Keeper coverage and artifact age cannot be satisfied by a fresh legacy drill receipt',async t=>{
+  const f=await fixture(t),path=f.config.backup.drillReport;
+  f.config.backup.requiredFiles=['deployment/keeper-runner/run-weekly-keeper.sh','deployment/keeper-runner/crontab.entry'];
+  const drill=JSON.parse(await readFile(path,'utf8'));
+  const legacy=await collect(f.config,{now,fetcher:f.fetcher});
+  assert.ok(legacy.alerts.some(a=>a.code==='RESTORE_REQUIREMENTS_MISSING'));
+  assert.ok(legacy.alerts.some(a=>a.id==='INPUT_INVALID:backup-created-at'));
+  drill.requiredFiles=[f.config.backup.requiredFiles[0]];
+  drill.backupCreatedAt=new Date(now-3*86400_000).toISOString();
+  await f.save(path,drill);
+  const stale=await collect(f.config,{now,fetcher:f.fetcher});
+  assert.ok(stale.alerts.some(a=>a.code==='RESTORE_REQUIREMENTS_MISSING'));
+  assert.ok(stale.alerts.some(a=>a.code==='BACKUP_ARTIFACT_STALE'));
+  drill.requiredFiles=f.config.backup.requiredFiles;
+  drill.backupCreatedAt=new Date(now-6000).toISOString();await f.save(path,drill);
+  const fixed=await collect(f.config,{now,fetcher:f.fetcher});assert.deepEqual(fixed.alerts,[]);
+  const prior=Object.fromEntries(stale.alerts.map(a=>[a.id,{...a,sentAt:stale.at}]));
+  assert.equal(notification(fixed,prior).resolved.length,2);
+  for(const value of [null,'invalid',new Date(now+1000).toISOString(),new Date(now-500).toISOString()]){
+    drill.backupCreatedAt=value;await f.save(path,drill);
+    assert.ok((await collect(f.config,{now,fetcher:f.fetcher})).alerts.some(a=>a.id==='INPUT_INVALID:backup-created-at'));
+  }
+  for(const requiredFiles of [[],['../escape'],['deployment/a','deployment/a'],['deployment/a\n']])
+    assert.throws(()=>validateConfig({...f.config,backup:{...f.config.backup,requiredFiles}}),/MONITOR_BACKUP_REQUIREMENTS_INVALID/);
+});
+
 test('a current X spending-cap failure is distinct from an unrelated HTTP 403',async t=>{
   const f=await fixture(t),path=join(f.live,'collection.json');
   const state=JSON.parse(await readFile(path,'utf8'));
