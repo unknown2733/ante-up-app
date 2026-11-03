@@ -7,8 +7,10 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withVerifiedSubjectMedia } from '../apps/web/src/consumer-ui/catalog.ts';
+import { createPublicQaFetcher } from './public-qa-fetch.mjs';
 
 const args = process.argv.slice(2);
+const publicFetch=createPublicQaFetcher();
 const option = flag => { const i = args.indexOf(flag); return i < 0 ? null : args[i + 1]; };
 if (!option('--dist')) throw new Error('Usage: node scripts/result-card-browser.mjs --dist apps/web/dist [--api-origin https://ante-up.fun] [--source-sha SHA]');
 const dist = path.resolve(option('--dist'));
@@ -19,7 +21,7 @@ if ((!localReadOnlyProxy && upstream.origin !== 'https://ante-up.fun') || upstre
     upstream.username || upstream.password || upstream.search || upstream.hash)
   throw new Error('Only the public https://ante-up.fun origin or an explicit local read-only QA proxy is allowed.');
 const getPublic = async pathname => {
-  const response = await fetch(new URL(pathname, upstream), { redirect: 'error', signal: AbortSignal.timeout(20_000) });
+  const response = await publicFetch(new URL(pathname, upstream));
   if (!response.ok) throw new Error(`Public GET ${pathname}: ${response.status}`);
   return response.json();
 };
@@ -75,7 +77,7 @@ const server = createServer(async (request, response) => {
       const localProof = localProofs.find(proof => url.pathname === `/api/v1/proofs/${encodeURIComponent(proof.id)}`);
       if (localProof) { send(200, 'application/json', JSON.stringify({ schemaVersion: '0.1', mode: 'devnet', asOf: Math.floor(Date.now()/1000), nextCursor: null, data: localProof })); return; }
       const target = new URL(url.pathname + url.search, upstream);
-      const result = await fetch(target, { method: request.method, redirect: 'error', signal: AbortSignal.timeout(20_000) });
+      const result = await publicFetch(target, { method: request.method });
       const body = Buffer.from(await result.arrayBuffer());
       const record = { path: target.pathname + target.search, status: result.status };
       if (result.ok && /\/history$/.test(target.pathname)) {
