@@ -126,11 +126,11 @@ export function FinancialMarket({ market, section, onFinalized, refreshBlocked =
   const modeProblem = isFixture || !liveFinancialFlow ? 'Financial actions are unavailable.' : !wallet ? 'Connect a wallet.' : wallet.cluster !== walletCluster || market.chain?.cluster !== wallet.cluster || market.chain.address !== market.id ? 'Wallet network does not match this market.' : null;
   const capability = market.capabilities[action as Action];
   const stageProblem = capability?.allowed !== true ? `${actionLabel[action]} unavailable: ${displayConsumerError(capability?.reason, 'Execution unavailable')}` : null;
-  const unavailable = refreshBlocked ? 'Refreshing market conditions. Wait for a current quote.' : stageProblem ?? modeProblem;
+  const unavailable = refreshBlocked && action!=='claim' ? 'Refreshing market conditions. Wait for a current quote.' : stageProblem ?? modeProblem;
   const signingBlocked=marketSigningBlocked({busy,unavailable,pending,canExecute:!!liveFinancialFlow?.canExecute(action),remaining:quoteRemaining});
   const activePosition = portfolio?.positions.filter((item) => item.marketId === market.id && item.owner === wallet?.address && item.status === 'OPEN') ?? [];
   const unpaidClaims = portfolio?.claims.filter((item) => item.marketId === market.id && item.owner === wallet?.address && item.status === 'UNPAID') ?? [];
-  const emptySelection = portfolio?.wallet === wallet?.address && portfolio && !modeProblem && !refreshBlocked && !busy && !error
+  const emptySelection = portfolio?.wallet === wallet?.address && portfolio && !modeProblem && (!refreshBlocked || action==='claim') && !busy && !error
     ? action === 'claim' && unpaidClaims.length === 0 ? 'No payouts to claim.'
       : action === 'closePro' && activePosition.length === 0 ? 'No open positions to close.' : null
     : null;
