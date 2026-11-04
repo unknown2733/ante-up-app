@@ -13,7 +13,9 @@ export function parseKworbReport(html, trackId) {
   if (dateMatches.length !== 1) throw Error('KWORB_REPORT_DATE_AMBIGUOUS');
   const [, year, month, day] = dateMatches[0];
   const reportedDate = `${year}-${month}-${day}`;
-  if (Number.isNaN(Date.parse(`${reportedDate}T00:00:00Z`))) throw Error('KWORB_REPORT_DATE_INVALID');
+  const reportMs=Date.parse(`${reportedDate}T00:00:00Z`);
+  if (!Number.isFinite(reportMs)||new Date(reportMs).toISOString().slice(0,10)!==reportedDate)
+    throw Error('KWORB_REPORT_DATE_INVALID');
   const rows = [...html.matchAll(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi)]
     .filter(match => match[0].includes(`https://open.spotify.com/track/${trackId}`));
   if (rows.length !== 1) throw Error('KWORB_TRACK_ROW_AMBIGUOUS');
@@ -22,6 +24,8 @@ export function parseKworbReport(html, trackId) {
   if (idMatches.length !== 1 || idMatches[0][1] !== trackId) throw Error('KWORB_TRACK_ID_MISMATCH');
   const countMatch = row.match(/<\/a>[\s\S]*?<\/td>\s*<td>\s*([\d,]+)\s*<\/td>/i);
   if (!countMatch) throw Error('KWORB_STREAM_COUNT_MISSING');
+  if(!/^(?:[1-9]\d*|[1-9]\d{0,2}(?:,\d{3})+)$/.test(countMatch[1]))
+    throw Error('KWORB_STREAM_COUNT_INVALID');
   const value = countMatch[1].replaceAll(',', '');
   if (!/^[1-9]\d*$/.test(value)) throw Error('KWORB_STREAM_COUNT_INVALID');
   return { reportedDate, value };

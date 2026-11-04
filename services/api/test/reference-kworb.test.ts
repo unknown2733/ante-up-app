@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { platformReferences } from '../../../contracts/reference/platform-snapshot.ts';
 import { ReferenceObservationStore } from '../src/reference-observations.ts';
 import { collectKworbReferenceStreams } from '../src/reference-kworb.ts';
-import { runBoundedKworbReferenceStreams } from '../src/reference-kworb-schedule.ts';
+import { ReferenceKworbRequestBudget, runBoundedKworbReferenceStreams } from '../src/reference-kworb-schedule.ts';
 
 const tracks=platformReferences.filter(item=>item.platform==='Spotify');
 const nowMs=Date.parse('2026-10-29T12:00:00Z');
@@ -61,5 +61,32 @@ test('one daily reservation prevents repeat public fetches',async()=>{
     const second=await runBoundedKworbReferenceStreams({dbPath,fetcher:async()=>{throw Error('FETCHED_TWICE');},nowMs:()=>nowMs+60_000});
     assert.equal(second.status,'SKIPPED');
     assert.equal(second.reason,'MIN_INTERVAL');
+  }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test('same-date correction is preserved and a later daily report advances only its source date',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'ante-up-kworb-correction-'));
+  try{
+    const dbPath=join(dir,'index.sqlite');
+    await collectKworbReferenceStreams({dbPath,fetcher:report('100,000','2026/10/27'),nowMs:()=>nowMs});
+    await collectKworbReferenceStreams({dbPath,fetcher:report('99,999','2026/10/27'),nowMs:()=>nowMs+1000});
+    await collectKworbReferenceStreams({dbPath,fetcher:report('100,010','2026/10/28'),nowMs:()=>nowMs+2000});
+    const store=new ReferenceObservationStore(dbPath);
+    try{
+      for(const subject of tracks){const rows=store.history(subject.slug);assert.deepEqual(rows.map(r=>[r.reportedDate,r.value]),[['2026-10-27','99999'],['2026-10-28','100010']]);assert.equal(rows[1].observedAtMs,Date.parse('2026-10-28T00:00:00Z'));}
+    }finally{store.close();}
+  }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test('20-hour minimum and UTC daily cap leave the next day eligible',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'ante-up-kworb-cadence-'));
+  try{
+    const dbPath=join(dir,'index.sqlite'),start=Date.parse('2026-11-03T02:40:00Z'),budget=new ReferenceKworbRequestBudget(dbPath);
+    try{
+      assert.ok(budget.reserve(start).id);
+      assert.equal(budget.reserve(start+16*3600000).reason,'MIN_INTERVAL');
+      assert.equal(budget.reserve(start+20*3600000).reason,'DAILY_CAP');
+      assert.ok(budget.reserve(start+24*3600000).id);
+    }finally{budget.close();}
   }finally{await rm(dir,{recursive:true,force:true});}
 });
