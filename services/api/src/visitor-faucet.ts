@@ -50,13 +50,22 @@ export class SqliteSolFaucetLedger {
   get(requestId: string): Row | null {
     return (this.db.prepare('SELECT wallet,amount,state,signature,at_ms FROM visitor_sol_grants WHERE request_id=?').get(requestId) as Row|undefined) ?? null;
   }
+  fundingRevision(): string {
+    // Exact retained-row snapshot, including updates from another SQLite
+    // connection. No schema migration or resettable in-memory counter.
+    return JSON.stringify(this.db.prepare(`SELECT request_id,amount,state,signature,at_ms
+      FROM visitor_sol_grants ORDER BY request_id`).all());
+  }
   availability(wallet: string, atMs: number, policy: SolFaucetPolicy) {
-    const rows = this.db.prepare('SELECT wallet,amount,at_ms FROM visitor_sol_grants').all() as Row[];
+    const rows = this.db.prepare('SELECT wallet,amount,state,at_ms FROM visitor_sol_grants').all() as Row[];
     const dayStart = Math.floor(atMs / DAY_MS) * DAY_MS;
     const total = rows.reduce((sum,row) => sum + BigInt(row.amount),0n);
     const day = rows.filter(row=>row.at_ms>=dayStart && row.at_ms<dayStart+DAY_MS)
       .reduce((sum,row)=>sum+BigInt(row.amount),0n);
-    return {total,day,recentlyGranted:rows.some(row=>row.wallet===wallet && atMs-row.at_ms < policy.cooldownMs)};
+    // Until finalized readback, the current funding balance may still include
+    // an accepted grant. Keep that capital reserved across UTC day changes.
+    const pendingFunding=rows.filter(row=>row.state!=='FINALIZED').reduce((sum,row)=>sum+BigInt(row.amount),0n);
+    return {total,day,pendingFunding,recentlyGranted:rows.some(row=>row.wallet===wallet && atMs-row.at_ms < policy.cooldownMs)};
   }
   pendingSigned(limit = 10, offset = 0): Array<{requestId:string;signature:string}> {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50 ||
@@ -70,13 +79,16 @@ export class SqliteSolFaucetLedger {
       WHERE request_id=? AND signature=? AND state IN ('SUBMITTED','UNKNOWN')`)
       .run(requestId,signature).changes===1;
   }
-  reserve(requestId: string, wallet: string, atMs: number, policy: SolFaucetPolicy): {row:Row;created:boolean} | null {
+  reserve(requestId: string, wallet: string, atMs: number, policy: SolFaucetPolicy,
+      funding?: {headroom:bigint;revision:string}): {row:Row;created:boolean} | null {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const previous = this.get(requestId);
       if (previous) { this.db.exec('COMMIT'); if (previous.wallet !== wallet) throw Error('REQUEST_ID_CONFLICT'); return {row:previous,created:false}; }
-      const {total,day,recentlyGranted}=this.availability(wallet,atMs,policy);
+      if (funding && this.fundingRevision()!==funding.revision) { this.db.exec('COMMIT'); return null; }
+      const {total,day,pendingFunding,recentlyGranted}=this.availability(wallet,atMs,policy);
       if (recentlyGranted || total+policy.grantLamports>policy.totalCapLamports ||
+          (funding && pendingFunding+policy.grantLamports>funding.headroom) ||
           day+policy.grantLamports>policy.dailyCapLamports) { this.db.exec('COMMIT'); return null; }
       this.db.prepare('INSERT INTO visitor_sol_grants VALUES(?,?,?,?,?,?)')
         .run(requestId,wallet,policy.grantLamports.toString(),'RESERVED',null,atMs);
@@ -101,11 +113,13 @@ export class VisitorSolFaucet {
     if (!WALLET.test(wallet)) throw Error('INVALID_WALLET');
     if (await this.options.rpc.genesisHash() !== DEVNET_GENESIS) throw Error('DEVNET_REQUIRED');
     const {policy,ledger}=this.options;
+    const fundingRevision=ledger.fundingRevision();
     const [balance,funding]=await Promise.all([
       this.options.rpc.balanceLamports(wallet),this.options.fundingBalanceLamports()]);
-    const {total,day,recentlyGranted}=ledger.availability(wallet,this.options.nowMs(),policy);
+    const {total,day,pendingFunding,recentlyGranted}=ledger.availability(wallet,this.options.nowMs(),policy);
+    if(ledger.fundingRevision()!==fundingRevision)throw Error('DATA_NOT_READY');
     const remaining=(limit:bigint,used:bigint)=>limit>used?(limit-used)/policy.grantLamports:0n;
-    const fundingRemaining=remaining(funding,policy.reserveLamports);
+    const fundingRemaining=remaining(funding,policy.reserveLamports+pendingFunding);
     const dailyRemaining=remaining(policy.dailyCapLamports,day);
     const totalRemaining=remaining(policy.totalCapLamports,total);
     const grantRemaining=[fundingRemaining,dailyRemaining,totalRemaining].reduce((min,value)=>value<min?value:min);
@@ -125,9 +139,12 @@ export class VisitorSolFaucet {
     const old=ledger.get(requestId);
     if (old) { if(old.wallet!==wallet)throw Error('REQUEST_ID_CONFLICT'); return this.result(old); }
     if (await rpc.balanceLamports(wallet)>=policy.minimumBalanceLamports) return {state:'ENOUGH_SOL',signature:null,amountLamports:null};
-    if (await this.options.fundingBalanceLamports()<policy.grantLamports+policy.reserveLamports)
+    const fundingRevision=ledger.fundingRevision();
+    const funding=await this.options.fundingBalanceLamports();
+    if (funding<policy.grantLamports+policy.reserveLamports)
       return {state:'LIMIT_REACHED',signature:null,amountLamports:null};
-    const reservation=ledger.reserve(requestId,wallet,this.options.nowMs(),policy);
+    const reservation=ledger.reserve(requestId,wallet,this.options.nowMs(),policy,
+      {headroom:funding-policy.reserveLamports,revision:fundingRevision});
     if (!reservation) return {state:'LIMIT_REACHED',signature:null,amountLamports:null};
     const {row,created}=reservation;
     if (!created) return this.result(row);
