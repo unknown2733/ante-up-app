@@ -1,10 +1,10 @@
 import type {MarketView} from '../../../contracts/types';
 
 export type MarketReadState={value:MarketView|null;error:string;loading:boolean};
-/** A failed or pending recheck cannot retain an executable price or capability. */
+/** Hold price-dependent actions. Fixed claims still require fresh wallet/chain checks. */
 export function heldMarket(value:MarketView|null):MarketView|null {
   return value?{...value,price:null,priceReadiness:{state:'UNAVAILABLE',dataThrough:value.priceReadiness?.dataThrough??value.snapshot?.payload.dataThrough??0},
-    capabilities:Object.fromEntries(Object.entries(value.capabilities).map(([action])=>[action,{allowed:false,reason:'DATA_NOT_READY'}]))}:null;
+    capabilities:Object.fromEntries(Object.entries(value.capabilities).map(([action,capability])=>[action,action==='claim'?capability:{allowed:false,reason:'DATA_NOT_READY'}]))}:null;
 }
 export type ScopedMarketRead=MarketReadState & {identity:string;revision:string};
 export function mergeMarketRead(previous:ScopedMarketRead,state:MarketReadState,identity:string,revision:string):ScopedMarketRead {

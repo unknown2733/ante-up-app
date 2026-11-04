@@ -48,3 +48,26 @@ test('same-market revisions keep the financial panel mounted while blocking new 
  assert.equal(failed.value.id,'a');assert.equal(failed.value.price,null);
  assert.equal(currentMarketRead(failed,'devnet:b','1').value,null);
 });
+
+test('price refresh preserves only existing fixed-claim eligibility within the same market identity',()=>{
+ const previous={identity:'devnet:a',revision:'0',value:{...market(),capabilities:{claim:{allowed:true,reason:null},openPro:{allowed:true},spotBuy:{allowed:true},depositLP:{allowed:true}}},loading:false,error:''};
+ const held=currentMarketRead(previous,'devnet:a','1');
+ assert.equal(held.value.price,null);
+ assert.equal(held.value.capabilities.claim.allowed,true);
+ for(const action of ['openPro','spotBuy','depositLP'])assert.equal(held.value.capabilities[action].allowed,false);
+ assert.equal(currentMarketRead(previous,'devnet:b','1').value,null);
+ assert.equal(currentMarketRead(previous,'localnet:a','1').value,null);
+ const denied={...previous,value:{...previous.value,capabilities:{claim:{allowed:false,reason:'LIMIT_REACHED'}}}};
+ assert.equal(currentMarketRead(denied,'devnet:a','1').value.capabilities.claim.allowed,false);
+});
+
+test('a market RPC failure holds price actions but keeps fixed claims subject to their own checks',async()=>{
+ let failed=false;
+ const value={...market(),capabilities:{claim:{allowed:true,reason:null},spotBuy:{allowed:true},openPro:{allowed:true},depositLP:{allowed:true}}};
+ const {reader,states}=setup(async()=>{if(failed)throw Error('HTTP 503');return {data:value};});
+ await reader.retry();failed=true;await reader.retry();
+ const held=states.at(-1);
+ assert.ok(held.error);assert.equal(held.value.price,null);assert.equal(held.value.capabilities.claim.allowed,true);
+ for(const action of ['spotBuy','openPro','depositLP'])assert.equal(held.value.capabilities[action].allowed,false);
+ reader.stop();
+});
