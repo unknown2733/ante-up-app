@@ -2,6 +2,8 @@ import '../../tests/transaction-boundary.test.mjs';
 import '../../tests/live-free.test.mjs';
 import '../../tests/live-financial.test.mjs';
 import './pending-panel.tsx';
+import './faucet-panel.tsx';
+import './visitor-results.tsx';
 import {run} from './test-runtime.mjs';
 // These fixtures use only Buffer.from(bytes).toString('base64'). No Node APIs,
 // credentials or actual signing implementation are supplied to this page.
