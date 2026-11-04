@@ -68,16 +68,24 @@ function QuoteExpiry({ remaining }: { remaining: number }) {
 }
 
 export function PrivateFinancialPanel({ wallet, refresh }: { wallet: string; refresh: number }) {
-  const [portfolio, setPortfolio] = useState<FinancialPortfolio | null>(null);
+  const [loadedPortfolio, setPortfolio] = useState<FinancialPortfolio | null>(null);
+  const portfolio=loadedPortfolio?.wallet===wallet?loadedPortfolio:null;
+  const context=currentWalletContext();
+  const generation=useQuoteGeneration(JSON.stringify([wallet,context?.address,context?.cluster]),context?.signer);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  useEffect(() => { setPortfolio(null); setError(''); }, [wallet]);
+  useEffect(() => { setPortfolio(null); setError(''); setLoading(false); }, [wallet,context?.address,context?.cluster,context?.signer]);
   useEffect(() => { if (portfolio) void load(); /* Reload only after a confirmed transaction. */ }, [refresh]);
   async function load() {
     if (!liveFinancialFlow || isFixture) return;
+    const version=generation.current.version;
+    const current=()=>version===generation.current.version;
     setLoading(true); setError('');
-    try { setPortfolio(await liveFinancialFlow.portfolio()); } catch (cause) { setError(textError(cause)); }
-    finally { setLoading(false); }
+    try { const result=await liveFinancialFlow.portfolio(); if(!current())return;
+      if(result.wallet!==wallet)throw Error('Wallet portfolio identity could not be verified.');
+      setPortfolio(result);
+    } catch (cause) { if(current())setError(textError(cause)); }
+    finally { if(current())setLoading(false); }
   }
   return <section className="detail-panel finance-panel"><span className="eyebrow orange-text">PRIVATE FINANCE</span><h2>My assets</h2><p>Only the connected wallet can view these balances. They do not appear on public chip profiles.</p>
     {isFixture || !liveFinancialFlow ? <Notice>Financial account lookup is unavailable.</Notice> : <button className="button button-dark" disabled={loading} onClick={() => void load()}>{loading ? 'Loading…' : portfolio ? 'Refresh balances' : 'View balances'}</button>}
@@ -110,8 +118,10 @@ export function FinancialMarket({ market, section, onFinalized, refreshBlocked =
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const quoteGeneration = useQuoteGeneration(JSON.stringify([connected?.account.address, wallet?.cluster, market.id, section, action, quantity, direction, leverage, positionId, claimId]), wallet?.signer);
+  const walletGeneration=useQuoteGeneration(JSON.stringify([connected?.account.address,wallet?.cluster,market.id,section]),wallet?.signer);
+  const walletOperationCurrent=()=>{const version=walletGeneration.current.version;return ()=>version===walletGeneration.current.version;};
   const pending = wallet && liveFinancialFlow?.pending(wallet);
-  useEffect(() => { setQuote(null); setPortfolio(null); setVault(null); setOutcome(null); setError(''); }, [connected?.account.address, market.id, section]);
+  useEffect(() => { setQuote(null); setPortfolio(null); setVault(null); setOutcome(null); setError(''); setBusy(false); }, [wallet?.cluster,wallet?.signer,connected?.account.address, market.id, section]);
   useEffect(() => { setQuote(null); setOutcome(null); setError(''); }, [action, quantity, direction, leverage, positionId, claimId]);
   const modeProblem = isFixture || !liveFinancialFlow ? 'Financial actions are unavailable.' : !wallet ? 'Connect a wallet.' : wallet.cluster !== walletCluster || market.chain?.cluster !== wallet.cluster || market.chain.address !== market.id ? 'Wallet network does not match this market.' : null;
   const capability = market.capabilities[action as Action];
@@ -131,13 +141,15 @@ export function FinancialMarket({ market, section, onFinalized, refreshBlocked =
   useEffect(() => { if (!actions.includes(action)) { setAction(actions[0]); setQuote(null); } }, [market.phase]);
 
   async function loadPrivate() {
+    const current=walletOperationCurrent();
     if (!liveFinancialFlow || !wallet) return;
     setBusy(true); setError('');
-    try { const [mine, aggregate] = await Promise.all([liveFinancialFlow.portfolio(), section === 'lp' ? liveFinancialFlow.vault(market.id) : Promise.resolve(null)]); setPortfolio(mine); setVault(aggregate); }
-    catch (cause) { setError(textError(cause)); }
-    finally { setBusy(false); }
+    try { const [mine, aggregate] = await Promise.all([liveFinancialFlow.portfolio(), section === 'lp' ? liveFinancialFlow.vault(market.id) : Promise.resolve(null)]); if(!current())return; setPortfolio(mine); setVault(aggregate); }
+    catch (cause) { if(current())setError(textError(cause)); }
+    finally { if(current())setBusy(false); }
   }
   async function getQuote() {
+    const ownerCurrent=walletOperationCurrent();
     if (!liveFinancialFlow || unavailable || busy || pending) return;
     if (quote) liveFinancialFlow.cancelReview(quote);
     const version = quoteGeneration.current.version;
@@ -153,26 +165,28 @@ export function FinancialMarket({ market, section, onFinalized, refreshBlocked =
       const result = await liveFinancialFlow.quote(fields);
       if (!current()) { if (result.kind === 'quote') liveFinancialFlow.cancelReview(result.quote); return; }
       if (result.kind === 'notExecutable') setError(displayConsumerError(result.reason));
-      else { const failure = await liveFinancialFlow.prepareQuote(result.quote, setProgress); if (!current()) { liveFinancialFlow.cancelReview(result.quote); return; } if (failure) setOutcome(failure); else setQuote(result.quote); }
+      else { const failure = await liveFinancialFlow.prepareQuote(result.quote, value=>{if(current())setProgress(value);}); if (!current()) { liveFinancialFlow.cancelReview(result.quote); return; } if (failure) setOutcome(failure); else setQuote(result.quote); }
     } catch (cause) { if (current()) setError(textError(cause)); }
-    finally { setBusy(false); setProgress(null); }
+    finally { if(ownerCurrent()){setBusy(false); setProgress(null);} }
   }
   async function execute() {
+    const current=walletOperationCurrent();
     if (!liveFinancialFlow || !quote || signingBlocked) return;
     setBusy(true); setError('');
     try {
-      const result = await liveFinancialFlow.signReviewed(quote, setProgress);
-      setOutcome(result); setQuote(null);
-      if (result.state === 'FINALIZED') { onFinalized(); await loadPrivate(); if (quote.intent.action === 'closePro') setAction('claim'); }
-    } catch (cause) { setError(textError(cause)); }
-    finally { setBusy(false); setProgress(null); }
+      const result = await liveFinancialFlow.signReviewed(quote, value=>{if(current())setProgress(value);});
+      if(!current())return; setOutcome(result); setQuote(null);
+      if (result.state === 'FINALIZED') { onFinalized(); await loadPrivate(); if (current() && quote.intent.action === 'closePro') setAction('claim'); }
+    } catch (cause) { if(current())setError(textError(cause)); }
+    finally { if(current()){setBusy(false); setProgress(null);} }
   }
   async function recheck() {
+    const current=walletOperationCurrent();
     if (!liveFinancialFlow || busy) return;
     setBusy(true); setError('');
-    try { const result = await liveFinancialFlow.recheck(); setOutcome(result); if (result.state === 'FINALIZED') { onFinalized(); await loadPrivate(); if (pending?.action === 'closePro') setAction('claim'); } }
-    catch (cause) { setError(textError(cause)); }
-    finally { setBusy(false); }
+    try { const result = await liveFinancialFlow.recheck(); if(!current())return; setOutcome(result); if (result.state === 'FINALIZED') { onFinalized(); await loadPrivate(); if (current() && pending?.action === 'closePro') setAction('claim'); } }
+    catch (cause) { if(current())setError(textError(cause)); }
+    finally { if(current())setBusy(false); }
   }
 
   return <section className="detail-panel finance-panel"><span className="eyebrow orange-text">{section === 'money' ? 'TRADING' : section === 'pro' ? 'PRO' : 'LIQUIDITY'}</span><h2>{section === 'money' ? 'Buy / Sell' : section === 'pro' ? 'Pro positions' : 'Liquidity'}</h2>
@@ -207,12 +221,14 @@ export function FinancialMarket({ market, section, onFinalized, refreshBlocked =
 export function FinancialFaucet({ onFinalized }: { onFinalized: () => void }) {
   const connected = useConnectedWallet(walletClient);
   const wallet = currentWalletContext();
+  const walletKey=JSON.stringify([connected?.account.address,wallet?.cluster]);
   const [quote, setQuote] = useState<FinancialQuote | null>(null);
   const quoteRemaining = useQuoteRemaining(quote);
   const [outcome, setOutcome] = useState<FinancialOutcome | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [solReadiness, setSolReadiness] = useState<SolReadiness | null>(null);
+  const [solState,setSolState]=useState<{key:string;value:SolReadiness}|null>(null);
+  const solReadiness=solState?.key===walletKey?solState.value:null;
   const [solClaim, setSolClaim] = useState<SolClaim | null>(null);
   const [solError, setSolError] = useState('');
   const [solBusy, setSolBusy] = useState(false);
@@ -222,15 +238,15 @@ export function FinancialFaucet({ onFinalized }: { onFinalized: () => void }) {
   const [tusdRefresh, setTusdRefresh] = useState(0);
   const quoteGeneration = useQuoteGeneration(JSON.stringify([connected?.account.address, wallet?.cluster]), wallet?.signer);
   const pending = wallet && liveFinancialFlow?.pending(wallet);
-  useEffect(() => { setQuote(null); setOutcome(null); setError(''); }, [connected?.account.address]);
+  useEffect(() => { setQuote(null); setOutcome(null); setError(''); setBusy(false); setSolBusy(false); }, [walletKey,wallet?.signer]);
   useEffect(() => {
     let current = true;
-    setSolReadiness(null); setSolClaim(null); setSolError('');
+    setSolState(null); setSolClaim(null); setSolError('');
     if (wallet?.cluster === 'devnet' && visitorSolFlow) void visitorSolFlow.readiness()
-      .then(value => { if (current) setSolReadiness(value); })
+      .then(value => { if (current) setSolState({key:walletKey,value}); })
       .catch(cause => { if (current) setSolError(textError(cause)); });
     return () => { current = false; };
-  }, [connected?.account.address, wallet?.cluster, solRefresh]);
+  }, [walletKey, solRefresh]);
   useEffect(() => {
     const flow = liveFinancialFlow;
     if (!flow) return;
@@ -242,47 +258,56 @@ export function FinancialFaucet({ onFinalized }: { onFinalized: () => void }) {
     const timer = window.setInterval(() => { if (document.visibilityState === 'visible') read(); }, 60_000);
     return () => { current = false; window.clearInterval(timer); };
   }, [tusdRefresh]);
+  const faucetProblem=!wallet?'Connect a wallet.':wallet.cluster!==walletCluster?'Wallet network does not match.':wallet.cluster==='devnet' && (!solReadiness || solReadiness.needsSol)?'Verify your Devnet SOL balance before requesting tUSD.':null;
+  const signingBlocked=marketSigningBlocked({busy,unavailable:faucetProblem,pending,canExecute:!!liveFinancialFlow?.canExecute('faucet'),remaining:quoteRemaining});
+  const operationCurrent=()=>{const version=quoteGeneration.current.version;return ()=>version===quoteGeneration.current.version;};
   async function requestSol() {
-    if (!visitorSolFlow) return;
+    if (!visitorSolFlow || solBusy || !wallet || wallet.cluster!=='devnet') return;
+    const current=operationCurrent();
     setSolBusy(true); setSolError('');
     try {
       const result = await visitorSolFlow.claim();
+      if(!current())return;
       setSolClaim(result);
       if (result.state === 'FINALIZED' || result.state === 'ENOUGH_SOL') setSolRefresh(value => value + 1);
-    } catch (cause) { setSolError(textError(cause)); }
-    finally { setSolBusy(false); }
+    } catch (cause) { if(current())setSolError(textError(cause)); }
+    finally { if(current())setSolBusy(false); }
   }
   async function recheckSol() {
-    if (!visitorSolFlow) return;
+    if (!visitorSolFlow || solBusy || !wallet || wallet.cluster!=='devnet') return;
+    const current=operationCurrent();
     setSolBusy(true); setSolError('');
     try {
       const result = await visitorSolFlow.recheck();
+      if(!current())return;
       setSolClaim(result);
       if (result.state === 'FINALIZED') setSolRefresh(value => value + 1);
-    } catch (cause) { setSolError(textError(cause)); }
-    finally { setSolBusy(false); }
+    } catch (cause) { if(current())setSolError(textError(cause)); }
+    finally { if(current())setSolBusy(false); }
   }
   const solPending = wallet?.cluster === 'devnet' && visitorSolFlow ? visitorSolFlow.pending() : null;
   async function getQuote() {
-    if (!liveFinancialFlow) return;
+    if (!liveFinancialFlow || faucetProblem || busy || pending) return;
     if (quote) liveFinancialFlow.cancelReview(quote);
     const version = quoteGeneration.current.version;
     const current = () => version === quoteGeneration.current.version;
     setBusy(true); setError(''); setOutcome(null); setQuote(null);
     try { const result = await liveFinancialFlow.quote({ action: 'faucet', marketId: null }); if (!current()) { if (result.kind === 'quote') liveFinancialFlow.cancelReview(result.quote); return; } if (result.kind === 'quote') { const failure = await liveFinancialFlow.prepareQuote(result.quote); if (!current()) { liveFinancialFlow.cancelReview(result.quote); return; } if (failure) setOutcome(failure); else setQuote(result.quote); } else setError(displayConsumerError(result.reason)); }
-    catch (cause) { if (current()) setError(textError(cause)); } finally { setBusy(false); }
+    catch (cause) { if (current()) setError(textError(cause)); } finally { if(current())setBusy(false); }
   }
   async function execute() {
-    if (!liveFinancialFlow || !quote) return;
+    if (!liveFinancialFlow || !quote || signingBlocked) return;
+    const current=operationCurrent();
     setBusy(true); setError('');
-    try { const result = await liveFinancialFlow.signReviewed(quote); setOutcome(result); setQuote(null); if (result.state === 'FINALIZED') { setTusdRefresh(value => value + 1); onFinalized(); } }
-    catch (cause) { setError(textError(cause)); } finally { setBusy(false); }
+    try { const result = await liveFinancialFlow.signReviewed(quote); if(!current())return; setOutcome(result); setQuote(null); if (result.state === 'FINALIZED') { setTusdRefresh(value => value + 1); onFinalized(); } }
+    catch (cause) { if(current())setError(textError(cause)); } finally { if(current())setBusy(false); }
   }
   async function recheck() {
-    if (!liveFinancialFlow) return;
+    if (!liveFinancialFlow || busy || !wallet) return;
+    const current=operationCurrent();
     setBusy(true); setError('');
-    try { const result = await liveFinancialFlow.recheck(); setOutcome(result); if (result.state === 'FINALIZED') { setTusdRefresh(value => value + 1); onFinalized(); } }
-    catch (cause) { setError(textError(cause)); } finally { setBusy(false); }
+    try { const result = await liveFinancialFlow.recheck(); if(!current())return; setOutcome(result); if (result.state === 'FINALIZED') { setTusdRefresh(value => value + 1); onFinalized(); } }
+    catch (cause) { if(current())setError(textError(cause)); } finally { if(current())setBusy(false); }
   }
   return <div className="page"><div className="profile-header"><span className="eyebrow orange-text">FUNDS</span><h1>Get ready to play<span className="title-dot">.</span></h1><p>Devnet SOL pays network fees. tUSD is the test asset for trading.</p></div>
   <section className="detail-panel finance-panel"><h2>1 · Check network fees</h2><p>Every chip and trade needs a small amount of Devnet SOL. It has no cash value.</p>
@@ -310,8 +335,8 @@ export function FinancialFaucet({ onFinalized }: { onFinalized: () => void }) {
     {error && <Notice error>{error}</Notice>}
     {outcome && <Notice error={outcome.state === 'FAILED'}>{outcome.reason ? displayConsumerError(outcome.reason) : outcome.state} · Request ID: {outcome.requestId}</Notice>}
     {pending && <button className="button button-dark full" disabled={busy} onClick={() => void recheck()}>Check existing request</button>}
-    {!quote && <button className="button button-blue full" disabled={busy || !wallet || !!pending || !liveFinancialFlow || !!solReadiness?.needsSol} onClick={() => void getQuote()}>{busy ? 'Checking…' : 'Check eligibility and quote'}</button>}
-    {quote && <div className="finance-quote">{!busy && <QuoteExpiry remaining={quoteRemaining} />}<h3>Review payout terms</h3><div className="finance-facts"><Fact label="Expected receipt">{amount(quote.minReceiveAtoms)} tUSD</Fact><Fact label="Quote expiry">{date(quote.expiresAt)}</Fact></div>{!liveFinancialFlow?.canExecute('faucet') && <Notice>Signing is currently unavailable.</Notice>}<div className="finance-buttons"><button className="button button-dark" disabled={busy || (quoteRemaining === 0 && !!pending)} onClick={() => quoteRemaining === 0 ? void getQuote() : setQuote(null)}>{quoteRemaining === 0 ? 'Get fresh quote' : 'Cancel'}</button><button className="button button-blue" disabled={busy || !liveFinancialFlow?.canExecute('faucet') || quoteRemaining === 0} onClick={() => void execute()}>Sign in wallet</button></div></div>}
+    {!quote && <button className="button button-blue full" disabled={busy || !!faucetProblem || !!pending || !liveFinancialFlow} onClick={() => void getQuote()}>{busy ? 'Checking…' : 'Check eligibility and quote'}</button>}
+    {quote && <div className="finance-quote">{!busy && <QuoteExpiry remaining={quoteRemaining} />}<h3>Review payout terms</h3><div className="finance-facts"><Fact label="Expected receipt">{amount(quote.minReceiveAtoms)} tUSD</Fact><Fact label="Quote expiry">{date(quote.expiresAt)}</Fact></div>{!liveFinancialFlow?.canExecute('faucet') && <Notice>Signing is currently unavailable.</Notice>}<div className="finance-buttons"><button className="button button-dark" disabled={busy || (quoteRemaining === 0 && !!pending)} onClick={() => quoteRemaining === 0 ? void getQuote() : setQuote(null)}>{quoteRemaining === 0 ? 'Get fresh quote' : 'Cancel'}</button><button className="button button-blue" disabled={signingBlocked} onClick={() => void execute()}>Sign in wallet</button></div></div>}
   </section></div>;
 }
 
@@ -326,9 +351,12 @@ export function FinancialRegistration({ onFinalized }: { onFinalized: () => void
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const quoteGeneration = useQuoteGeneration(JSON.stringify([connected?.account.address, wallet?.cluster, keyword, aliases]), wallet?.signer);
+  const walletGeneration=useQuoteGeneration(JSON.stringify([connected?.account.address,wallet?.cluster]),wallet?.signer);
+  const walletOperationCurrent=()=>{const version=walletGeneration.current.version;return ()=>version===walletGeneration.current.version;};
   const pending = wallet && liveFinancialFlow?.pending(wallet);
-  useEffect(() => { setQuote(null); setOutcome(null); setError(''); }, [connected?.account.address]);
+  useEffect(() => { setQuote(null); setOutcome(null); setError(''); setBusy(false); }, [wallet?.cluster,wallet?.signer,connected?.account.address]);
   async function getQuote() {
+    const ownerCurrent=walletOperationCurrent();
     if (!liveFinancialFlow) return;
     if (quote) liveFinancialFlow.cancelReview(quote);
     const version = quoteGeneration.current.version;
@@ -339,19 +367,21 @@ export function FinancialRegistration({ onFinalized }: { onFinalized: () => void
       const list = aliases.split(',').map((value) => value.trim().toLowerCase().replace(/\s+/g, ' ')).filter(Boolean);
       const result = await liveFinancialFlow.quote({ action: 'registerMarket', marketId: null, keyword: normalized, aliases: list });
       if (!current()) { if (result.kind === 'quote') liveFinancialFlow.cancelReview(result.quote); return; } if (result.kind === 'quote') { const failure = await liveFinancialFlow.prepareQuote(result.quote); if (!current()) { liveFinancialFlow.cancelReview(result.quote); return; } if (failure) setOutcome(failure); else setQuote(result.quote); } else setError(displayConsumerError(result.reason));
-    } catch (cause) { if (current()) setError(textError(cause)); } finally { setBusy(false); }
+    } catch (cause) { if (current()) setError(textError(cause)); } finally { if(ownerCurrent())setBusy(false); }
   }
   async function execute() {
+    const current=walletOperationCurrent();
     if (!liveFinancialFlow || !quote) return;
     setBusy(true); setError('');
-    try { const result = await liveFinancialFlow.signReviewed(quote); setOutcome(result); setQuote(null); if (result.state === 'FINALIZED') onFinalized(); }
-    catch (cause) { setError(textError(cause)); } finally { setBusy(false); }
+    try { const result = await liveFinancialFlow.signReviewed(quote); if(!current())return; setOutcome(result); setQuote(null); if (result.state === 'FINALIZED') onFinalized(); }
+    catch (cause) { if(current())setError(textError(cause)); } finally { if(current())setBusy(false); }
   }
   async function recheck() {
+    const current=walletOperationCurrent();
     if (!liveFinancialFlow) return;
     setBusy(true); setError('');
-    try { const result = await liveFinancialFlow.recheck(); setOutcome(result); if (result.state === 'FINALIZED') onFinalized(); }
-    catch (cause) { setError(textError(cause)); } finally { setBusy(false); }
+    try { const result = await liveFinancialFlow.recheck(); if(!current())return; setOutcome(result); if (result.state === 'FINALIZED') onFinalized(); }
+    catch (cause) { if(current())setError(textError(cause)); } finally { if(current())setBusy(false); }
   }
   return <div className="page"><div className="profile-header"><span className="eyebrow orange-text">NEW MARKET</span><h1>Register a keyword<span className="title-dot">.</span></h1><p>Register an English keyword and limited aliases. The fee is 10 tUSD plus network fees. Registration does not guarantee data coverage or trading availability.</p></div><section className="detail-panel finance-panel"><h2>Review registration terms</h2>
     <div className="finance-form"><label>English keyword<input disabled={busy} value={keyword} placeholder="example keyword" onChange={(event) => { setKeyword(event.target.value); setQuote(null); }} /></label><label>Aliases · comma separated<input disabled={busy} value={aliases} placeholder="#examplekeyword" onChange={(event) => { setAliases(event.target.value); setQuote(null); }} /></label></div>
