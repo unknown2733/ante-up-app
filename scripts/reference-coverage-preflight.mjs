@@ -111,27 +111,37 @@ export function analyzeCumulativeCoverage(rows,{nowMs=Date.now(),cadenceMs=FIVE_
 
 export function inspectReferenceStore(dbPath,{nowMs=Date.now()}={}){
   const db=new DatabaseSync(resolve(dbPath),{readOnly:true});
+  let snapshotOpen=false;
   try{
+    // Subject selection, latest timestamps, evidence and calculation inputs
+    // must share one snapshot while collectors append observations.
+    db.exec('BEGIN');
+    snapshotOpen=true;
     const slugs=db.prepare('SELECT DISTINCT slug FROM reference_observations ORDER BY slug').all();
     const history=db.prepare(`SELECT o.kind, o.aggregation, o.observed_at_ms AS observedAtMs,
       o.captured_at_ms AS capturedAtMs, o.value, o.provider, o.source_url AS sourceUrl,
       o.reported_date AS reportedDate, o.raw_sha256 AS rawSha256, r.raw_bytes AS rawBytes
       FROM reference_observations o LEFT JOIN reference_raw r ON r.raw_sha256=o.raw_sha256
-      WHERE o.slug=? AND o.observed_at_ms>=? ORDER BY o.observed_at_ms, o.captured_at_ms`);
-    // Keep the correction baseline across the 28-day boundary without loading
-    // older raw provider responses into the evidence verification window.
-    const countHistory=db.prepare(`SELECT aggregation, observed_at_ms AS observedAtMs,
-      captured_at_ms AS capturedAtMs, value FROM reference_observations
-      WHERE slug=? ORDER BY observed_at_ms, captured_at_ms`);
-    const latest=db.prepare('SELECT MAX(observed_at_ms) AS atMs FROM reference_observations WHERE slug=?');
+      WHERE o.slug=? ORDER BY o.observed_at_ms, o.captured_at_ms`);
+    const latest=db.prepare(`SELECT kind, observed_at_ms AS atMs FROM reference_observations
+      WHERE slug=? ORDER BY observed_at_ms DESC, captured_at_ms DESC LIMIT 1`);
     return slugs.map(({slug})=>{
-      const atMs=latest.get(slug).atMs;
-      const rows=history.all(slug,atMs-TWENTY_EIGHT_DAYS-FIVE_MINUTES);
-      const kind=rows.at(-1)?.kind??null;
+      const {atMs,kind}=latest.get(slug);
       const cadenceSource=kind==='YOUTUBE_VIEWS'||kind==='X_LIKES';
-      const counts=cadenceSource?countHistory.all(slug):null;
+      const counts=cadenceSource?[]:null;
+      let invalidRows=0;
+      if(counts){
+        // Every historical count can affect the correction baseline. Verify its
+        // original evidence too, streaming raw responses instead of retaining
+        // the entire raw history alongside the scalar calculation inputs.
+        for(const row of history.iterate(slug)){
+          invalidRows+=verifyCumulativeEvidence([row],slug).invalidRows;
+          counts.push({aggregation:row.aggregation,observedAtMs:row.observedAtMs,
+            capturedAtMs:row.capturedAtMs,value:row.value,rawSha256:row.rawSha256});
+        }
+      }
       const coverage=counts?analyzeCumulativeCoverage(counts,{nowMs}):null;
-      const evidence=cadenceSource?verifyCumulativeEvidence(rows,slug):null;
+      const evidence=cadenceSource?{evidenceValid:invalidRows===0,invalidRows}:null;
       const firstBucket=Math.floor((atMs-TWENTY_EIGHT_DAYS)/FIVE_MINUTES)*FIVE_MINUTES;
       const lastBucket=Math.floor(atMs/FIVE_MINUTES)*FIVE_MINUTES;
       const intervalKinds=counts
@@ -148,7 +158,10 @@ export function inspectReferenceStore(dbPath,{nowMs=Date.now()}={}){
         status:'UNSUPPORTED_SOURCE_CADENCE',
         coverageComplete:false,readyForFiveMinuteDerivation:false}};
     });
-  }finally{db.close();}
+  }finally{
+    try{if(snapshotOpen)db.exec('ROLLBACK');}
+    finally{db.close();}
+  }
 }
 
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
