@@ -24,7 +24,7 @@ async function fixture(t){
   db.prepare('INSERT INTO current_snapshots VALUES(?,?,?,?,?)').run('devnet',program,market,'1',JSON.stringify({finality:'finalized',payload:{marketId:market,dataThrough:at-200}}));db.close();
   const rpcUrlFile=join(dir,'rpc.url');await writeFile(rpcUrlFile,'https://rpc.invalid/secret-token');
   const sha='a'.repeat(64);await save(join(dir,'copy.json'),{version:1,kind:'backup-copy',destinationId:'remote',verification:'destination-readback-sha256',verifiedAt:new Date(now-5000).toISOString(),sha256:sha});
-  await save(join(dir,'drill.json'),{kind:'isolated-restore-drill',hashes:'matched',servicesStarted:false,backupSha256:sha,verifiedAt:new Date(now-1000).toISOString()});
+  await save(join(dir,'drill.json'),{version:1,kind:'isolated-restore-drill',hashes:'matched',sqlite:'quick_check-schema-row-counts-matched',servicesStarted:false,backupSha256:sha,verifiedAt:new Date(now-1000).toISOString()});
   const config={version:1,monitorId:'test',stateDirectory:state,runtimeDirectory:join(dir,'observer'),liveDirectory:'live-smoke',programId:program,
     markets:[{id:market,collectionMaxAgeSeconds:900,snapshotMaxAgeSeconds:900}],
     services:[{name:'collector',path:'health/collector.json',maxAgeSeconds:180},{name:'price-history',path:'health/price-history.json',maxAgeSeconds:900}],
@@ -334,7 +334,8 @@ test('visitor SOL grant reservations warn before daily and total caps stop first
   f.config.visitorFaucet.reserveLamports='10000000';
   const near=await collect(f.config,{now,fetcher:f.fetcher});
   assert.deepEqual(near.metrics.visitorSolReservedLamports,{total:'80000000',today:'20000000'});
-  assert.deepEqual(near.metrics.visitorSolRemainingGrants,{funding:'2',daily:'1',total:'1',available:'1'});
+  assert.deepEqual(near.metrics.visitorSolRemainingGrants,{funding:'1',daily:'1',total:'1',available:'1'});
+  assert.equal(near.metrics.visitorSolPendingFundingLamports,'20000000');
   assert.ok(near.alerts.some(a=>a.id==='BUDGET_NEAR_LIMIT:visitor-sol-total'));
   assert.ok(!near.alerts.some(a=>a.id==='BUDGET_EXHAUSTED:visitor-sol-daily'));
   const exhausted=await collect({...f.config,visitorFaucet:{...f.config.visitorFaucet,totalCapLamports:'90000000',dailyCapLamports:'30000000'}},{now,fetcher:f.fetcher});
@@ -342,11 +343,82 @@ test('visitor SOL grant reservations warn before daily and total caps stop first
   assert.ok(exhausted.alerts.some(a=>a.id==='BUDGET_EXHAUSTED:visitor-sol-daily'));
   const fundingLimited=await collect({...f.config,visitorFaucet:{...f.config.visitorFaucet,
     dailyCapLamports:'100000000',totalCapLamports:'200000000'}},{now,fetcher:f.fetcher});
-  assert.deepEqual(fundingLimited.metrics.visitorSolRemainingGrants,{funding:'2',daily:'4',total:'6',available:'2'});
+  assert.deepEqual(fundingLimited.metrics.visitorSolRemainingGrants,{funding:'1',daily:'4',total:'6',available:'1'});
   assert.throws(()=>validateConfig({...f.config,visitorFaucet:{...f.config.visitorFaucet,ledgerPath:'../private'}}),/MONITOR_VISITOR_FAUCET_INVALID/);
   assert.throws(()=>validateConfig({...f.config,visitorFaucet:{...f.config.visitorFaucet,reserveLamports:'-1'}}),/MONITOR_VISITOR_FAUCET_INVALID/);
   await rm(path);
   assert.ok((await collect(f.config,{now,fetcher:f.fetcher})).alerts.some(a=>a.id==='INPUT_UNAVAILABLE:visitor-sol'));
+});
+
+test('visitor daily capacity excludes next UTC day reservations within the allowed clock skew',async t=>{
+  const f=await fixture(t),boundaryNow=Date.parse('2026-10-16T23:59:50Z');
+  const db=new DatabaseSync(join(f.live,'index.sqlite.visitor-sol.sqlite'));
+  try{
+    db.exec('CREATE TABLE visitor_sol_grants(amount TEXT,at_ms INTEGER,state TEXT)');
+    const insert=db.prepare('INSERT INTO visitor_sol_grants VALUES(?,?,?)');
+    insert.run('20000000',boundaryNow-1000,'FINALIZED');
+    insert.run('20000000',boundaryNow+15000,'UNKNOWN');
+  }finally{db.close();}
+  f.config.visitorFaucet={ledgerPath:'live-smoke/index.sqlite.visitor-sol.sqlite',grantLamports:'20000000',
+    reserveLamports:'10000000',dailyCapLamports:'40000000',totalCapLamports:'100000000'};
+  f.config.wallets.push({role:'visitor-sol',address:program,minLamports:'0'});
+  const report=await collect(f.config,{now:boundaryNow,fetcher:f.fetcher});
+  assert.deepEqual(report.metrics.visitorSolReservedLamports,{total:'40000000',today:'20000000'});
+  assert.deepEqual(report.metrics.visitorSolRemainingGrants,{funding:'1',daily:'1',total:'3',available:'1'});
+  assert.ok(!report.alerts.some(a=>a.id==='BUDGET_EXHAUSTED:visitor-sol-daily'));
+  const afterMidnight=await collect(f.config,{now:boundaryNow+20000,fetcher:f.fetcher});
+  assert.deepEqual(afterMidnight.metrics.visitorSolReservedLamports,{total:'40000000',today:'20000000'});
+});
+
+test('pending visitor funding survives UTC rollover without double-counting finalized grants',async t=>{
+  const f=await fixture(t),path=join(f.live,'index.sqlite.visitor-sol.sqlite');
+  const db=new DatabaseSync(path);
+  db.exec('CREATE TABLE visitor_sol_grants(id INTEGER,amount TEXT,at_ms INTEGER,state TEXT)');
+  const insert=db.prepare('INSERT INTO visitor_sol_grants VALUES(?,?,?,?)');
+  for(const [id,state] of ['RESERVED','UNKNOWN','SUBMITTED','FINALIZED'].entries())
+    insert.run(id,'20000000',now-86400000,state);
+  db.close();
+  f.config.visitorFaucet={ledgerPath:'live-smoke/index.sqlite.visitor-sol.sqlite',grantLamports:'20000000',
+    reserveLamports:'100000000',dailyCapLamports:'200000000',totalCapLamports:'400000000'};
+  f.config.wallets.push({role:'visitor-sol',address:program,minLamports:'120000000'});
+  let balance=250000000;
+  const fetcher=async(_url,request)=>({ok:true,json:async()=>({result:JSON.parse(request.body).method==='getGenesisHash'
+    ?'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG':{value:balance}})});
+  const pending=await collect(f.config,{now,fetcher});
+  assert.equal(pending.metrics.visitorSolPendingFundingLamports,'60000000');
+  assert.deepEqual(pending.metrics.visitorSolRemainingGrants,{funding:'4',daily:'10',total:'16',available:'4'});
+  assert.ok(!pending.alerts.some(a=>a.code==='VISITOR_SOL_FUNDING_LOW'));
+  const finalized=new DatabaseSync(path);finalized.exec("UPDATE visitor_sol_grants SET state='FINALIZED'");finalized.close();
+  balance-=60000000;
+  const settled=await collect(f.config,{now,fetcher});
+  assert.equal(settled.metrics.visitorSolPendingFundingLamports,'0');
+  assert.deepEqual(settled.metrics.visitorSolRemainingGrants,pending.metrics.visitorSolRemainingGrants);
+});
+
+test('pending visitor obligations can exhaust funding despite a balance above the wallet threshold',async t=>{
+  const f=await fixture(t),db=new DatabaseSync(join(f.live,'index.sqlite.visitor-sol.sqlite'));
+  db.exec('CREATE TABLE visitor_sol_grants(amount TEXT,at_ms INTEGER,state TEXT)');
+  db.prepare('INSERT INTO visitor_sol_grants VALUES(?,?,?)').run('20000000',now-86400000,'UNKNOWN');db.close();
+  f.config.visitorFaucet={ledgerPath:'live-smoke/index.sqlite.visitor-sol.sqlite',grantLamports:'20000000',
+    reserveLamports:'20000000',dailyCapLamports:'200000000',totalCapLamports:'400000000'};
+  f.config.wallets.push({role:'visitor-sol',address:program,minLamports:'40000000'});
+  const report=await collect(f.config,{now,fetcher:f.fetcher}); // finalized balance is 50m
+  assert.equal(report.metrics.visitorSolRemainingGrants.available,'0');
+  assert.ok(!report.alerts.some(a=>a.id==='WALLET_LOW:visitor-sol'));
+  assert.ok(report.alerts.some(a=>a.id==='VISITOR_SOL_FUNDING_LOW:visitor-sol'&&a.severity==='critical'));
+});
+
+test('matching backup hashes cannot hide a failed SQLite drill or unsupported report version',async t=>{
+  const f=await fixture(t),path=f.config.backup.drillReport;
+  const drill=JSON.parse(await readFile(path,'utf8'));
+  for(const patch of [{sqlite:'quick_check-failed'},{sqlite:null},{sqlite:undefined},{version:2},{version:null},{version:undefined}]){
+    await f.save(path,{...drill,...patch});
+    const report=await collect(f.config,{now,fetcher:f.fetcher});
+    assert.ok(report.alerts.some(a=>a.id==='RESTORE_DRILL_MISMATCH:backup'),JSON.stringify(patch));
+  }
+  await f.save(path,drill);
+  const recovered=await collect(f.config,{now,fetcher:f.fetcher});
+  assert.ok(!recovered.alerts.some(a=>a.id==='RESTORE_DRILL_MISMATCH:backup'));
 });
 
 test('funded chip capacity warns when Turbo credit or total proof budget cannot cover all remaining duties',async t=>{
