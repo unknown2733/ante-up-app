@@ -281,16 +281,18 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
       grantDb=new DatabaseSync(join(c.stateDirectory,c.visitorFaucet.ledgerPath),{readOnly:true});
       grantDb.exec('PRAGMA busy_timeout=3000');
       const rows=grantDb.prepare('SELECT amount,at_ms,state FROM visitor_sol_grants').all();
-      let total=0n,today=0n;
+      let total=0n,today=0n,pendingFunding=0n;
       const dayStart=Math.floor(now/86400000)*86400000;
       for(const row of rows){
         check(typeof row.amount==='string'&&DECIMAL.test(row.amount)&&BigInt(row.amount)>0n&&
           Number.isSafeInteger(row.at_ms)&&row.at_ms>0&&row.at_ms<=now+30000&&
           ['RESERVED','UNKNOWN','SUBMITTED','FINALIZED'].includes(row.state),'VISITOR_LEDGER_INVALID');
         const amount=BigInt(row.amount);total+=amount;
-        if(row.at_ms>=dayStart)today+=amount;
+        if(row.at_ms>=dayStart&&row.at_ms<dayStart+86400000)today+=amount;
+        if(row.state!=='FINALIZED')pendingFunding+=amount;
       }
       metrics.visitorSolReservedLamports={total:total.toString(),today:today.toString()};
+      metrics.visitorSolPendingFundingLamports=pendingFunding.toString();
       budget(today,c.visitorFaucet.dailyCapLamports,'visitor-sol-daily',BigInt(c.visitorFaucet.grantLamports));
       budget(total,c.visitorFaucet.totalCapLamports,'visitor-sol-total',BigInt(c.visitorFaucet.grantLamports));
     }catch(error){add(error.message==='VISITOR_LEDGER_INVALID'?'INPUT_INVALID':'INPUT_UNAVAILABLE','visitor-sol');}
@@ -376,12 +378,18 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
        metrics.walletLamports['visitor-sol']!==undefined){
       const v=c.visitorFaucet,grant=BigInt(v.grantLamports);
       const remaining=(limit,used)=>limit>used?(limit-used)/grant:0n;
-      const funding=remaining(BigInt(metrics.walletLamports['visitor-sol']),BigInt(v.reserveLamports));
+      // Pending grants may still be in the finalized wallet balance. Reserve
+      // them across UTC days; finalized grants are already reflected on-chain.
+      const pending=BigInt(metrics.visitorSolPendingFundingLamports);
+      const funding=remaining(BigInt(metrics.walletLamports['visitor-sol']),BigInt(v.reserveLamports)+pending);
       const daily=remaining(BigInt(v.dailyCapLamports),BigInt(metrics.visitorSolReservedLamports.today));
       const total=remaining(BigInt(v.totalCapLamports),BigInt(metrics.visitorSolReservedLamports.total));
       const available=[funding,daily,total].reduce((min,value)=>value<min?value:min);
       metrics.visitorSolRemainingGrants={funding:funding.toString(),daily:daily.toString(),
         total:total.toString(),available:available.toString()};
+      if(funding===0n)add('VISITOR_SOL_FUNDING_LOW','visitor-sol','critical',{
+        lamports:metrics.walletLamports['visitor-sol'],pendingFundingLamports:pending.toString(),
+        reserveLamports:v.reserveLamports,grantLamports:v.grantLamports});
     }
     if(c.snapshotFunding&&metrics.walletLamports.publisher!==undefined){
       const f=c.snapshotFunding,balance=BigInt(metrics.walletLamports.publisher);
@@ -403,7 +411,9 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
       age(Math.floor(Date.parse(receipt.verifiedAt)/1000),c.backup.maxAgeSeconds,'BACKUP_COPY_STALE','backup');
     }
     if(drill){
-      if(drill.kind!=='isolated-restore-drill'||drill.hashes!=='matched'||drill.servicesStarted!==false||drill.backupSha256!==receipt?.sha256)add('RESTORE_DRILL_MISMATCH','backup');
+      if(drill.version!==1||drill.kind!=='isolated-restore-drill'||drill.hashes!=='matched'||
+         drill.sqlite!=='quick_check-schema-row-counts-matched'||drill.servicesStarted!==false||
+         drill.backupSha256!==receipt?.sha256)add('RESTORE_DRILL_MISMATCH','backup');
       age(Math.floor(Date.parse(drill.verifiedAt)/1000),c.backup.maxAgeSeconds,'RESTORE_DRILL_STALE','backup');
       if(c.backup.requiredFiles||'requiredFiles' in drill){
         const required=drill.requiredFiles;
