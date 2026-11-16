@@ -17,7 +17,9 @@ export function validateExpiryRecovery(job, proof) {
     BigInt(proof.finalizedBlockHeight)<=BigInt(proof.lastValidBlockHeight) ||
     proof.boundaryBlockhashValid!==false || proof.snapshotExists!==false ||
     proof.nextSequence!==job.sequence || proof.signatureStatus!==null ||
-    proof.configVersion!==job.candidate?.configVersion ||
+    proof.candidateConfigVersion!==job.candidate?.configVersion ||
+    !decimal(proof.configVersion) || !decimal(proof.candidateConfigVersion) ||
+    BigInt(proof.configVersion)<BigInt(proof.candidateConfigVersion) ||
     proof.queryVersion!==job.candidate?.queryVersion || proof.queryHash!==job.candidate?.queryHash)
     throw Error('PUBLICATION_EXPIRY_PROOF_INVALID');
   return true;

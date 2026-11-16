@@ -43,9 +43,15 @@ export async function proveAndExpire({job,producerId,stoppedAt,inspect,captureBo
     await pause();
   }
   const context=await readContext(boundary.slot);
+  await save({stage:'CHAIN_CONTEXT_READBACK',expected:{sequence:job.sequence,configVersion:job.candidate.configVersion,
+    queryVersion:job.candidate.queryVersion,queryHash:job.candidate.queryHash},observed:{
+    minContextSlot:context.minContextSlot,snapshotExists:context.snapshotExists,nextSequence:context.nextSequence,
+    signaturePresent:context.signatureStatus!==null,configVersion:context.configVersion,
+    queryVersion:context.queryVersion,queryHash:context.queryHash}});
   check(context.minContextSlot>=boundary.slot&&context.genesisHash===GENESIS&&context.snapshotExists===false&&
     context.nextSequence===job.sequence&&context.signatureStatus===null&&
-    context.configVersion===job.candidate.configVersion&&context.queryVersion===job.candidate.queryVersion&&
+    dec(context.configVersion)&&dec(job.candidate.configVersion)&&BigInt(context.configVersion)>=BigInt(job.candidate.configVersion)&&
+    context.queryVersion===job.candidate.queryVersion&&
     context.queryHash===job.candidate.queryHash,'RECOVERY_CHAIN_CONTEXT_CHANGED');
   const proof={version:1,kind:'QUIESCENT_RECENT_BLOCKHASH_EXPIRY',marketId:job.market.address,sequence:job.sequence,
     candidateHash:job.candidateHash,originalSignature:job.signature,genesisHash:GENESIS,programId:PROGRAM,
@@ -54,7 +60,8 @@ export async function proveAndExpire({job,producerId,stoppedAt,inspect,captureBo
     lastValidBlockHeight:boundary.lastValidBlockHeight,finalizedBlockHeight:final.height,finalizedSlot:String(final.slot),finalizedContextSlot:final.slot,
     boundaryBlockhashValid:false,snapshotExists:false,snapshotAddress:context.snapshotAddress,
     nextSequence:context.nextSequence,signatureStatus:null,readContextSlot:context.minContextSlot,
-    configVersion:context.configVersion,queryVersion:context.queryVersion,queryHash:context.queryHash};
+    candidateConfigVersion:job.candidate.configVersion,configVersion:context.configVersion,
+    queryVersion:context.queryVersion,queryHash:context.queryHash};
   const updated=expire(job,proof);await save({stage:'PROVEN_UNLANDED',proof});
   await stopped();await commit(updated,originalHash,proof,stopped);
   await save({stage:'JOURNAL_UPDATED',proof});return proof;
