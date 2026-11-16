@@ -48,6 +48,8 @@ if [ "$ARCHIVE_OK" = yes ] && docker run --rm --user 1000:1000 \
   -e ANTE_UP_PUBLISHER_KEYPAIR_FILE=/run/secrets/publisher.json \
   -e ANTE_UP_KEEPER_KEYPAIR_FILE=/run/secrets/keeper.json \
   -e ANTE_UP_CLUSTER=devnet \
+  -e ANTE_UP_HISTORY_STATE_ROOT=/state \
+  -e ANTE_UP_HISTORY_ARCHIVE_ROOT=/state/history-archive \
   -e ANTE_UP_SNAPSHOT_ARCHIVE_PATH="$ARCHIVE_PATH" \
   -e ANTE_UP_SNAPSHOT_ARCHIVE_SHA256="$ARCHIVE_SHA" \
   "$IMAGE" node scripts/weekly-keeper.mjs --execute \
