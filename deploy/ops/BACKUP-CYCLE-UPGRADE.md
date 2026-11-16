@@ -37,3 +37,22 @@ Deployment is an operator action, not part of running tests:
 Rollback requires keeping archive-aware readers while any active history blobs
 exist only in the archive. Restoring an old reader requires first restoring those
 exact blobs to their original active paths and checking every reference.
+## Recurring history maintenance
+
+Install the bundled `scripts/ops/history-maintenance.mjs` alongside the backup
+supervisor. Within the existing backup and writer locks, after all state writers
+have stopped and before creating the encrypted artifact, invoke it with the
+state root, cold archive root, offhost receipt directory, report path and
+`--quiesced`. Do not introduce a second schedule.
+
+Keep the maintenance report outside the protected state roots. Missing matching
+copy/restore receipts produce `AWAITING_RESTORE` and keep the manifest unchanged.
+Only a matching, hash-verified isolated restore permits removal of active
+duplicates. Newly eligible history is then staged for the next backup.
+
+If the maintenance command fails, continue creating the backup and restarting
+services. The supervisor independently reads the current-run maintenance
+report and marks the overall cycle failed; it does not relabel successful
+artifact creation as failed or hide a failed maintenance step. A missing or stale
+report also fails that phase. Add the maintenance bundle and archive manifest to
+the declared recovery requirements and the offhost restore contract.
