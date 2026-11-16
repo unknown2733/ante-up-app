@@ -62,7 +62,7 @@ export async function proveLegacyLpExpiry({attempt,guard,captureBoundary,blockTi
  now=()=>Math.floor(Date.now()/1000),wait=sleep,timeoutSeconds=600}){
  validateLegacyAttempt(attempt);guard();const stoppedAt=now(),deadline=stoppedAt+timeoutSeconds;
  // A changed state never gets "reconstructed" by guessing missing before fields.
- const before=await readState(0);validateBeforeState(attempt,before.state);
+ const before=await readState(0);const originalState=validateBeforeState(attempt,before.state);
  let boundary,time;
  const pause=async()=>{check(now()<deadline,'KEEPER_EXPIRY_TIMEOUT');await wait(3000);guard();};
  while(true){
@@ -80,8 +80,9 @@ export async function proveLegacyLpExpiry({attempt,guard,captureBoundary,blockTi
   await pause();
  }
  const after=await readState(final.slot);validateBeforeState(attempt,after.state);guard();
- const proof={kind:'KEEPER_QUIESCENT_LP_EXPIRY',version:1,attemptHash:hash(attempt),programId:PROGRAM,genesisHash:GENESIS,
-  recentBlockhashOnly:true,guards:guard(),state:after.state,stoppedAt,capturedAt,verifiedAt:now(),
+ const proof={kind:'KEEPER_QUIESCENT_LP_EXPIRY',version:2,attemptHash:hash(attempt),programId:PROGRAM,genesisHash:GENESIS,
+  recentBlockhashOnly:true,guards:guard(),originalState,observedBeforeValidityGeneration:before.state.validityGeneration,
+  state:after.state,stoppedAt,capturedAt,verifiedAt:now(),
   boundaryBlockTime:time,boundaryBlockhash:boundary.blockhash,boundarySlot:String(boundary.slot),
   lastValidBlockHeight:boundary.lastValidBlockHeight,finalizedSlot:String(final.slot),accountSlot:String(after.slot),
   finalizedBlockHeight:final.height,blockhashValid:false};
@@ -123,7 +124,7 @@ async function main(){
    return {slot:r.context.slot,state:{marketId:MARKET,cycle:String(f.currentCycle),currentMaturity:Number(f.currentMaturity),
     lpGeneration:String(f.lpGeneration),validityGeneration:String(m.validityGeneration),lastLpMaturity:Number(f.lastLpMaturity),openPositions:f.openPositions}};
   };
-  if(!a['--execute']){const s=await readState(0);validateBeforeState(attempt,s.state);console.log(JSON.stringify({mode:'PLAN',attempt,state:s.state,slot:s.slot,requires:'held backup+weekly locks, no keeper producers, post-stop finalized expiry'}));return;}
+  if(!a['--execute']){const s=await readState(0),originalState=validateBeforeState(attempt,s.state);console.log(JSON.stringify({mode:'PLAN',attempt,originalState,observedState:s.state,slot:s.slot,requires:'held backup+weekly locks, no keeper producers, post-stop finalized expiry'}));return;}
   check(a['--reviewed-recent-blockhash-only']===true,'KEEPER_EXPIRY_TRANSPORT_REVIEW_REQUIRED');
   const guard=()=>{const result=assertHostGuard();noOtherAttempts(path);return result;};
   guard();const out=resolve(a['--output']);await mkdir(out,{recursive:true,mode:0o700});

@@ -18,17 +18,23 @@ export function validateBeforeState(a,s){
  const entity=validateLegacyAttempt(a);
  check(s?.marketId===a.market_id&&s.cycle===a.cycle&&integer(s.currentMaturity)&&
    dec(s.lpGeneration)&&dec(s.validityGeneration)&&integer(s.lastLpMaturity)&&
-   s.validityGeneration===entity.generation&&s.openPositions===0&&
+   BigInt(s.validityGeneration)>=BigInt(entity.generation)&&s.openPositions===0&&
    (s.currentMaturity>0||s.lastLpMaturity<entity.week||s.lpGeneration!==s.validityGeneration),
    'KEEPER_EXPIRY_STATE_CHANGED');
- check(hash({marketId:s.marketId,cycle:s.cycle,currentMaturity:s.currentMaturity,
-   lpGeneration:s.lpGeneration,validityGeneration:s.validityGeneration,lastLpMaturity:s.lastLpMaturity})===a.fingerprint,
+ // The original source-validity generation is explicit in the durable entity.
+ // Reconstruct only that one field; all LP/cycle fields must still match exactly.
+ const originalState={marketId:s.marketId,cycle:s.cycle,currentMaturity:s.currentMaturity,
+   lpGeneration:s.lpGeneration,validityGeneration:entity.generation,lastLpMaturity:s.lastLpMaturity};
+ check(hash(originalState)===a.fingerprint,
    'KEEPER_EXPIRY_FINGERPRINT_CHANGED');
- return true;
+ return originalState;
 }
 export function validateLegacyExpiry(a,p){
- validateLegacyAttempt(a);validateBeforeState(a,p?.state);
- check(p?.kind==='KEEPER_QUIESCENT_LP_EXPIRY'&&p.version===1&&p.attemptHash===hash(a)&&
+ validateLegacyAttempt(a);const original=validateBeforeState(a,p?.state);
+ check(p?.kind==='KEEPER_QUIESCENT_LP_EXPIRY'&&p.version===2&&p.attemptHash===hash(a)&&
+   hash(p.originalState)===hash(original)&&dec(p.observedBeforeValidityGeneration)&&
+   BigInt(p.observedBeforeValidityGeneration)>=BigInt(original.validityGeneration)&&
+   BigInt(p.state.validityGeneration)>=BigInt(p.observedBeforeValidityGeneration)&&
    p.programId===PROGRAM&&p.genesisHash===GENESIS&&p.recentBlockhashOnly===true&&
    p.guards?.weeklyLock===true&&p.guards?.backupLock===true&&p.guards?.noKeeperProducer===true&&
    integer(p.stoppedAt)&&integer(p.capturedAt)&&integer(p.verifiedAt)&&integer(p.boundaryBlockTime)&&
