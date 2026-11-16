@@ -8,6 +8,26 @@ import {join, resolve} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {createBackup, copyBackup, restoreDrill} from './backup.mjs';
 
+test('cold history nested references survive encrypted copy and isolated restore',async t=>{
+  const f=await fixture(t),archive=join(f.dir,'state/history-archive');await mkdir(join(archive,'live-smoke'),{recursive:true});
+  const leaf=Buffer.from(JSON.stringify({points:[1,2,3]})),leafHash=createHash('sha256').update(leaf).digest('hex');
+  const parent=Buffer.from(JSON.stringify({observations:{__ante_history_sha256:leafHash}})),parentHash=createHash('sha256').update(parent).digest('hex');
+  const entries=[];
+  for(const [bytes,contentHash] of [[leaf,leafHash],[parent,parentHash]]){
+    const compressed=gzipSync(bytes),path=`live-smoke/${contentHash}.json.gz`;await writeFile(join(archive,path),compressed);
+    entries.push({path,contentHash,sha256:createHash('sha256').update(compressed).digest('hex'),bytes:compressed.length});
+  }
+  const manifest=JSON.stringify({version:1,kind:'HISTORY_ARCHIVE_INVENTORY',entries});await writeFile(join(archive,'manifest.json'),manifest);
+  await writeFile(join(f.dir,'state/live-smoke/collection.json'),JSON.stringify({replayInput:{__ante_history_sha256:parentHash}}));
+  f.config.required.push('state/history-archive/manifest.json');
+  const created=await createBackup({...f,quiesced:true});await copyBackup({input:f.output,destination:join(f.dir,'remote'),destinationId:'fixture',failureDomain:'other'});
+  const report=await restoreDrill({input:join(f.dir,'remote/test.aub'),keyFile:f.keyFile,target:join(f.dir,'restored')});
+  assert.equal(report.backupSha256,created.sha256);
+  assert.deepEqual(report.historyArchive,{kind:'HISTORY_ARCHIVE_RESTORE_VERIFICATION',manifestSha256:createHash('sha256').update(manifest).digest('hex'),hashes:'matched',entries:2});
+  await rm(join(archive,entries[0].path));
+  await assert.rejects(createBackup({...f,output:join(f.dir,'output/missing.aub'),quiesced:true}),/HISTORY_ARCHIVE_ENTRY_MISMATCH/);
+});
+
 async function fixture(t){
   // All transient data stays in this worktree, including synthetic key material.
   const parent=resolve('.codex-tmp/ops-tests');await mkdir(parent,{recursive:true});
