@@ -50,8 +50,8 @@ export async function proveAndExpire({job,producerId,stoppedAt,inspect,captureBo
   const proof={version:1,kind:'QUIESCENT_RECENT_BLOCKHASH_EXPIRY',marketId:job.market.address,sequence:job.sequence,
     candidateHash:job.candidateHash,originalSignature:job.signature,genesisHash:GENESIS,programId:PROGRAM,
     producerId,producerStopped:true,producerStillStopped:true,producerStoppedAt:stoppedAt,
-    capturedAt,verifiedAt:now(),boundaryBlockhash:boundary.blockhash,boundarySlot:boundary.slot,boundaryBlockTime:time,
-    lastValidBlockHeight:boundary.lastValidBlockHeight,finalizedBlockHeight:final.height,finalizedContextSlot:final.slot,
+    capturedAt,verifiedAt:now(),boundaryBlockhash:boundary.blockhash,boundarySlot:String(boundary.slot),boundaryBlockTime:time,
+    lastValidBlockHeight:boundary.lastValidBlockHeight,finalizedBlockHeight:final.height,finalizedSlot:String(final.slot),finalizedContextSlot:final.slot,
     boundaryBlockhashValid:false,snapshotExists:false,snapshotAddress:context.snapshotAddress,
     nextSequence:context.nextSequence,signatureStatus:null,readContextSlot:context.minContextSlot,
     configVersion:context.configVersion,queryVersion:context.queryVersion,queryHash:context.queryHash};
