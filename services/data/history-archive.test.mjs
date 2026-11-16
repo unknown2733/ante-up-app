@@ -190,3 +190,28 @@ test('cached content verification never bypasses a new compressed-byte SHA check
   try{assert.throws(()=>f.plan());assert.ok(reads>=2);}
   finally{mocked.mock.restore();syncBuiltinESMExports();}
 });
+test('one prune call decompresses each distinct active or archived blob once across both reference readbacks',t=>{
+  const f=fixture(t),plan=f.plan();stageHistoryArchive(plan,{quiesced:true});const receipt=f.restore();
+  const distinct=readdirSync(join(f.dir,'.history')).length,original=zlib.gunzipSync;let calls=0;
+  const mocked=t.mock.method(zlib,'gunzipSync',function(...args){calls++;return original.apply(this,args);});
+  syncBuiltinESMExports();
+  try{
+    assert.equal(pruneHistoryArchive(plan,receipt,{quiesced:true}).removed,plan.entries.length);
+    assert.equal(calls,distinct);
+    calls=0;verifyHistoryArchive(f.archiveRoot);assert.equal(calls,plan.entries.length); // No cross-call reuse.
+  }finally{mocked.mock.restore();syncBuiltinESMExports();}
+});
+test('a changed archived blob is detected by final readback despite earlier per-call cache verification',t=>{
+  const f=fixture(t),plan=f.plan();stageHistoryArchive(plan,{quiesced:true});const receipt=f.restore();
+  const ref=JSON.parse(readFileSync(f.candidates)).jobs.final.replayInput.__ante_history_sha256;
+  const target=join(f.archiveRoot,'market',`${ref}.json.gz`),original=fs.unlinkSync;let removed=0,changed=false;
+  const mocked=t.mock.method(fs,'unlinkSync',function(path){
+    const result=original.call(this,path);
+    if(path.startsWith(join(f.dir,'.history'))&&++removed===plan.entries.length){
+      fs.writeFileSync(target,zlib.gzipSync(Buffer.from(JSON.stringify({observations:[],start:999}))));changed=true;
+    }return result;
+  });
+  syncBuiltinESMExports();
+  try{assert.throws(()=>pruneHistoryArchive(plan,receipt,{quiesced:true}),/HISTORY_HASH_MISMATCH/);assert.ok(changed);}
+  finally{mocked.mock.restore();syncBuiltinESMExports();}
+});

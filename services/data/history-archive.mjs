@@ -71,8 +71,8 @@ function closure(stateFile,initial,options){
   }
   for(const h of initial)visit(h);return visited;
 }
-function verifyRootReferences(plan){
-  const options={...plan,verificationCache:new Map()};
+function verifyRootReferences(plan,verificationCache=new Map()){
+  const options={...plan,verificationCache};
   for(const r of plan.roots){const path=join(plan.stateRoot,r.path);closure(path,decodedRefs(plainFile(path)),options);}
 }
 const finalizedJob=job=>job?.state==='FINALIZED'&&job.published?.finality==='finalized';
@@ -117,13 +117,13 @@ export function validateArchiveManifest(value){
       e.path.endsWith(`/${e.contentHash}.json.gz`)&&Number.isSafeInteger(e.bytes)&&e.bytes>0,'HISTORY_ARCHIVE_ENTRY_INVALID');
   }return value;
 }
-function verifyArchive(archiveRoot,verificationCache){
+function verifyArchive(archiveRoot,verificationCache,{references=false}={}){
   archiveRoot=resolve(archiveRoot);
   const bytes=plainFile(checkedArchivePath(archiveRoot,join(archiveRoot,'manifest.json'))),manifest=validateArchiveManifest(JSON.parse(bytes));
   let total=0;
   for(const e of manifest.entries){const p=checkedArchivePath(archiveRoot,join(archiveRoot,e.path));
     const compressed=plainFile(p);check(compressed.length===e.bytes&&hash(compressed)===e.sha256,'HISTORY_ARCHIVE_BYTES_MISMATCH');
-    verifiedMetadata(compressed,e.contentHash,verificationCache);total+=e.bytes;
+    verifiedMetadata(compressed,e.contentHash,verificationCache,{references});total+=e.bytes;
   }
   return {kind:'HISTORY_ARCHIVE_VERIFICATION',manifestSha256:hash(bytes),hashes:'matched',entries:manifest.entries.length,bytes:total};
 }
@@ -234,13 +234,14 @@ export function pruneHistoryArchive(plan,restoreReceipt,{quiesced=false}={}){
   // Every duplicate removal checks only lstat metadata, not root bytes/JSON again.
   const initialStamp=rootStamp(plan);checkCurrentRoots(plan);
   check(rootStamp(plan)===initialStamp,'HISTORY_ROOT_CHANGED');
-  const verified=verifyHistoryArchive(plan.archiveRoot);
+  const verificationCache=new Map();
+  const verified=verifyArchive(plan.archiveRoot,verificationCache,{references:true});
   check(restoreReceipt?.kind==='HISTORY_ARCHIVE_RESTORE_VERIFICATION'&&restoreReceipt.hashes==='matched'&&
     restoreReceipt.manifestSha256===verified.manifestSha256,'HISTORY_RESTORE_RECEIPT_REQUIRED');
   const inventory=new Map(JSON.parse(plainFile(join(plan.archiveRoot,'manifest.json'))).entries.map(e=>[e.path,e]));
   for(const e of plan.entries)check(JSON.stringify(inventory.get(e.path))===JSON.stringify(e),'HISTORY_ARCHIVE_NOT_IN_MANIFEST');
   // Force all refs, using fallback after prior partial prunes; no malformed/missing history is discarded.
-  verifyRootReferences(plan);
+  verifyRootReferences(plan,verificationCache);
   let removed=0;
   for(const e of plan.entries){
     check(rootStamp(plan)===initialStamp,'HISTORY_ROOT_CHANGED');const path=activePath(plan,e);
@@ -251,7 +252,7 @@ export function pruneHistoryArchive(plan,restoreReceipt,{quiesced=false}={}){
     unlinkSync(path);removed++;
   }
   checkCurrentRoots(plan);
-  verifyRootReferences(plan);
+  verifyRootReferences(plan,verificationCache);
   return {...verified,removed};
 }
 
