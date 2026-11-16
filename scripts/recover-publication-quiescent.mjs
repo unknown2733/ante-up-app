@@ -67,14 +67,42 @@ async function docker(argv){return new Promise((resolve,reject)=>{
 });}
 async function inspect(name){const [id,running,restarting]= (await docker(['inspect','--format','{{.Id}} {{.State.Running}} {{.State.Restarting}}',name])).split(' ');
   check(/^[a-f0-9]{64}$/.test(id),'PRODUCER_ID_INVALID');return {id,running:running==='true',restarting:restarting==='true'};}
-function rpcReader(endpoints){return async(method,params=[])=>{
-  let pendingBlockTime=false;
-  for(const endpoint of endpoints)try{const r=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},
-    body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:AbortSignal.timeout(12000),redirect:'error'});
-    if(!r.ok){await r.body?.cancel();continue;}const d=await r.json();if(!d.error&&d.result!==undefined)return d.result;
-    if(method==='getBlockTime'&&[-32004,-32007,-32009].includes(d.error?.code))pendingBlockTime=true;
-  }catch{}
-  if(pendingBlockTime)return null;throw Error('RECOVERY_RPC_UNAVAILABLE');
+export function rpcReader(endpoints,{fetcher=fetch,wait=sleep}={}){return async(method,params=[])=>{
+  check(['getGenesisHash','getLatestBlockhash','getBlockTime','getSlot','getBlockHeight','isBlockhashValid',
+    'getMultipleAccounts','getAccountInfo','getSignatureStatuses'].includes(method),'RECOVERY_RPC_METHOD_NOT_READ_ONLY');
+  const blocked=new Set(),errors=new Map();let pendingBlockTime=false;
+  for(let pass=0;pass<3;pass++){
+    let retryable=false;
+    for(const endpoint of endpoints){
+      if(blocked.has(endpoint))continue;
+      try{
+        const r=await fetcher(endpoint,{method:'POST',headers:{'content-type':'application/json'},
+          body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:AbortSignal.timeout(12000),redirect:'error'});
+        if(!r.ok){
+          await r.body?.cancel();const transient=r.status===429||r.status>=500&&r.status<=599;
+          errors.set(endpoint,r.status===429?'RECOVERY_RPC_RATE_LIMITED':transient?'RECOVERY_RPC_UNAVAILABLE':'RECOVERY_RPC_REJECTED');
+          if(transient)retryable=true;else blocked.add(endpoint);continue;
+        }
+        let d;try{d=await r.json();}catch{errors.set(endpoint,'RECOVERY_RPC_INVALID_RESPONSE');blocked.add(endpoint);continue;}
+        if(!d.error&&d.result!==undefined)return d.result;
+        if(method==='getBlockTime'&&[-32004,-32007,-32009].includes(d.error?.code)){pendingBlockTime=true;blocked.add(endpoint);continue;}
+        if(d.error?.code===-32016){errors.set(endpoint,'RECOVERY_RPC_CONTEXT_NOT_READY');retryable=true;continue;}
+        errors.set(endpoint,'RECOVERY_RPC_REJECTED');blocked.add(endpoint);
+      }catch(e){
+        // Only transport failures/timeouts are retried. No provider response text
+        // or token-bearing URL is retained in diagnostics.
+        if(e?.name==='TimeoutError'||e?.name==='AbortError'||e instanceof TypeError){errors.set(endpoint,'RECOVERY_RPC_UNAVAILABLE');retryable=true;}
+        else{errors.set(endpoint,'RECOVERY_RPC_UNAVAILABLE');blocked.add(endpoint);}
+      }
+    }
+    if(!retryable||pass===2)break;
+    await wait(pass===0?500:1000);
+  }
+  if(pendingBlockTime)return null;
+  const codes=[...errors.values()];
+  throw Error(codes.includes('RECOVERY_RPC_CONTEXT_NOT_READY')?'RECOVERY_RPC_CONTEXT_NOT_READY':
+    codes.includes('RECOVERY_RPC_RATE_LIMITED')?'RECOVERY_RPC_RATE_LIMITED':
+    codes.includes('RECOVERY_RPC_UNAVAILABLE')?'RECOVERY_RPC_UNAVAILABLE':codes[0]??'RECOVERY_RPC_UNAVAILABLE');
 };}
 
 async function main(){

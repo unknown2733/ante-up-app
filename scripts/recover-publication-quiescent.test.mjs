@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {proveAndExpire} from './recover-publication-quiescent.mjs';
+import {proveAndExpire,rpcReader} from './recover-publication-quiescent.mjs';
 import {hash} from '../services/data/index.mjs';
 const GENESIS='EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG',PROGRAM='FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr';
 function fixture(){let time=100,committed=0;const events=[];
@@ -35,4 +35,40 @@ test('producer restarting or replaced before commit aborts',async()=>{
 });
 test('candidate mutation cannot be hidden by a saved candidateHash',async()=>{
  const f=fixture();f.options.job.candidate.queryVersion='9';await assert.rejects(proveAndExpire(f.options),/JOB_INVALID/);assert.equal(f.committed,0);
+});
+
+const response=(status,body)=>({ok:status>=200&&status<300,status,body:{cancel:async()=>{}},json:async()=>body});
+test('read-only minimum context error is retried and retains the same request',async()=>{
+ const waits=[],calls=[];let n=0;
+ const rpc=rpcReader(['primary'],{wait:async ms=>waits.push(ms),fetcher:async(url,init)=>{
+  calls.push(JSON.parse(init.body));return ++n<3?response(200,{error:{code:-32016,message:'private provider text'}}):response(200,{result:123});}});
+ assert.equal(await rpc('getBlockHeight',[{commitment:'finalized',minContextSlot:99}]),123);
+ assert.deepEqual(waits,[500,1000]);assert.equal(calls.length,3);assert.deepEqual(calls[0],calls[2]);
+});
+test('429 or unavailable provider can use healthy fallback without another pass',async()=>{
+ let n=0;const waits=[];
+ const rpc=rpcReader(['primary','backup'],{wait:async ms=>waits.push(ms),fetcher:async()=>++n===1?response(429,{}):response(200,{result:{ok:true}})});
+ assert.deepEqual(await rpc('getSlot'),{ok:true});assert.equal(n,2);assert.deepEqual(waits,[]);
+});
+test('transient errors exhaust after three passes and expose only classified code',async()=>{
+ for(const [fixture,code] of [[()=>response(429,{}),'RECOVERY_RPC_RATE_LIMITED'],[()=>response(503,{}),'RECOVERY_RPC_UNAVAILABLE'],
+  [()=>response(200,{error:{code:-32016,message:'https://secret?key=secret'}}),'RECOVERY_RPC_CONTEXT_NOT_READY'],
+  [()=>{throw new DOMException('private','TimeoutError');},'RECOVERY_RPC_UNAVAILABLE']]){
+  let calls=0;const waits=[];const rpc=rpcReader(['one','two'],{wait:async ms=>waits.push(ms),fetcher:async()=>{calls++;return fixture();}});
+  await assert.rejects(rpc('getBlockHeight'),e=>e.message===code);assert.equal(calls,6);assert.deepEqual(waits,[500,1000]);
+ }
+});
+test('semantic rejection and authorization failures are not retried',async()=>{
+ for(const r of [response(403,{}),response(200,{error:{code:-32602,message:'invalid params private'}})]){
+  let calls=0;const rpc=rpcReader(['one'],{wait:async()=>assert.fail('no wait'),fetcher:async()=>{calls++;return r;}});
+  await assert.rejects(rpc('getAccountInfo'),/RECOVERY_RPC_REJECTED/);assert.equal(calls,1);
+ }
+});
+test('a not-yet-available block time returns pending without inventing time',async()=>{
+ let calls=0;const rpc=rpcReader(['one'],{wait:async()=>assert.fail('outer boundary wait owns timing'),fetcher:async()=>{calls++;return response(200,{error:{code:-32004}});}});
+ assert.equal(await rpc('getBlockTime',[100]),null);assert.equal(calls,1);
+});
+test('the retrier cannot submit transactions or request airdrops',async()=>{
+ const rpc=rpcReader(['one'],{fetcher:async()=>assert.fail('must not call transport')});
+ for(const method of ['sendTransaction','requestAirdrop'])await assert.rejects(rpc(method),/METHOD_NOT_READ_ONLY/);
 });
