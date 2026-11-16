@@ -51,4 +51,3 @@ export function rpcReader(endpoints,{fetcher=fetch,wait=sleep}={}){return async(
     codes.includes('RECOVERY_RPC_RATE_LIMITED')?'RECOVERY_RPC_RATE_LIMITED':
     codes.includes('RECOVERY_RPC_UNAVAILABLE')?'RECOVERY_RPC_UNAVAILABLE':codes[0]??'RECOVERY_RPC_UNAVAILABLE');
 };}
-
