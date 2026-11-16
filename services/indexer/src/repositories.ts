@@ -31,6 +31,9 @@ export interface SnapshotArchiveReader {
 /** Finalized read; callers verify owner, PDA, discriminator and candidate hash. */
 export class KitFinalizedAccountReader implements FinalizedAccountReader {
   private readonly rpc: ReturnType<typeof createSolanaRpc>;
+  private readonly pending = new Map<string,Promise<AccountBytes|null>>();
+  private readonly queue = new Map<string,{resolve:(value:AccountBytes|null)=>void;reject:(error:unknown)=>void}>();
+  private draining = false;
   readonly archive?: SnapshotArchiveReader;
   constructor(endpoint: string, rpc?: ReturnType<typeof createSolanaRpc>, archive?: SnapshotArchiveReader) {
     if (!/^https?:\/\//.test(endpoint)) throw new Error('RPC_URL_REQUIRED');
@@ -41,11 +44,54 @@ export class KitFinalizedAccountReader implements FinalizedAccountReader {
     this.archive=archive??(path&&sha?new TrustedSnapshotArchive(path,sha,String(ANTE_UP_PROGRAM_ADDRESS)):undefined);
   }
   async get(accountAddress: string): Promise<AccountBytes | null> {
+    address(accountAddress);
+    // Real Kit clients support multi-account finalized reads. Older injected
+    // adapters may intentionally implement only getAccountInfo.
+    if(typeof this.rpc.getMultipleAccounts==='function') {
+      let pending=this.pending.get(accountAddress);
+      if(!pending){
+        pending=new Promise<AccountBytes|null>((resolve,reject)=>this.queue.set(accountAddress,{resolve,reject}));
+        this.pending.set(accountAddress,pending);
+        if(!this.draining){this.draining=true;queueMicrotask(()=>{void this.drain();});}
+      }
+      const result=await pending;
+      // Callers must not mutate bytes consumed by another concurrent quote.
+      return result?{ownerProgramId:result.ownerProgramId,data:Uint8Array.from(result.data)}:null;
+    }
     const response = await retryRpcRead(() => this.rpc.getAccountInfo(address(accountAddress),{commitment:'finalized',encoding:'base64'}).send());
-    if (!response.value) return null;
-    const data = response.value.data;
-    if (!Array.isArray(data) || data[1] !== 'base64' || typeof data[0] !== 'string') throw new Error('INVALID_ACCOUNT_DATA');
-    return {ownerProgramId:String(response.value.owner),data:Buffer.from(data[0],'base64')};
+    return this.decodeAccount(response.value);
+  }
+  private decodeAccount(value:unknown):AccountBytes|null {
+    if(value===null)return null;
+    if(!value||typeof value!=='object')throw new Error('INVALID_ACCOUNT_DATA');
+    const {data,owner}=value as {data?:unknown;owner?:unknown};
+    if(typeof owner!=='string'||!Array.isArray(data)||data.length!==2||data[1]!=='base64'||typeof data[0]!=='string')
+      throw new Error('INVALID_ACCOUNT_DATA');
+    try{address(owner);}catch{throw new Error('INVALID_ACCOUNT_DATA');}
+    const bytes=Buffer.from(data[0],'base64');
+    if(bytes.toString('base64')!==data[0])throw new Error('INVALID_ACCOUNT_DATA');
+    return {ownerProgramId:owner,data:bytes};
+  }
+  private async drain():Promise<void> {
+    // Bound both provider payload size and concurrent HTTP requests. Requests
+    // arriving during a batch wait for the next one; no result survives settle.
+    while(this.queue.size){
+      const batch=[...this.queue.entries()].slice(0,100);
+      for(const [key] of batch)this.queue.delete(key);
+      try{
+        const keys=batch.map(([key])=>address(key));
+        const response=await retryRpcRead(()=>this.rpc.getMultipleAccounts(keys,{commitment:'finalized',encoding:'base64'}).send());
+        if(!Array.isArray(response.value)||response.value.length!==batch.length)throw new Error('INVALID_ACCOUNT_BATCH');
+        const results=Array.from(response.value,value=>this.decodeAccount(value));
+        // Validate the whole reply before resolving any consumer.
+        for(let i=0;i<batch.length;i++){
+          this.pending.delete(batch[i][0]);batch[i][1].resolve(results[i]);
+        }
+      }catch(error){
+        for(const [key,waiter] of batch){this.pending.delete(key);waiter.reject(error);}
+      }
+    }
+    this.draining=false;
   }
   async scan(programId:string):Promise<{slot:string;accounts:ProgramAccountBytes[]}> {
     const response=await retryRpcRead(() => this.rpc.getProgramAccounts(address(programId),{commitment:'finalized',encoding:'base64',withContext:true}).send());

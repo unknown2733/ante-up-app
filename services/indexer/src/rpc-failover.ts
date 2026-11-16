@@ -7,7 +7,7 @@ type Request = {send: (...args: unknown[]) => Promise<unknown>};
 // Only idempotent reads may switch providers. In particular, sendTransaction is never replayed.
 const READ_METHODS = new Set([
   'getAccountInfo', 'getBalance', 'getBlock', 'getBlockHeight', 'getGenesisHash',
-  'getLatestBlockhash', 'getProgramAccounts', 'getSignatureStatuses',
+  'getLatestBlockhash', 'getMultipleAccounts', 'getProgramAccounts', 'getSignatureStatuses',
   'getSignaturesForAddress', 'getSlot', 'getTransaction', 'isBlockhashValid',
 ]);
 
