@@ -71,3 +71,18 @@ test('a market RPC failure holds price actions but keeps fixed claims subject to
  for(const action of ['spotBuy','openPro','depositLP'])assert.equal(held.value.capabilities[action].allowed,false);
  reader.stop();
 });
+
+test('refresh drops old runtime diagnoses while retaining fixed claim eligibility',()=>{
+ const previous={identity:'devnet:a',revision:'0',value:{...market(),runtimeStatus:{reason:'STORAGE_PRESSURE',checkedAt:100},capabilities:{claim:{allowed:true,reason:null}}},loading:false,error:''};
+ const held=currentMarketRead(previous,'devnet:a','1');
+ assert.equal(held.value.runtimeStatus,undefined);
+ assert.equal(held.value.capabilities.claim.allowed,true);
+});
+
+test('rate-limited reads explain the connection problem without leaking provider details',async()=>{
+ const {reader,states}=setup(async()=>{throw Error('HTTP 429 https://private-provider.invalid/?api-key=secret');});
+ await reader.retry();
+ assert.match(states.at(-1).error,/Devnet connection is busy/);
+ assert.ok(!states.at(-1).error.includes('secret'));
+ reader.stop();
+});

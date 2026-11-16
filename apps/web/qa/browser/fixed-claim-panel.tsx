@@ -74,3 +74,17 @@ for(const kind of ['foreign','paid'])test(`${kind} claims cannot obtain a quote 
   assert.equal(counters.quotes,0);assert.equal(counters.signs,0);
  }finally{root.unmount();div.remove();}
 });
+
+for(const reason of ['STORAGE_PRESSURE','PUBLICATION_PENDING','RPC_RATE_LIMITED'] as const)test(`runtime ${reason} explains a blocked quote and preserves fixed claims`,async()=>{
+ resetPanel();const div=document.createElement('div');document.body.append(div);const root=createRoot(div);
+ const context={...heldMarket(market)!,runtimeStatus:{reason,checkedAt:1800000000}};
+ try{
+  root.render(<FinancialMarket market={context} section="pro" onFinalized={()=>{}}/>);await pause();
+  const quote=[...div.querySelectorAll('button')].find(b=>b.textContent?.includes('review quote'))!;
+  assert.ok(quote.disabled);quote.click();await pause();assert.equal(counters.quotes,0);
+  const expected={STORAGE_PRESSURE:'storage has reached',PUBLICATION_PENDING:'awaiting chain verification',RPC_RATE_LIMITED:'connection is busy'}[reason];
+  assert.ok(div.textContent!.includes(expected));
+  [...div.querySelectorAll('button')].find(b=>b.textContent?.trim()==='Claim payout')!.click();await pause();
+  assert.ok(!div.textContent!.includes(expected));
+ }finally{root.unmount();div.remove();}
+});

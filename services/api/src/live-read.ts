@@ -48,12 +48,14 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
   private marketCache: {atMs:number;value:MarketView[]} | null = null;
   private marketRead: Promise<MarketView[]> | null = null;
   private registrationRecheckAt = 0;
+  private readonly runtimeReadiness?: (marketId:string,now:number)=>Promise<MarketView['runtimeStatus']>;
   constructor(options: {mode:'localnet'|'devnet';programId:string;store:SqliteProjectionStore;
     repositories:SqliteEventRepositories;accounts:FinalizedAccountReader;registry:MarketRegistryEntry[];now:()=>number;
-    financial?:FinalizedFinancialAccounts;registrations?:SqliteFinancialRegistrationStore}) {
+    financial?:FinalizedFinancialAccounts;registrations?:SqliteFinancialRegistrationStore;
+    runtimeReadiness?:(marketId:string,now:number)=>Promise<MarketView['runtimeStatus']>}) {
     this.mode=options.mode;this.programId=options.programId;this.store=options.store;
     this.repositories=options.repositories;this.accounts=options.accounts;this.registry=options.registry;this.now=options.now;
-    this.financial=options.financial??null;this.registrations=options.registrations??null;
+    this.financial=options.financial??null;this.registrations=options.registrations??null;this.runtimeReadiness=options.runtimeReadiness;
   }
   async market(marketId: string) {return (await this.markets(0)).find(m=>m.id===marketId)??null;}
   async record(recordId: string) {return (await this.records()).find(r=>r.id===recordId)??null;}
@@ -149,12 +151,15 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
       if(phase==='INDEXED'){
         const through=Number(chain.latestDataThrough),age=this.now()-through;
         priceReadiness={state:price?'CURRENT':![DataStatus.Valid,DataStatus.LowActivity].includes(chain.dataStatus)?'UNAVAILABLE':through>0 && age>=600?'STALE':
-          age>=0 && through>0 && !matched && [DataStatus.Valid,DataStatus.LowActivity].includes(chain.dataStatus)?'SYNCING':'UNAVAILABLE',dataThrough:through};
+          age>=0 && through>0 && !matched && [DataStatus.Valid,DataStatus.LowActivity].includes(chain.dataStatus)?'SYNCING':'UNAVAILABLE',dataThrough:through,checkedAt:this.now()};
+        priceReadiness.reason=priceReadiness.state==='CURRENT'?null:priceReadiness.state==='STALE'?'DATA_STALE':priceReadiness.state==='SYNCING'?'INDEX_SYNCING':'DATA_NOT_READY';
       }
+      const runtimeStatus=(!freeEntry.allowed||(phase==='INDEXED'&&!price))
+        ?await this.runtimeReadiness?.(entry.address,this.now()):undefined;
       result.push({id:entry.address,keyword:entry.keyword,aliases:entry.aliases,phase,dataStatus,epochPhase,supported:true,
         ...(entry.dataProvenance==='SYNTHETIC_QA'?{dataProvenance:'SYNTHETIC_QA' as const}:{}),
         chain:{cluster:this.mode,programId:this.programId,address:entry.address},snapshot,anchor,price,freeChipCapacity,
-        ...(priceReadiness?{priceReadiness}:{}),
+        ...(priceReadiness?{priceReadiness}:{}),...(runtimeStatus?{runtimeStatus}:{}),
         capabilities:{...financialCaps,curveBuy:{allowed:phase==='CURVE',reason:phase==='CURVE'?null:'WRONG_PHASE'},curveSell:{allowed:phase==='CURVE',reason:phase==='CURVE'?null:'WRONG_PHASE'},
           openFree:entry.dataProvenance==='SYNTHETIC_QA'?{allowed:false,reason:'ENTRY_PAUSED'}:freeEntry,
           closeFree:{allowed:true,reason:null}}});

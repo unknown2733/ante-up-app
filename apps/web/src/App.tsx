@@ -8,7 +8,7 @@ import { currentWalletContext, walletClient, walletCluster, WalletConnectPrompt,
 import type { FreeOutcome, FreeProgress, FreeRequest, FreeReview } from './liveFree';
 import { FinancialFaucet, FinancialMarket, FinancialRegistration, PrivateFinancialPanel } from './Financial';
 import { displayConsumerError } from './consumer-ui/copy';
-import { marketStatusView } from './marketStatus';
+import { marketStatusView, marketDataNotice, marketActionReason } from './marketStatus';
 import {createMarketRefresh,mergeMarketRead,currentMarketRead,type ScopedMarketRead} from './marketRefresh';
 import type { ConsumerAction, ConsumerMarket, ConsumerMode, ConsumerNote, ConsumerPeriod, ConsumerSeriesKind, MarketHistory } from '../../../contracts/consumer';
 import { ConsumerShell, MarketDiscovery, ActionTabs, mergeConsumerMarkets } from './consumer-ui';
@@ -240,6 +240,7 @@ function MarketPage({ id, refresh, changed, mode, section = 'call', compact = fa
   const [message, setMessage] = useState('');
   const m = market.value;
   const status = m ? marketStatusView(m) : null;
+  const dataNotice = m ? marketDataNotice(m) : null;
   const open = profile.value?.openRecords.find((record) => record.marketId === id);
   async function mutate() {
     if (!m || market.loading || market.error || profile.loading || profile.error) return;
@@ -259,7 +260,7 @@ function MarketPage({ id, refresh, changed, mode, section = 'call', compact = fa
   const duplicate = !open && profile.value?.openRecords.some((record) => record.marketId === m.id);
   return <div className={`page${compact ? ' au-order-page' : ''}`}>
     {refreshBlocked && <Notice tone={market.error ? 'red' : 'blue'}>{market.error ? <><span>Could not verify the latest market data. New trades are paused; fixed payouts are checked separately. {market.error}</span> <button type="button" className="button button-dark" onClick={() => setMarketRetry(value => value + 1)}>Retry market data</button></> : 'Refreshing market data. New trades are paused; fixed payouts are checked separately.'}</Notice>}
-    {status?.delayed && !refreshBlocked && <Notice tone={m.priceReadiness?.state==='SYNCING'?'orange':'red'}><span role="status">{m.priceReadiness?.state==='SYNCING'?'Syncing the latest observation. Price-based quotes are paused while we verify it. Checking again automatically.':m.priceReadiness?.state==='STALE'?'The latest observation is delayed. Price-based quotes resume after fresh data is verified.':'A current verified index price is unavailable. Price-based quotes resume after the index is verified again.'} {m.priceReadiness?.dataThrough?`Last observation: ${date(m.priceReadiness.dataThrough)}. `:''}</span><button type="button" className="button button-dark" onClick={()=>setMarketRetry(value=>value+1)}>Retry market data</button></Notice>}
+    {dataNotice && !refreshBlocked && <Notice tone={m.priceReadiness?.state==='SYNCING'?'orange':'red'}><span role="status">{dataNotice} {m.priceReadiness?.dataThrough?`Last observation: ${date(m.priceReadiness.dataThrough)}. `:''}{m.priceReadiness?.checkedAt?`Verified: ${date(m.priceReadiness.checkedAt)}.`:''}</span><button type="button" className="button button-dark" onClick={()=>setMarketRetry(value=>value+1)}>Retry market data</button></Notice>}
     {compact && <div className="au-order-context"><div className="tag-row"><Tag tone="blue">{phaseText[m.phase]}</Tag><Tag tone={status!.tone}>{status!.label}</Tag>{!m.supported && <Tag tone="orange">Data coverage pending</Tag>}</div>{section !== 'call' && <div className="au-order-price"><span>{m.price?.kind === 'curve' ? 'Curve quote' : 'Index reference'}</span><strong>{m.price ? `${atoms(m.price.atoms)} tUSD` : 'Unavailable'}</strong><small>Final price confirmed in your quote</small></div>}{section === 'liquidity' && <p className="tiny muted">Reference price and vault NAV are separate. Load your balances below for current vault NAV and shares.</p>}</div>}
     {!compact && <><div className="detail-title"><span className="eyebrow blue-text">MARKET</span><div className="tag-row"><Tag tone="blue">{phaseText[m.phase]}</Tag><Tag tone={status!.tone}>{status!.label}</Tag>{!m.supported && <Tag tone="orange">Data coverage pending</Tag>}</div></div>
     <div className="detail-grid"><div className="metric-card primary-metric"><span className="eyebrow">{m.price?.kind === 'curve' ? 'Curve quote' : 'Index reference'}</span><strong>{m.price ? atoms(m.price.atoms) : '—'}<small>{m.price ? ' tUSD' : ''}</small></strong><p>{isFixture ? 'Sample reference · not an execution price' : m.price?.executable ? 'Published snapshot · rechecked at execution' : 'Reference only · unavailable for execution'}</p></div><div className="metric-card"><span className="eyebrow">Fixed price cap</span><strong>{m.anchor ? `${atoms(m.anchor.maxPriceAtoms)} tUSD` : '—'}</strong><p>{m.anchor ? 'Graduation anchor' : 'Before graduation / no anchor'}</p></div></div>
@@ -281,7 +282,7 @@ function MarketPage({ id, refresh, changed, mode, section = 'call', compact = fa
       {message && <Notice tone="blue">{message}</Notice>}
       {!isFixture && profile.error && <Notice tone="red">Could not verify your active chips, so another action is blocked. {profile.error} <button type="button" className="button button-dark" onClick={() => setProfileRetry(value => value + 1)}>Retry activity check</button></Notice>}
       {isFixture ? <button className="button button-chip full" disabled={busy || refreshBlocked || profile.loading || !!profile.error || freeAllowed?.allowed === false || (!!ownLimit && !open) || !!duplicate} onClick={mutate}>{busy ? 'Processing…' : open ? 'Take back chip' : 'Place chip'} <span>↗</span></button> : <LiveFreeAction key={`${mode}:${id}:${walletAddress ?? 'disconnected'}`} market={m} recordId={open?.id ?? null} mode={mode} profileLoading={refreshBlocked || profile.loading || !!profile.error} limitReached={ownLimit} projectionWaiting={!!projectionWait} changed={changed} />}
-      {(freeAllowed?.allowed === false || (ownLimit && !open)) && <p className="tiny muted">{ownLimit && !open ? 'You have reached the three active chip limit.' : displayConsumerError(freeAllowed?.detail ?? freeAllowed?.reason)}</p>}
+      {(freeAllowed?.allowed === false || (ownLimit && !open)) && <p className="tiny muted">{ownLimit && !open ? 'You have reached the three active chip limit.' : marketActionReason(m,open?'closeFree':'openFree')??displayConsumerError(freeAllowed?.detail ?? freeAllowed?.reason)}</p>}
       <p className="tiny muted">{isFixture ? 'This changes a browser-only sample record. It does not submit a transaction or issue proof.' : 'Your wallet confirms each chip action.'}</p>
       {open && <RecordCard record={open} compact />}
     </section>}

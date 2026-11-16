@@ -25,11 +25,13 @@ test('finalized market and global admission permit free entry before numeric dat
   }};
   const store=new SqliteProjectionStore(':memory:'),repositories=new SqliteEventRepositories(':memory:',accountReader);
   const read=new SqliteFinalizedReadAdapter({mode:'localnet',programId,store,repositories,accounts:accountReader,
-    registry:[{address:String(marketAddress),seedHex:Buffer.from(seed).toString('hex'),keyword:'test',aliases:[]}],now:()=>1_800_000_000});
+    registry:[{address:String(marketAddress),seedHex:Buffer.from(seed).toString('hex'),keyword:'test',aliases:[]}],now:()=>1_800_000_000,
+    runtimeReadiness:async()=>({reason:'STORAGE_PRESSURE',checkedAt:1_800_000_000})});
   const [market]=await read.markets();
   assert.equal(market.snapshot,null);
   assert.equal(market.dataStatus,'PREPARING');
   assert.equal(market.capabilities.openFree?.allowed,true);
+  assert.equal(market.runtimeStatus,undefined,'operational diagnostics do not override a permitted action');
   assert.deepEqual(market.freeChipCapacity,{fundedCap:'1',fundedUsed:'0',fundedRemaining:'1'});
   assert.equal((await read.markets())[0],market);
   assert.equal(accountReads,2,'public market read should reuse the verified snapshot');
@@ -46,6 +48,7 @@ test('finalized market and global admission permit free entry before numeric dat
   assert.equal(closedGate.capabilities.openFree?.allowed,false);
   assert.equal(closedGate.capabilities.openFree?.reason,'ENTRY_PAUSED');
   assert.equal(closedGate.capabilities.closeFree?.allowed,true);
+  assert.deepEqual(closedGate.runtimeStatus,{reason:'STORAGE_PRESSURE',checkedAt:1_800_000_000});
   open=true;outstanding=200;
   assert.deepEqual((await read.markets(0))[0].capabilities.openFree,{allowed:false,reason:'LIMIT_REACHED',detail:'GLOBAL_OUTSTANDING_LIMIT'});
   outstanding=0;recent=Array(100).fill(1_800_000_000n-10n);
@@ -94,10 +97,12 @@ test('indexed market price requires matching fresh finalized snapshot and blocks
   through=now-600;
   assert.equal((await read.markets(0))[0].price,null);
   assert.equal((await read.markets(0))[0].priceReadiness?.state,'STALE');
+  assert.equal((await read.markets(0))[0].dataStatus,'LOW_ACTIVITY');
+  assert.equal((await read.markets(0))[0].priceReadiness?.reason,'DATA_STALE');
   projectedSequence='2';through=now-100;status=DataStatus.Valid;
   const syncing=(await read.markets(0))[0];
   assert.equal(syncing.snapshot,null);assert.equal(syncing.price,null);
-  assert.deepEqual(syncing.priceReadiness,{state:'SYNCING',dataThrough:through});
+  assert.deepEqual(syncing.priceReadiness,{state:'SYNCING',dataThrough:through,checkedAt:now,reason:'INDEX_SYNCING'});
   assert.equal(syncing.capabilities.openPro?.allowed,false);
   assert.equal(syncing.capabilities.spotSell?.allowed,false);
   through=now-600;

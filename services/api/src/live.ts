@@ -12,6 +12,8 @@ import { KitFirstSliceFinancialTransactionAdapter } from './financial-transactio
 import { SqliteFinancialRegistrationStore } from './registration.ts';
 import { KitConfirmedFinancialClock, type FinancialClock } from './financial-clock.ts';
 import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { readRuntimeReadiness } from './runtime-readiness.ts';
 import { consumerLiveNamespace } from '../../../contracts/consumer-identity.ts';
 import type { ConsumerReadApi } from '../../../contracts/consumer.ts';
 import { combinePriceObservationReaders, createFinalizedConsumerHistory, projectConsumerMarket, SqliteFinalizedQuoteHistory } from './consumer-history.ts';
@@ -27,6 +29,8 @@ export function createLiveApp(config: {
   mode:'localnet'|'devnet';programId:string;rpcUrl:string;rpcReadFallbackUrl?:string;dbPath:string;markets:MarketRegistryEntry[];
   /** Optional dedicated sampler DB. If absent at boot, history remains sparse until restart. */
   priceDbPath?:string;
+  /** Optional local heartbeat directory; diagnostics only, never transaction authority. */
+  healthDirectory?:string;
   now?:()=>number;accounts?:FinalizedAccountReader;blockhashes?:BlockhashProvider;chain?:OperationChain;
   verifier?:SignatureVerifier;nextRecordNonce?:()=>bigint;
   financial?:FinancialReader;
@@ -48,7 +52,8 @@ export function createLiveApp(config: {
   const clock=new KitConfirmedFinancialClock(config.rpcUrl,{now,rpc:readRpc??undefined});
   const firstSlice=new FirstSliceFinancialReader(financialState,registrations,now,config.financialClock??(()=>clock.read()));
   const read=new SqliteFinalizedReadAdapter({mode:config.mode,programId:config.programId,store:projection,
-    repositories,accounts,registry:config.markets,financial:financialState,registrations,now});
+    repositories,accounts,registry:config.markets,financial:financialState,registrations,now,
+    runtimeReadiness:(marketId,at)=>readRuntimeReadiness(config.healthDirectory??resolve(dirname(config.dbPath),'../health'),marketId,at)});
   const blockhashes=config.blockhashes??new KitBlockhashProvider(config.rpcUrl,readRpc??undefined);
   const transactions=new KitFreeTransactionAdapter({cluster:config.mode,programId:config.programId,read,
     blockhashes,now,nextRecordNonce:config.nextRecordNonce});

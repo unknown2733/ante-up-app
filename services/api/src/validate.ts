@@ -54,7 +54,14 @@ export function validateMarket(v: unknown): MarketView {
     const readiness=object(m.priceReadiness);
     oneOf(readiness.state,['CURRENT','SYNCING','STALE','UNAVAILABLE'] as const,'priceReadiness.state');
     seconds(readiness.dataThrough,'priceReadiness.dataThrough');
+    if(readiness.checkedAt!==undefined)seconds(readiness.checkedAt,'priceReadiness.checkedAt');
+    if(readiness.reason!==undefined&&readiness.reason!==null)oneOf(readiness.reason,['DATA_STALE','INDEX_SYNCING','DATA_NOT_READY'] as const,'priceReadiness.reason');
     if(readiness.state!=='CURRENT' && m.price!==null) throw new InputError('unverified price must be absent');
+  }
+  if(m.runtimeStatus!==undefined){
+    const runtime=object(m.runtimeStatus);
+    oneOf(runtime.reason,['STORAGE_PRESSURE','PUBLICATION_PENDING','RPC_RATE_LIMITED'] as const,'runtimeStatus.reason');
+    seconds(runtime.checkedAt,'runtimeStatus.checkedAt');
   }
   if (m.snapshot !== null) {
     const s = object(m.snapshot);

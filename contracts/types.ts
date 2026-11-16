@@ -44,7 +44,10 @@ export interface MarketView {
   epochPhase: EpochPhase | null; supported: boolean; chain: ChainRef | null;
   snapshot: PublishedSnapshot | null; anchor: PriceAnchor | null;
   price: { kind: 'curve' | 'indexed'; atoms: UInt; executable: boolean } | null;
-  priceReadiness?: {state:'CURRENT'|'SYNCING'|'STALE'|'UNAVAILABLE';dataThrough:UnixSeconds};
+  priceReadiness?: {state:'CURRENT'|'SYNCING'|'STALE'|'UNAVAILABLE';dataThrough:UnixSeconds;
+    checkedAt?:UnixSeconds;reason?:'DATA_STALE'|'INDEX_SYNCING'|'DATA_NOT_READY'|null};
+  /** Recent, market-bound operational explanation; never grants execution permission. */
+  runtimeStatus?: {reason:'STORAGE_PRESSURE'|'PUBLICATION_PENDING'|'RPC_RATE_LIMITED';checkedAt:UnixSeconds};
   /** Public, global on-chain admission capacity. It is shared across markets. */
   freeChipCapacity?: { fundedCap: UInt; fundedUsed: UInt; fundedRemaining: UInt };
   capabilities: Partial<Record<Action, Capability>>;
