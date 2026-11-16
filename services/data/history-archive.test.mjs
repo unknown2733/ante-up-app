@@ -4,7 +4,7 @@ import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,readdirSync,
 import {tmpdir} from 'node:os';
 import {join,dirname} from 'node:path';
 import {writeStateJson,readStateJson} from './state-json.mjs';
-import {planHistoryArchive,stageHistoryArchive,verifyHistoryArchive,pruneHistoryArchive,validateArchiveManifest} from './history-archive.mjs';
+import {planHistoryArchive,stageHistoryArchive,verifyHistoryArchive,pruneHistoryArchive,pruneCurrentHistoryArchive,validateArchiveManifest} from './history-archive.mjs';
 import {measureStateStorage} from '../../scripts/storage-accounting.mjs';
 
 function fixture(t){
@@ -106,4 +106,26 @@ test('a new archive can be configured before staging, without hiding any bytes',
   const f=fixture(t);mkdirSync(f.archiveRoot);writeFileSync(join(f.archiveRoot,'unknown'),'abc');
   const result=await measureStateStorage(f.stateRoot,f.options);assert.equal(result.archiveBytes,0);
   assert.ok(result.activeBytes>3);
+});
+test('current prune re-pins changed obligations and removes only previously restored inventory duplicates',t=>{
+  const f=fixture(t),plan=f.plan();stageHistoryArchive(plan,{quiesced:true});const receipt=f.restore();
+  const manifestBefore=readFileSync(join(f.archiveRoot,'manifest.json'));
+  const oldCurrent=JSON.parse(readFileSync(f.collection)).markets.m.observations.__ante_history_sha256;
+  const jobs=readStateJson(f.candidates,f.options);jobs.jobs.final.state='SUBMITTED';writeStateJson(f.candidates,jobs);
+  writeStateJson(f.collection,{markets:{m:{observations:[{at:200,count:15}]}}});
+  assert.throws(()=>pruneHistoryArchive(plan,receipt,{quiesced:true}),/HISTORY_ROOT_CHANGED/);
+  const result=pruneCurrentHistoryArchive(f.options,receipt,{quiesced:true});assert.equal(result.removed,1);
+  const finalRef=JSON.parse(readFileSync(f.candidates)).jobs.final.replayInput.__ante_history_sha256;
+  assert.ok(existsSync(join(f.dir,'.history',`${finalRef}.json.gz`)));
+  assert.ok(existsSync(join(f.dir,'.history',`${oldCurrent}.json.gz`))); // obsolete but not in restored inventory
+  assert.equal(readStateJson(f.candidates,f.options).jobs.final.replayInput.observations[0].count,11);
+  assert.equal(readFileSync(join(f.archiveRoot,'manifest.json')).compare(manifestBefore),0);
+  assert.equal(pruneCurrentHistoryArchive(f.options,receipt,{quiesced:true}).removed,0);
+});
+test('current prune rejects mismatched receipt and missing quiescence without deleting anything',t=>{
+  const f=fixture(t),plan=f.plan();stageHistoryArchive(plan,{quiesced:true});const receipt=f.restore();
+  const before=readdirSync(join(f.dir,'.history')).sort();
+  assert.throws(()=>pruneCurrentHistoryArchive(f.options,receipt),/HISTORY_WRITERS_MUST_BE_QUIESCED/);
+  assert.throws(()=>pruneCurrentHistoryArchive(f.options,{...receipt,manifestSha256:'0'.repeat(64)},{quiesced:true}),/HISTORY_RESTORE_RECEIPT_REQUIRED/);
+  assert.deepEqual(readdirSync(join(f.dir,'.history')).sort(),before);
 });

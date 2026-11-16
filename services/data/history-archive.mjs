@@ -191,3 +191,24 @@ export function pruneHistoryArchive(plan,restoreReceipt,{quiesced=false}={}){
   verifyRootReferences(plan);
   return {...verified,removed};
 }
+
+// A later backup receipt can safely prune an older inventory after writers ran:
+// recompute current obligations instead of requiring the original stage's roots.
+// Never add entries or alter the receipt-bound manifest in this operation.
+export function pruneCurrentHistoryArchive(options,restoreReceipt,{quiesced=false}={}){
+  check(quiesced,'HISTORY_WRITERS_MUST_BE_QUIESCED');
+  const manifestBytes=plainFile(join(resolve(options.archiveRoot),'manifest.json'));
+  const manifest=validateArchiveManifest(JSON.parse(manifestBytes));
+  check(restoreReceipt?.kind==='HISTORY_ARCHIVE_RESTORE_VERIFICATION'&&restoreReceipt.hashes==='matched'&&
+    restoreReceipt.manifestSha256===hash(manifestBytes),'HISTORY_RESTORE_RECEIPT_REQUIRED');
+  const inventory=new Map(manifest.entries.map(e=>[e.path,e]));
+  const current=planHistoryArchive(options);
+  current.entries=current.entries.filter(e=>{
+    const archived=inventory.get(e.path);if(!archived)return false;
+    check(e.sha256===archived.sha256&&e.contentHash===archived.contentHash&&e.bytes===archived.bytes,'HISTORY_ARCHIVE_CONFLICT');
+    return true;
+  });
+  current.archiveBytes=current.entries.reduce((sum,e)=>sum+e.bytes,0);
+  // Retains all strict root/file/hash and immediate pre-delete checks.
+  return pruneHistoryArchive(current,restoreReceipt,{quiesced:true});
+}

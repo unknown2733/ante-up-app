@@ -56,6 +56,22 @@ Readers must be deployed with cold fallback before pruning. An old reader that
 does not support cold fallback is not a valid rollback after pruning; first copy
 the verified archived blobs back to their original active locations.
 
+For recurring maintenance after writers have resumed, the old plan intentionally
+no longer passes the strict root checks. Once the next isolated restore supplies
+a receipt for the exact current archive manifest, pause writers and run:
+
+```sh
+node scripts/archive-state-history.mjs --prune-current "$STATE_ROOT" "$ARCHIVE_ROOT" "$RESTORE_RECEIPT" solana tariff --quiesced
+```
+
+This recomputes current active obligations, retaining any newly pinned history.
+It removes only hot duplicates already present in the receipt-bound inventory;
+new unarchived histories stay hot. It never adds archive entries or edits the
+manifest. Root fingerprints are checked immediately before each removal and an
+interrupted run can resume. Then stage a fresh plan for the next backup/restore
+cycle. Do not stage a new manifest before pruning the prior receipt's inventory:
+the manifest mismatch correctly prevents using an old restore receipt.
+
 ## Accounting
 
 `measureStateStorage` reports active, archived, total and host-free bytes. It
