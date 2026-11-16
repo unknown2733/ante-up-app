@@ -38,3 +38,15 @@ test('collector does not switch for data errors or an unvalidated backup', async
   await assert.rejects(() => limited.getLatestBlockhash(),/RPC_FAILOVER_GENESIS_MISMATCH/);
   assert.equal(backupReads,0);
 });
+
+test('two exhausted providers cool down without repeated requests or broadcast failover',async()=>{
+  let time=1000, reads=0,sends=0;
+  const limited=()=>transport(async()=>{reads++;throw Error('HTTP 429');},async()=>{sends++;throw Error('HTTP 429');});
+  const chain=withChainReadFailover(limited(),limited(),{now:()=>time,cooldownMs:60_000});
+  await assert.rejects(()=>chain.getBlockHeight(),/429/);
+  assert.equal(reads,2);
+  await assert.rejects(()=>chain.getFinalizedAccount('market'),/429/);
+  assert.equal(reads,2);
+  await assert.rejects(()=>chain.sendTransaction('wire'),/429/);assert.equal(sends,1);
+  time+=60_000;await assert.rejects(()=>chain.getBlockHeight(),/429/);assert.equal(reads,4);
+});

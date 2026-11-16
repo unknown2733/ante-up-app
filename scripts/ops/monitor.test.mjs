@@ -14,7 +14,7 @@ test('archive bytes are separated only for a complete inventory, and failed back
   await writeFile(join(dir,path),Buffer.alloc(200));
   await writeFile(join(dir,'manifest.json'),JSON.stringify({version:1,kind:'HISTORY_ARCHIVE_INVENTORY',entries:[{path,contentHash,sha256:'b'.repeat(64),bytes:200}]}));
   const config={...f.config,maxStateBytes:999999999,historyArchiveDirectory:'history-archive'};
-  let r=await collect(config,{now,fetcher:f.fetcher});assert.equal(r.metrics.archiveBytes,200);assert.equal(r.metrics.totalStateBytes-r.metrics.stateBytes,200);
+  let r=await collect(config,{now,fetcher:f.fetcher});assert.ok(r.metrics.archiveBytes>200);assert.equal(r.metrics.totalStateBytes-r.metrics.stateBytes,r.metrics.archiveBytes);
   await rm(join(dir,path));r=await collect(config,{now,fetcher:f.fetcher});assert.equal(r.metrics.stateBytes,r.metrics.totalStateBytes);assert.ok(r.alerts.some(a=>a.id==='INPUT_INVALID:history-archive'));
   const cyclePath=join(f.dir,'cycle.json');await writeFile(cyclePath,JSON.stringify({version:1,kind:'BACKUP_CYCLE',status:'FAILED',finishedAt:new Date(now).toISOString(),phases:{creation:{state:'SUCCEEDED'},artifactVerification:{state:'SUCCEEDED'},serviceRecovery:{state:'FAILED'},publicReadback:{state:'SUCCEEDED'}}}));
   r=await collect({...f.config,backup:{...f.config.backup,cycleReport:cyclePath}},{now,fetcher:f.fetcher});

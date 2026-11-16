@@ -5,6 +5,8 @@ import {pathToFileURL} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {check, json, atomicJson, args, inside} from './common.mjs';
+import {measureStateStorage} from '../storage-accounting.mjs';
+import {isPendingPublication} from '../../services/data/publication-recovery.mjs';
 
 const DECIMAL=/^(0|[1-9][0-9]*)$/;
 const positive=x=>Number.isSafeInteger(x)&&x>0;
@@ -148,16 +150,9 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
       metrics.totalStateBytes=metrics.stateBytes;
       if(c.historyArchiveDirectory){
         try{
-          const directory=join(c.stateDirectory,c.historyArchiveDirectory),manifest=await json(join(directory,'manifest.json'));
-          check(manifest.version===1&&manifest.kind==='HISTORY_ARCHIVE_INVENTORY'&&Array.isArray(manifest.entries),'ARCHIVE_INVENTORY_INVALID');
-          let bytes=0;const seen=new Set();
-          for(const entry of manifest.entries){
-            check(safeRelative(entry.path)&&/^[a-f0-9]{64}$/.test(entry.contentHash)&&/^[a-f0-9]{64}$/.test(entry.sha256)&&
-              entry.path.endsWith(`/${entry.contentHash}.json.gz`)&&!seen.has(entry.path)&&positive(entry.bytes),'ARCHIVE_ENTRY_INVALID');
-            const info=await lstat(join(directory,entry.path));check(info.isFile()&&!info.isSymbolicLink()&&info.size===entry.bytes,'ARCHIVE_FILE_INVALID');
-            seen.add(entry.path);bytes+=info.size;
-          }
-          metrics.archiveBytes=bytes;metrics.stateBytes-=bytes;
+          const usage=await measureStateStorage(c.stateDirectory,{stateRoot:c.stateDirectory,
+            archiveRoot:join(c.stateDirectory,c.historyArchiveDirectory)});
+          metrics.archiveBytes=usage.archiveBytes;metrics.stateBytes=usage.activeBytes;
         }catch{add('INPUT_INVALID','history-archive');}
       }
       const ratio=metrics.stateBytes/c.maxStateBytes;
@@ -234,7 +229,7 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
     if(!candidates.jobs||typeof candidates.jobs!=='object'||Array.isArray(candidates.jobs)){
       add('INPUT_INVALID',scope);continue;
     }
-    const pending=Object.values(candidates.jobs).filter(j=>j.state!=='FINALIZED');
+    const pending=Object.values(candidates.jobs).filter(isPendingPublication);
     metrics.pendingPublications+=pending.length;
     for(const job of pending)age(job.candidate?.computedAt,c.pendingPublishMaxAgeSeconds,'PUBLICATION_STUCK',job.id??'unknown');
   }

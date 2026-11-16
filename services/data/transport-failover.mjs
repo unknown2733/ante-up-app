@@ -10,7 +10,7 @@ export function withChainReadFailover(primary, backup, options = {}) {
   if (!Number.isSafeInteger(cooldownMs) || cooldownMs < 0 ||
     READS.some(method => typeof primary?.[method] !== 'function' || typeof backup?.[method] !== 'function') ||
     typeof primary?.sendTransaction !== 'function') throw Error('CHAIN_FAILOVER_INVALID');
-  let primaryPausedUntil = 0, backupValidation = null;
+  let primaryPausedUntil = 0, backupPausedUntil = 0, backupValidation = null;
   const validateBackup = async () => {
     if (!options.validateBackup) return;
     if (!backupValidation) backupValidation = Promise.resolve().then(options.validateBackup)
@@ -19,14 +19,18 @@ export function withChainReadFailover(primary, backup, options = {}) {
   };
   const result = {...primary, sendTransaction: (...args) => primary.sendTransaction(...args)};
   for (const method of READS) result[method] = async (...args) => {
-    if (now() < primaryPausedUntil) { await validateBackup(); return backup[method](...args); }
+    const readBackup = async () => {
+      if (now() < backupPausedUntil) throw Error('RPC_RATE_LIMITED HTTP 429');
+      try { await validateBackup(); return await backup[method](...args); }
+      catch(error) { if(isRpcRateLimited(error))backupPausedUntil=now()+cooldownMs; throw error; }
+    };
+    if (now() < primaryPausedUntil) return readBackup();
     try { return await primary[method](...args); }
     catch (error) {
       if (!isRpcRateLimited(error)) throw error;
       primaryPausedUntil = now() + cooldownMs;
       options.onFailover?.();
-      await validateBackup();
-      return backup[method](...args);
+      return readBackup();
     }
   };
   return result;

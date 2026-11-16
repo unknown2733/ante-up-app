@@ -3,4 +3,6 @@ FROM node:24-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7
 RUN apt-get update && apt-get install -y --no-install-recommends util-linux ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY scripts/ops scripts/ops
+COPY scripts/storage-accounting.mjs scripts/storage-accounting.mjs
+COPY services/data/index.mjs services/data/history-archive.mjs services/data/state-json.mjs services/data/publication-recovery.mjs services/data/
 USER node
