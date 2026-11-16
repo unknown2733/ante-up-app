@@ -1,5 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {syncBuiltinESMExports} from 'node:module';
 import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,readdirSync,rmSync,cpSync,unlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,dirname} from 'node:path';
@@ -147,4 +149,19 @@ test('real-shaped finalized snapshots and completed collection batches do not pi
   stageHistoryArchive(plan,{quiesced:true});pruneHistoryArchive(plan,f.restore(),{quiesced:true});
   assert.equal(readStateJson(f.collection,f.options).batches['m:1:0'].replayInput.observations[0].count,1);
   assert.equal(readStateJson(f.candidates,f.options).snapshots['m:98'].replayInput.start,98);
+});
+test('root mutation during lengthy archive verification blocks before the first duplicate removal',t=>{
+  const f=fixture(t),plan=f.plan();stageHistoryArchive(plan,{quiesced:true});const receipt=f.restore();
+  const original=fs.readFileSync,target=join(f.archiveRoot,plan.entries[0].path);let changed=false;
+  const mocked=t.mock.method(fs,'readFileSync',function(path,...args){
+    const result=original.call(this,path,...args);
+    if(path===target&&!changed){changed=true;fs.appendFileSync(f.collection,'\n');}
+    return result;
+  });
+  syncBuiltinESMExports();
+  try{
+    assert.throws(()=>pruneHistoryArchive(plan,receipt,{quiesced:true}),/HISTORY_ROOT_CHANGED/);
+    assert.ok(changed);
+    for(const e of plan.entries)assert.ok(existsSync(join(f.dir,'.history',`${e.contentHash}.json.gz`)));
+  }finally{mocked.mock.restore();syncBuiltinESMExports();}
 });

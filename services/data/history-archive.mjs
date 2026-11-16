@@ -212,7 +212,11 @@ export function stageHistoryArchive(plan,{quiesced=false}={}){
   return verifyHistoryArchive(plan.archiveRoot);
 }
 export function pruneHistoryArchive(plan,restoreReceipt,{quiesced=false}={}){
-  validatePlan(plan);check(quiesced,'HISTORY_WRITERS_MUST_BE_QUIESCED');checkCurrentRoots(plan);
+  validatePlan(plan);check(quiesced,'HISTORY_WRITERS_MUST_BE_QUIESCED');
+  // Capture metadata before the potentially long full-byte verification phase.
+  // Every duplicate removal checks only lstat metadata, not root bytes/JSON again.
+  const initialStamp=rootStamp(plan);checkCurrentRoots(plan);
+  check(rootStamp(plan)===initialStamp,'HISTORY_ROOT_CHANGED');
   const verified=verifyHistoryArchive(plan.archiveRoot);
   check(restoreReceipt?.kind==='HISTORY_ARCHIVE_RESTORE_VERIFICATION'&&restoreReceipt.hashes==='matched'&&
     restoreReceipt.manifestSha256===verified.manifestSha256,'HISTORY_RESTORE_RECEIPT_REQUIRED');
@@ -220,7 +224,7 @@ export function pruneHistoryArchive(plan,restoreReceipt,{quiesced=false}={}){
   for(const e of plan.entries)check(JSON.stringify(inventory.get(e.path))===JSON.stringify(e),'HISTORY_ARCHIVE_NOT_IN_MANIFEST');
   // Force all refs, using fallback after prior partial prunes; no malformed/missing history is discarded.
   verifyRootReferences(plan);
-  let removed=0;const initialStamp=rootStamp(plan);
+  let removed=0;
   for(const e of plan.entries){
     check(rootStamp(plan)===initialStamp,'HISTORY_ROOT_CHANGED');const path=activePath(plan,e);
     if(!existsSync(path))continue;
