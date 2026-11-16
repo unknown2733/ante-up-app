@@ -75,7 +75,7 @@ async function docker(argv){return new Promise((resolve,reject)=>{
 async function inspect(name){const [id,running,restarting]= (await docker(['inspect','--format','{{.Id}} {{.State.Running}} {{.State.Restarting}}',name])).split(' ');
   check(/^[a-f0-9]{64}$/.test(id),'PRODUCER_ID_INVALID');return {id,running:running==='true',restarting:restarting==='true'};}
 export function rpcReader(endpoints,{fetcher=fetch,wait=sleep}={}){return async(method,params=[])=>{
-  check(['getGenesisHash','getLatestBlockhash','getBlockTime','getSlot','getBlockHeight','isBlockhashValid',
+  check(['getGenesisHash','getLatestBlockhash','getBlockTime','getBlock','getSlot','getBlockHeight','isBlockhashValid',
     'getMultipleAccounts','getAccountInfo','getSignatureStatuses'].includes(method),'RECOVERY_RPC_METHOD_NOT_READ_ONLY');
   const blocked=new Set(),errors=new Map();let pendingBlockTime=false;
   for(let pass=0;pass<3;pass++){

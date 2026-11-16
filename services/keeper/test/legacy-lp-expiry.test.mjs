@@ -19,7 +19,7 @@ test('valid expired unsigned attempt retains original receipt and only changes t
  }finally{db.close();}
 });
 test('forged boundary, active producer, changed cycle or generation and signed/wrong action fail closed',()=>{
- for(const patch of [{attemptHash:'bad'},{recentBlockhashOnly:false},{blockhashValid:true},{finalizedBlockHeight:'200'},{accountSlot:'99'},
+ for(const patch of [{attemptHash:'bad'},{recentBlockhashOnly:false},{blockhashValid:true},{finalizedBlockHeight:'200'},{accountSlot:'99'},{accountSlot:'100'},
   {boundaryBlockTime:week+99},{genesisHash:'other'},{guards:{...proof.guards,weeklyLock:false}},
   {state:{...state,cycle:'5'}},{state:{...state,validityGeneration:'34'}},{state:{...state,currentMaturity:0}}])
   assert.throws(()=>validateLegacyExpiry(attempt,{...proof,...patch}));

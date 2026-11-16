@@ -79,7 +79,7 @@ export async function proveLegacyLpExpiry({attempt,guard,captureBoundary,blockTi
   if(final.slot>=boundary.slot&&BigInt(final.height)>BigInt(boundary.lastValidBlockHeight)&&final.blockhashValid===false)break;
   await pause();
  }
- const after=await readState(boundary.slot);validateBeforeState(attempt,after.state);guard();
+ const after=await readState(final.slot);validateBeforeState(attempt,after.state);guard();
  const proof={kind:'KEEPER_QUIESCENT_LP_EXPIRY',version:1,attemptHash:hash(attempt),programId:PROGRAM,genesisHash:GENESIS,
   recentBlockhashOnly:true,guards:guard(),state:after.state,stoppedAt,capturedAt,verifiedAt:now(),
   boundaryBlockTime:time,boundaryBlockhash:boundary.blockhash,boundarySlot:String(boundary.slot),
@@ -131,10 +131,13 @@ async function main(){
   try{await proveLegacyLpExpiry({attempt,guard,readState,save,
    captureBoundary:async()=>{const r=await rpc('getLatestBlockhash',[{commitment:'processed'}]);return {genesisHash:GENESIS,slot:r.context.slot,blockhash:r.value.blockhash,lastValidBlockHeight:String(r.value.lastValidBlockHeight)};},
    blockTime:slot=>rpc('getBlockTime',[slot]),
-   finality:async b=>{const opts={commitment:'finalized',minContextSlot:b.slot};const slot=await rpc('getSlot',[{commitment:'finalized'}]);
+   finality:async b=>{const slot=await rpc('getSlot',[{commitment:'finalized',minContextSlot:b.slot}]);
     if(slot<b.slot)return {slot,height:'0',blockhashValid:true};
-    const height=await rpc('getBlockHeight',[opts]),valid=await rpc('isBlockhashValid',[b.blockhash,opts]);
-    check(valid.context.slot>=b.slot,'KEEPER_EXPIRY_CONTEXT_BEHIND');return {slot,height:String(height),blockhashValid:valid.value};},
+    // Bind expiry height to this specific finalized block, not two unrelated RPC tips.
+    const block=await rpc('getBlock',[slot,{commitment:'finalized',transactionDetails:'none',rewards:false}]);
+    check(Number.isSafeInteger(block?.blockHeight)&&block.blockHeight>=0,'KEEPER_EXPIRY_BLOCK_UNAVAILABLE');
+    const valid=await rpc('isBlockhashValid',[b.blockhash,{commitment:'finalized',minContextSlot:slot}]);
+    check(valid.context.slot>=slot,'KEEPER_EXPIRY_CONTEXT_BEHIND');return {slot,height:String(block.blockHeight),blockhashValid:valid.value};},
    commit:(attempt,proof,guard)=>commitLegacyExpiry(db,attempt,proof,guard)});
   }catch(e){await save({stage:'STOPPED',code:/^[A-Z][A-Z0-9_]+$/.test(e.message)?e.message:'KEEPER_EXPIRY_FAILED'});throw e;}
   console.log('KEEPER_UNSIGNED_LP_ATTEMPT_EXPIRED_NO_TRANSACTION_SENT');

@@ -35,7 +35,7 @@ export function validateLegacyExpiry(a,p){
    p.stoppedAt>=a.updated_at&&p.capturedAt>=p.stoppedAt&&p.boundaryBlockTime>=p.stoppedAt&&p.verifiedAt>=p.capturedAt&&
    typeof p.boundaryBlockhash==='string'&&p.boundaryBlockhash.length>0&&
    dec(p.boundarySlot)&&dec(p.finalizedSlot)&&dec(p.accountSlot)&&dec(p.lastValidBlockHeight)&&dec(p.finalizedBlockHeight)&&
-   BigInt(p.finalizedSlot)>=BigInt(p.boundarySlot)&&BigInt(p.accountSlot)>=BigInt(p.boundarySlot)&&
+   BigInt(p.finalizedSlot)>=BigInt(p.boundarySlot)&&BigInt(p.accountSlot)>=BigInt(p.finalizedSlot)&&
    BigInt(p.finalizedBlockHeight)>BigInt(p.lastValidBlockHeight)&&p.blockhashValid===false);
  return true;
 }
