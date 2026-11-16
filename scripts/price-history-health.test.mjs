@@ -19,7 +19,11 @@ test('price worker stays healthy with one sampled market while stale reference m
     const partial = check({ status: 'PARTIAL', valid: 1 });
     assert.equal(partial.status, 0, partial.stderr);
     assert.equal(JSON.parse(partial.stdout).status, 'PARTIAL');
-    assert.notEqual(check({ status: 'NO_DATA', valid: 0, stored: 0, noData: 3 }).status, 0);
+    const waiting=check({ status: 'NO_DATA', valid: 0, stored: 0, noData: 3 });
+    assert.equal(waiting.status,0,waiting.stderr);assert.equal(JSON.parse(waiting.stdout).priceReady,false);
+    assert.notEqual(check({ status: 'NO_DATA', valid: 0, stored: 0, noData: 3, readErrors: 1 }).status,0);
+    assert.notEqual(check({ status: 'NO_DATA', valid: 0, stored: 0, noData: 3, atMs: Date.now()-200000 }).status,0);
+    assert.notEqual(check({ status: 'NO_DATA', valid: 0, stored: 0, noData: 3, atMs: Date.now()+60000 }).status,0);
     assert.notEqual(check({ status: 'ERROR', valid: 1, readErrors: 1 }).status, 0);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
