@@ -12,7 +12,7 @@ try {
   if(role==='evidence'&&s.admissionGuard==='UNSAFE')throw Error();
   // An intentionally paused collector is alive; freshness remains a separate
   // admission/monitor gate. Unknown states must not conceal a dead source loop.
-  const controlledWait=s.role===role&&s.state==='WAITING'&&
+  const controlledWait=Number.isSafeInteger(s.at)&&s.at<=Date.now()+30_000&&s.role===role&&s.state==='WAITING'&&
     ['STATE_STORAGE_LIMIT','HOST_STORAGE_LOW','PUBLICATION_PENDING','RPC_RATE_LIMITED'].includes(s.reason);
   if(role.startsWith('collector')&&!controlledWait&&(!s.lastPollAt||Date.now()/1000-s.lastPollAt>900))throw Error();
  }

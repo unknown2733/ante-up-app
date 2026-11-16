@@ -5,6 +5,8 @@ test('controlled source wait reports liveness without accepting stale or unknown
  try{for(const [data,expected] of [
   [{role:'collector',at:Date.now(),state:'WAITING',reason:'PUBLICATION_PENDING'},0],
   [{role:'collector',at:Date.now(),state:'WAITING',reason:'STATE_STORAGE_LIMIT'},0],
+  [{role:'collector',state:'WAITING',reason:'PUBLICATION_PENDING'},1],
+  [{role:'collector',at:Date.now()+100000,state:'WAITING',reason:'PUBLICATION_PENDING'},1],
   [{role:'collector',at:Date.now()-200000,state:'WAITING',reason:'RPC_RATE_LIMITED'},1],
   [{role:'collector',at:Date.now(),state:'WAITING',reason:'UNKNOWN'},1],
   [{role:'collector',at:Date.now(),lastPollAt:1},1]]){
