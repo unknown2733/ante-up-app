@@ -77,8 +77,10 @@ async function main(){
     verify:startedAt=>verifyArtifact(base,startedAt),
     restore:async names=>{for(const name of names){const r=await command('docker',['inspect','--format','{{.State.Running}}',name],{capture:true});
       if(r.code!==0||r.output.trim()!=='true')await command('docker',['start',name]);}},
-    inspect:async name=>{const r=await command('docker',['inspect','--format','{{.State.Running}} {{.State.Restarting}}',name],{capture:true});return r.code===0&&r.output.trim()==='true false';},
-    probe:async p=>{const r=await fetch(p.url,{signal:AbortSignal.timeout(12000),redirect:'error'});await r.body?.cancel();return r.status===200;},
+    inspect:async name=>{const r=await command('docker',['inspect','--format','{{.State.Running}} {{.State.Restarting}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}',name],{capture:true});return r.code===0&&['true false healthy','true false none'].includes(r.output.trim());},
+    probe:async p=>{const r=await fetch(p.url,{signal:AbortSignal.timeout(12000),redirect:'error'});
+      if(p.name==='markets'&&r.status===200){const body=await r.json();return body.mode==='devnet'&&Array.isArray(body.data);}
+      await r.body?.cancel();return r.status===200;},
     save:async r=>{await atomicJson(join(reports,runName),r);await atomicJson(join(reports,'latest-cycle.json'),r);}});
   console.log(JSON.stringify({kind:report.kind,status:report.status,phases:Object.fromEntries(Object.entries(report.phases).map(([k,v])=>[k,v.state]))}));
   if(report.status!=='SUCCEEDED')process.exitCode=1;
