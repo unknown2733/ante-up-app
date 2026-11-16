@@ -68,11 +68,13 @@ async function docker(argv){return new Promise((resolve,reject)=>{
 async function inspect(name){const [id,running,restarting]= (await docker(['inspect','--format','{{.Id}} {{.State.Running}} {{.State.Restarting}}',name])).split(' ');
   check(/^[a-f0-9]{64}$/.test(id),'PRODUCER_ID_INVALID');return {id,running:running==='true',restarting:restarting==='true'};}
 function rpcReader(endpoints){return async(method,params=[])=>{
+  let pendingBlockTime=false;
   for(const endpoint of endpoints)try{const r=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},
     body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:AbortSignal.timeout(12000),redirect:'error'});
     if(!r.ok){await r.body?.cancel();continue;}const d=await r.json();if(!d.error&&d.result!==undefined)return d.result;
+    if(method==='getBlockTime'&&[-32004,-32007,-32009].includes(d.error?.code))pendingBlockTime=true;
   }catch{}
-  throw Error('RECOVERY_RPC_UNAVAILABLE');
+  if(pendingBlockTime)return null;throw Error('RECOVERY_RPC_UNAVAILABLE');
 };}
 
 async function main(){
