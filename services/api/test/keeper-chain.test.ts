@@ -11,6 +11,7 @@ import { KitFinancialEpochChain } from '../src/keeper-chain.ts';
 import {KitKeeperInstructionTransport} from '../src/keeper-transport.ts';
 import type { FinalizedFinancialAccounts, FirstSliceFinancialReader } from '../src/financial-chain.ts';
 import type { AcceptedCandidate, SettlementScope } from '../../keeper/src/candidate.ts';
+import {KeeperPreparationFailure,isKeeperPreparationFailure} from '../../keeper/src/preparation-failure.ts';
 
 const randomAddress=()=>getBase58Decoder().decode(randomBytes(32));
 const programId=String(ANTE_UP_PROGRAM_ADDRESS),marketId=randomAddress(),positionAddress=randomAddress(),
@@ -122,4 +123,42 @@ test('keeper signer transport signs one generated instruction and returns its si
   const signature=await transport.send(ix,'publisher',value=>{signed=value;});
   assert.equal(signature,signed);assert.equal(sends,1);
   assert.equal(await transport.signatureStatus(signature),'FINALIZED');
+});
+
+test('instruction preparation RPC errors are typed before transport entry',async()=>{
+  let sends=0;
+  const broken=async()=>{throw Error('HTTP 429 https://provider.invalid/private-token');};
+  const state={options:{programId},config:broken,position:broken} as unknown as FinalizedFinancialAccounts;
+  const transport={publisherAddress:publisher,keeperAddress:keeper,async send(){sends++;return 'signature';},async signatureStatus(){return 'PENDING' as const;}};
+  const chain=new KitFinancialEpochChain(state,{} as FirstSliceFinancialReader,transport,scope);
+  for(const call of [()=>chain.accept({} as AcceptedCandidate),()=>chain.settle(marketId,positionAddress),()=>chain.startLpWindow(marketId)]){
+    await assert.rejects(call,error=>isKeeperPreparationFailure(error)&&error.reason==='RPC_RATE_LIMITED'&&!error.message.includes('private-token'));
+  }
+  assert.equal(sends,0);
+});
+
+test('transport certifies only failures before signer entry; callback and signer errors remain uncertain',async()=>{
+  for(const phase of ['blockhash','height','validity','expired','signer','callback','broadcast']){
+    const original=await generateKeyPairSigner();let signs=0,sends=0,callbacks=0;
+    const signer={...original,signTransactions:async(...args:any[])=>{
+      signs++;if(phase==='signer')throw new KeeperPreparationFailure('RPC_RATE_LIMITED');
+      return (original.signTransactions as any)(...args);
+    }};
+    const ix=await getStartLpWindowInstructionAsync({market:address(marketId),settlement:address(settlementAddress),publisher:createNoopSigner(signer.address)},{programAddress:address(programId)});
+    const rpc={async getLatestBlockhash(){if(phase==='blockhash')throw Error('HTTP 429 secret');return {blockhash:'11111111111111111111111111111111',lastValidBlockHeight:100n};},
+      async getBlockHeight(){if(phase==='height')throw Error('HTTP 429');return phase==='expired'?101n:1n;},
+      async isBlockhashValid(){if(phase==='validity')throw Error('HTTP 429');return true;},
+      async sendTransaction(){sends++;throw Error('connection lost');},async getSignatureStatus(){return null;}};
+    const transport=new KitKeeperInstructionTransport({endpoint:'http://unused.invalid',programId,publisher:signer,keeper:signer,rpc:rpc as any});
+    const run=()=>transport.send(ix,'publisher',()=>{callbacks++;if(phase==='callback')throw new KeeperPreparationFailure('RPC_RATE_LIMITED');});
+    if(['blockhash','height','validity','expired'].includes(phase)){
+      await assert.rejects(run,error=>isKeeperPreparationFailure(error)&&error.reason===(phase==='expired'?'BLOCKHASH_EXPIRED':'RPC_RATE_LIMITED'));
+      assert.equal(signs,0);assert.equal(callbacks,0);assert.equal(sends,0);
+    }else if(phase==='broadcast'){
+      assert.ok(await run());assert.equal(signs,1);assert.equal(callbacks,1);assert.equal(sends,1);
+    }else{
+      await assert.rejects(run,error=>error instanceof Error&&!isKeeperPreparationFailure(error));
+      assert.equal(signs,1);assert.equal(callbacks,phase==='callback'?1:0);assert.equal(sends,0);
+    }
+  }
 });

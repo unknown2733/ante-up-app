@@ -4,6 +4,7 @@ import {address, createKeyPairSignerFromBytes, getSignatureFromTransaction,
 import {createKitChainTransport, prepareUnsignedTransaction, submitAndConfirmFinalized, withKitSigner,
   type ChainTransport} from '../../../clients/chain/dist/runtime.js';
 import type {KeeperInstructionTransport} from './keeper-chain.ts';
+import {isKeeperPreparationFailure,keeperPreparationFailure} from '../../keeper/src/preparation-failure.ts';
 
 /** Loads a conventional Solana 64-byte JSON keypair only in explicit execution mode. */
 export async function loadKeeperKeypair(path:string):Promise<KeyPairSigner> {
@@ -27,15 +28,24 @@ export class KitKeeperInstructionTransport implements KeeperInstructionTransport
     this.programId=String(address(input.programId));this.rpc=input.rpc??createKitChainTransport(input.endpoint);
   }
   async send(instruction:Instruction,authority:'publisher'|'keeper',onSigned?:(signature:string)=>void):Promise<string> {
+    let signerEntered=false;
+    try {
     if (String(instruction.programAddress)!==this.programId) throw new Error('KEEPER_PROGRAM_MISMATCH');
     const signer=authority==='publisher'?this.publisher:this.keeper;
     const prepared=await prepareUnsignedTransaction({transport:this.rpc,instruction,feePayer:signer.address,
       programAddress:address(this.programId)});
     const sign=withKitSigner(signer);
     const outcome=await submitAndConfirmFinalized({transport:this.rpc,prepared,expectedInstruction:instruction,
-      sign:async unsigned=>{const signed=await sign(unsigned);onSigned?.(getSignatureFromTransaction(signed));return signed;}});
+      sign:async unsigned=>{signerEntered=true;const signed=await sign(unsigned);onSigned?.(getSignatureFromTransaction(signed));return signed;}});
     if (!outcome.signature) throw new Error('KEEPER_SUBMISSION_UNCERTAIN_NO_SIGNATURE');
     return outcome.signature;
+    } catch(error) {
+      if(!signerEntered)throw keeperPreparationFailure(error);
+      // Even an error of the typed class thrown by a signer/callback cannot
+      // certify that signing was never entered. Keep these attempts UNKNOWN.
+      if(isKeeperPreparationFailure(error))throw new Error('KEEPER_SIGNING_OR_SUBMISSION_UNCERTAIN');
+      throw error;
+    }
   }
   async signatureStatus(signature:string):Promise<'FINALIZED'|'FAILED'|'PENDING'> {
     const status=await this.rpc.getSignatureStatus(signature);

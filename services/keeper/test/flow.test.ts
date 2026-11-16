@@ -7,6 +7,7 @@ import { hash } from '../../data/index.mjs';
 import { SqliteKeeperAttempts } from '../src/attempts.ts';
 import { advanceFinancialEpoch, type FinalizedEpochState, type FinancialEpochChain } from '../src/flow.ts';
 import type { SettlementScope } from '../src/candidate.ts';
+import {KeeperPreparationFailure} from '../src/preparation-failure.ts';
 
 const work=resolve(import.meta.dirname,'../../../../work/d-keeper-flow');mkdirSync(work,{recursive:true});
 const scope:SettlementScope={cluster:'localnet',programId:'FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr',
@@ -25,6 +26,24 @@ function setup(){
   writeFileSync(journalPath,JSON.stringify({settlements:{[key]:{state:'FROZEN_LOCAL',candidate,candidateHash}}}));
   return {journalPath,attempts:new SqliteKeeperAttempts(dbPath),candidateHash};
 }
+
+test('epoch preparation failure is retryable only before callback entry',async()=>{
+  for(const phase of ['prepare','callback','signed','unknown']){
+    const fixture=setup(),now=scope.maturityAt+900;let calls=0;
+    const state:FinalizedEpochState={marketId:scope.marketId,cycle:'2',epochStartedAt:scope.epochStartedAt,
+      maturityAt:scope.maturityAt,settlement:null,openPositions:[],openPositionCount:0,lpWindowStart:0,lpWindowEnd:0,navValid:false};
+    const chain:FinancialEpochChain={async read(){return state;},async verifyAttempt(){return 'PENDING';},
+      async accept(_candidate,onSigned){calls++;if(phase==='callback'||phase==='signed')try{onSigned?.(phase==='signed'?'saved-sig':'');}catch{}
+        throw phase==='unknown'?Error('unknown'):new KeeperPreparationFailure('RPC_RATE_LIMITED');},
+      async settle(){throw Error('unreachable');},async startLpWindow(){throw Error('unreachable');}};
+    const input={journalPath:fixture.journalPath,scope,attempts:fixture.attempts,chain,now};
+    try{
+      const first=await advanceFinancialEpoch(input);assert.equal(first.state,phase==='prepare'?'failed':'unknown');
+      assert.equal(first.signature,phase==='signed'?'saved-sig':null);
+      await advanceFinancialEpoch({...input,now:now+1});assert.equal(calls,phase==='prepare'?2:1);
+    }finally{fixture.attempts.close();}
+  }
+});
 
 test('keeper advances accepted settlement, individual payout fixation and LP window one transaction at a time',async()=>{
   const fixture=setup(),now=scope.maturityAt+900;

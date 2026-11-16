@@ -113,6 +113,7 @@ async function main() {
     if (!options.follow) {
       const result=await pass();process.stdout.write(JSON.stringify(result)+'\n');
       if (result.state==='unknown') process.exitCode=2;
+      if (result.state==='failed') process.exitCode=1;
       return;
     }
     const controller=new AbortController();

@@ -7,6 +7,7 @@ import type { AcceptedCandidate, SettlementScope } from '../../keeper/src/candid
 import type { KeeperAttempt } from '../../keeper/src/attempts.ts';
 import type {EmptyWindowState} from '../../keeper/src/lp-recovery.ts';
 import { FinalizedFinancialAccounts, FirstSliceFinancialReader } from './financial-chain.ts';
+import {keeperPreparationFailure} from '../../keeper/src/preparation-failure.ts';
 
 const equal=(a:ReadonlyUint8Array,b:ReadonlyUint8Array)=>Buffer.from(a).equals(Buffer.from(b));
 const hex=(a:ReadonlyUint8Array)=>Buffer.from(a).toString('hex');
@@ -123,6 +124,7 @@ export class KitFinancialEpochChain implements FinancialEpochChain {
     return attempt.signature?this.transport.signatureStatus(attempt.signature):'PENDING';
   }
   async accept(candidate:AcceptedCandidate,onSigned?:(signature:string)=>void):Promise<string> {
+    const ix=await this.prepareInstruction(async()=>{
     const config=await this.authority(),programAddress=address(this.state.options.programId);
     const [market,fm]=await Promise.all([this.state.market(candidate.marketId),this.state.financeMarket(candidate.marketId)]);
     if (market.phase!==MarketPhase.Indexed || fm.currentCycle!==candidate.epoch || fm.currentMaturity!==candidate.maturityAt ||
@@ -152,9 +154,12 @@ export class KitFinancialEpochChain implements FinancialEpochChain {
       settlementPrice:candidate.settlementPrice,activityNowQ12:candidate.activityNowQ12,
       activity7dQ12:candidate.activity7dQ12,queryVersion:candidate.queryVersion,
       expectedConfigVersion:candidate.configVersion},{programAddress});
+    return ix;
+    });
     return this.transport.send(ix,'publisher',onSigned);
   }
   async settle(marketId:string,positionAddress:string,onSigned?:(signature:string)=>void):Promise<string> {
+    const ix=await this.prepareInstruction(async()=>{
     const programAddress=address(this.state.options.programId),position=await this.state.position(positionAddress);
     if (!position || String(position.market)!==marketId || position.state!==PositionState.Open) throw new Error('KEEPER_POSITION_UNAVAILABLE');
     const settlement=await this.state.settlement(marketId,position.cycle);
@@ -163,9 +168,12 @@ export class KitFinancialEpochChain implements FinancialEpochChain {
     if (await this.state.claim(positionAddress)) throw new Error('KEEPER_CLAIM_ALREADY_EXISTS');
     const ix=await getSettleProInstructionAsync({market:address(marketId),position:address(positionAddress),
       settlement:address(settlement.address),claim,keeper:createNoopSigner(address(this.transport.keeperAddress))},{programAddress});
+    return ix;
+    });
     return this.transport.send(ix,'keeper',onSigned);
   }
   async startLpWindow(marketId:string,onSigned?:(signature:string)=>void):Promise<string> {
+    const ix=await this.prepareInstruction(async()=>{
     await this.authority();
     const fm=await this.state.financeMarket(marketId),settlement=await this.state.settlement(marketId,fm.currentCycle);
     if(fm.openPositions!==0) throw new Error('KEEPER_SETTLEMENT_INCOMPLETE');
@@ -178,6 +186,11 @@ export class KitFinancialEpochChain implements FinancialEpochChain {
     const settlementAddress=settlement?.address??await this.state.settlementAddress(marketId,fm.currentCycle);
     const ix=await getStartLpWindowInstructionAsync({market:address(marketId),settlement:address(settlementAddress),
       publisher:createNoopSigner(address(this.transport.publisherAddress))},{programAddress:address(this.state.options.programId)});
+    return ix;
+    });
     return this.transport.send(ix,'publisher',onSigned);
+  }
+  private async prepareInstruction(prepare:()=>Promise<Instruction>):Promise<Instruction> {
+    try{return await prepare();}catch(error){throw keeperPreparationFailure(error);}
   }
 }
