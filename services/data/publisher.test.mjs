@@ -60,6 +60,14 @@ test('paged archive, gap repair, and generated publisher persist exact finalized
     assert.equal(blocked.collectionState,undefined);
     assert.equal(blocked.publication.reason,'PRIOR_PUBLICATION_PENDING');
     assert.equal(paidCalls,0);assert.equal(sends,1);
+    const durable=await repository.read(),savedJob={...durable.jobs[repaired.id]};
+    durable.jobs[repaired.id]={...savedJob,state:'REQUESTING',signature:null};await repository.write(durable);
+    const unsigned=await runLiveCycle({config,argv:['--execute','--publish'],now:end+900,store,transport,publisherRuntime});
+    assert.equal(unsigned.state,'PUBLICATION_PENDING');assert.equal(paidCalls,0);assert.equal(sends,1);
+    durable.jobs[repaired.id]={...savedJob,state:'EXPIRED_UNLANDED',recovery:{kind:'forged'}};await repository.write(durable);
+    await assert.rejects(runLiveCycle({config,argv:['--execute','--publish'],now:end+900,store,transport,publisherRuntime}),/PUBLICATION_EXPIRY_PROOF_INVALID/);
+    assert.equal(paidCalls,0);assert.equal(sends,1);
+    durable.jobs[repaired.id]=savedJob;await repository.write(durable);
     finalityReady=true;
     const resumed=await runLiveCycle({config,argv:['--execute','--publish'],now:end+1200,store,transport,publisherRuntime});
     assert.equal(resumed.state,'VALIDATED');assert.equal(resumed.publication.pending,true);
