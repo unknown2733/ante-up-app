@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import zlib from 'node:zlib';
 import {syncBuiltinESMExports} from 'node:module';
 import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,readdirSync,rmSync,cpSync,unlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -164,4 +165,28 @@ test('root mutation during lengthy archive verification blocks before the first 
     assert.ok(changed);
     for(const e of plan.entries)assert.ok(existsSync(join(f.dir,'.history',`${e.contentHash}.json.gz`)));
   }finally{mocked.mock.restore();syncBuiltinESMExports();}
+});
+test('per-call verified metadata decompresses each exact blob once in plan and stage, never across calls',t=>{
+  const f=fixture(t),blobCount=readdirSync(join(f.dir,'.history')).length;
+  const original=zlib.gunzipSync;let calls=0;
+  const mocked=t.mock.method(zlib,'gunzipSync',function(...args){calls++;return original.apply(this,args);});
+  syncBuiltinESMExports();
+  try{
+    const plan=f.plan();assert.equal(calls,blobCount);
+    calls=0;stageHistoryArchive(plan,{quiesced:true});assert.equal(calls,plan.entries.length);
+    calls=0;verifyHistoryArchive(f.archiveRoot);assert.equal(calls,plan.entries.length);
+    calls=0;stageHistoryArchive(plan,{quiesced:true});assert.equal(calls,plan.entries.length);
+  }finally{mocked.mock.restore();syncBuiltinESMExports();}
+});
+test('cached content verification never bypasses a new compressed-byte SHA check',t=>{
+  const f=fixture(t),ref=JSON.parse(readFileSync(f.collection)).markets.m.observations.__ante_history_sha256;
+  const target=join(f.dir,'.history',`${ref}.json.gz`),original=fs.readFileSync;let reads=0;
+  const mocked=t.mock.method(fs,'readFileSync',function(path,...args){
+    const bytes=original.call(this,path,...args);
+    if(path===target&&++reads>=2){const changed=Buffer.from(bytes);changed[changed.length-1]^=1;return changed;}
+    return bytes;
+  });
+  syncBuiltinESMExports();
+  try{assert.throws(()=>f.plan());assert.ok(reads>=2);}
+  finally{mocked.mock.restore();syncBuiltinESMExports();}
 });

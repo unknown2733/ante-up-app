@@ -4,7 +4,7 @@ import {readFileSync,writeFileSync,mkdirSync,readdirSync,lstatSync,existsSync,re
 import {resolve,relative,join,dirname,sep,isAbsolute} from 'node:path';
 import {createHash} from 'node:crypto';
 import {gunzipSync} from 'node:zlib';
-import {readHistoryBlob} from './state-json.mjs';
+import {historyArchiveDirectory} from './state-json.mjs';
 
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const check=(ok,code)=>{if(!ok)throw Error(code);};
@@ -47,18 +47,32 @@ function decodedRefs(bytes){
   // Escaped keys can encode the marker, so retain the general walk for \u escapes.
   return bytes.includes(marker)||bytes.includes('\\u')?refs(value):new Set();
 }
+function verifiedMetadata(compressed,contentHash,cache,{references=false}={}){
+  // Always re-read and hash compressed bytes before reusing any derived result.
+  // The cache lives only inside this operation and never retains large payloads.
+  const sha256=hash(compressed),key=`${contentHash}:${sha256}`,known=cache.get(key);
+  if(known&&(!references||known.childRefs))return known;
+  const bytes=gunzipSync(compressed);check(hash(bytes)===contentHash,'HISTORY_HASH_MISMATCH');
+  const result={sha256,contentHash,bytes:compressed.length,...(references?{childRefs:decodedRefs(bytes)}:{})};
+  cache.set(key,result);return result;
+}
+function historyCompressed(stateFile,h,options){
+  try{return plainFile(join(dirname(stateFile),'.history',`${h}.json.gz`));}
+  catch(error){if(error.code!=='ENOENT')throw error;
+    const archive=historyArchiveDirectory(stateFile,options);if(!archive)throw error;
+    return plainFile(join(archive,`${h}.json.gz`));
+  }
+}
 function closure(stateFile,initial,options){
   const visited=new Set();
   function visit(h){if(visited.has(h))return;visited.add(h);
-    const key=`${dirname(resolve(stateFile))}:${h}`,cache=options.referenceCache;
-    let children=cache?.get(key);
-    if(!children){children=decodedRefs(readHistoryBlob(stateFile,h,options));cache?.set(key,children);}
+    const children=verifiedMetadata(historyCompressed(stateFile,h,options),h,options.verificationCache,{references:true}).childRefs;
     for(const child of children)visit(child);
   }
   for(const h of initial)visit(h);return visited;
 }
 function verifyRootReferences(plan){
-  const options={...plan,referenceCache:new Map()};
+  const options={...plan,verificationCache:new Map()};
   for(const r of plan.roots){const path=join(plan.stateRoot,r.path);closure(path,decodedRefs(plainFile(path)),options);}
 }
 const finalizedJob=job=>job?.state==='FINALIZED'&&job.published?.finality==='finalized';
@@ -103,16 +117,17 @@ export function validateArchiveManifest(value){
       e.path.endsWith(`/${e.contentHash}.json.gz`)&&Number.isSafeInteger(e.bytes)&&e.bytes>0,'HISTORY_ARCHIVE_ENTRY_INVALID');
   }return value;
 }
-export function verifyHistoryArchive(archiveRoot){
+function verifyArchive(archiveRoot,verificationCache){
   archiveRoot=resolve(archiveRoot);
   const bytes=plainFile(checkedArchivePath(archiveRoot,join(archiveRoot,'manifest.json'))),manifest=validateArchiveManifest(JSON.parse(bytes));
   let total=0;
   for(const e of manifest.entries){const p=checkedArchivePath(archiveRoot,join(archiveRoot,e.path));
     const compressed=plainFile(p);check(compressed.length===e.bytes&&hash(compressed)===e.sha256,'HISTORY_ARCHIVE_BYTES_MISMATCH');
-    check(hash(gunzipSync(compressed))===e.contentHash,'HISTORY_HASH_MISMATCH');total+=e.bytes;
+    verifiedMetadata(compressed,e.contentHash,verificationCache);total+=e.bytes;
   }
   return {kind:'HISTORY_ARCHIVE_VERIFICATION',manifestSha256:hash(bytes),hashes:'matched',entries:manifest.entries.length,bytes:total};
 }
+export function verifyHistoryArchive(archiveRoot){return verifyArchive(archiveRoot,new Map());}
 function sourceRoots(stateRoot,collections,protectedPaths){
   const roots=[];
   for(const name of collections){
@@ -141,7 +156,7 @@ export function planHistoryArchive({stateRoot,archiveRoot,collections,protectedP
   stateRoot=resolve(stateRoot);archiveRoot=resolve(archiveRoot);
   check(Array.isArray(collections)&&collections.length>0&&new Set(collections).size===collections.length,'HISTORY_COLLECTION_INVALID');
   for(const c of collections)check(!inside(join(stateRoot,c),archiveRoot)&&archiveRoot!==join(stateRoot,c),'HISTORY_ARCHIVE_IN_ACTIVE_ROOT');
-  const options={stateRoot,archiveRoot,referenceCache:new Map()},roots=sourceRoots(stateRoot,collections,protectedPaths);
+  const options={stateRoot,archiveRoot,verificationCache:new Map()},roots=sourceRoots(stateRoot,collections,protectedPaths);
   const active=new Map(collections.map(c=>[c,new Set()]));
   for(const root of roots){
     const path=join(stateRoot,root.path),bytes=plainFile(path),value=JSON.parse(bytes);root.sha256=hash(bytes);
@@ -166,9 +181,9 @@ export function planHistoryArchive({stateRoot,archiveRoot,collections,protectedP
     for(const name of readdirSync(directory).sort()){
       check(/^[a-f0-9]{64}\.json\.gz$/.test(name),'HISTORY_UNEXPECTED_BLOB');
       const contentHash=name.slice(0,64),bytes=plainFile(join(directory,name));
-      check(hash(gunzipSync(bytes))===contentHash,'HISTORY_HASH_MISMATCH');
+      const verified=verifiedMetadata(bytes,contentHash,options.verificationCache);
       if(active.get(c).has(contentHash)){protectedBytes+=bytes.length;continue;}
-      entries.push({path:`${c}/${name}`,sha256:hash(bytes),contentHash,bytes:bytes.length});
+      entries.push({path:`${c}/${name}`,sha256:verified.sha256,contentHash,bytes:bytes.length});
     }
   }
   return {version:1,kind:'HISTORY_ARCHIVE_PLAN',stateRoot,archiveRoot,collections,protectedPaths,roots,
@@ -196,20 +211,22 @@ export function stageHistoryArchive(plan,{quiesced=false}={}){
   validatePlan(plan);check(quiesced,'HISTORY_WRITERS_MUST_BE_QUIESCED');checkCurrentRoots(plan);
   mkdirSync(plan.archiveRoot,{recursive:true});
   check(lstatSync(plan.archiveRoot).isDirectory(),'HISTORY_ARCHIVE_PATH_INVALID');
+  const verificationCache=new Map();
   let existing=[];const manifestPath=join(plan.archiveRoot,'manifest.json');
-  if(existsSync(manifestPath)){verifyHistoryArchive(plan.archiveRoot);existing=JSON.parse(plainFile(manifestPath)).entries;}
+  if(existsSync(manifestPath)){verifyArchive(plan.archiveRoot,verificationCache);existing=JSON.parse(plainFile(manifestPath)).entries;}
   const entries=new Map(existing.map(e=>[e.path,e]));
   for(const e of plan.entries){
     const source=activePath(plan,e),destination=checkedArchivePath(plan.archiveRoot,join(plan.archiveRoot,e.path));
     const bytes=existsSync(source)?plainFile(source):plainFile(destination);
-    check(bytes.length===e.bytes&&hash(bytes)===e.sha256&&hash(gunzipSync(bytes))===e.contentHash,'HISTORY_SOURCE_CHANGED');
+    check(bytes.length===e.bytes&&hash(bytes)===e.sha256,'HISTORY_SOURCE_CHANGED');
+    verifiedMetadata(bytes,e.contentHash,verificationCache);
     if(existsSync(destination))check(hash(plainFile(destination))===e.sha256,'HISTORY_ARCHIVE_CONFLICT');else atomic(destination,bytes);
     if(entries.has(e.path))check(JSON.stringify(entries.get(e.path))===JSON.stringify(e),'HISTORY_ARCHIVE_CONFLICT');
     entries.set(e.path,e);
   }
   checkCurrentRoots(plan);
   atomic(manifestPath,JSON.stringify({version:1,kind:'HISTORY_ARCHIVE_INVENTORY',entries:[...entries.values()].sort((a,b)=>a.path.localeCompare(b.path))}));
-  return verifyHistoryArchive(plan.archiveRoot);
+  return verifyArchive(plan.archiveRoot,verificationCache);
 }
 export function pruneHistoryArchive(plan,restoreReceipt,{quiesced=false}={}){
   validatePlan(plan);check(quiesced,'HISTORY_WRITERS_MUST_BE_QUIESCED');
