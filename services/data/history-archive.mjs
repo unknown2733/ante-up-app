@@ -41,19 +41,25 @@ function refs(value){
     for(const child of Object.values(v))walk(child);
   }walk(value);return out;
 }
+function decodedRefs(bytes){
+  const value=JSON.parse(bytes); // Syntax remains verified even for leaf observation arrays.
+  // Most blob bytes are plain observation rows, without any nested references.
+  // Escaped keys can encode the marker, so retain the general walk for \u escapes.
+  return bytes.includes(marker)||bytes.includes('\\u')?refs(value):new Set();
+}
 function closure(stateFile,initial,options){
   const visited=new Set();
   function visit(h){if(visited.has(h))return;visited.add(h);
     const key=`${dirname(resolve(stateFile))}:${h}`,cache=options.referenceCache;
     let children=cache?.get(key);
-    if(!children){children=refs(JSON.parse(readHistoryBlob(stateFile,h,options)));cache?.set(key,children);}
+    if(!children){children=decodedRefs(readHistoryBlob(stateFile,h,options));cache?.set(key,children);}
     for(const child of children)visit(child);
   }
   for(const h of initial)visit(h);return visited;
 }
 function verifyRootReferences(plan){
   const options={...plan,referenceCache:new Map()};
-  for(const r of plan.roots){const path=join(plan.stateRoot,r.path);closure(path,refs(JSON.parse(plainFile(path))),options);}
+  for(const r of plan.roots){const path=join(plan.stateRoot,r.path);closure(path,decodedRefs(plainFile(path)),options);}
 }
 const finalizedJob=job=>job?.state==='FINALIZED'&&job.published?.finality==='finalized';
 function activeCandidateValue(value){
@@ -139,7 +145,7 @@ export function planHistoryArchive({stateRoot,archiveRoot,collections,protectedP
   const active=new Map(collections.map(c=>[c,new Set()]));
   for(const root of roots){
     const path=join(stateRoot,root.path),bytes=plainFile(path),value=JSON.parse(bytes);root.sha256=hash(bytes);
-    const all=refs(value);if(!all.size)continue;
+    const all=bytes.includes(marker)||bytes.includes('\\u')?refs(value):new Set();if(!all.size)continue;
     // Every historical reference must remain reconstructible, including nested refs.
     closure(path,all,options);
     let keep=root.role==='historical'?new Set():all;
