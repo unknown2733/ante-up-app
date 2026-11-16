@@ -85,3 +85,17 @@ hash integrity is checked during migration, isolated restore and each read;
 routine accounting avoids rehashing the entire archive on every health poll.
 Global monitoring must report both active and archived usage and retain the host
 free-space guard. No quota or provider budget is raised by this migration.
+
+## Expired publication projections
+
+When a proved-unlanded publication is replaced at the same sequence, the indexer
+preserves its original candidate and recovery receipt in
+`expired_snapshot_candidates`. It removes only that unfinalized candidate
+projection before importing the replacement, within one SQLite transaction.
+Finalized chain or index evidence for the original candidate prevents retirement.
+The original publication journal remains unchanged.
+
+Retain an expiry-aware importer after this transition. Older importers can fail
+on the retained old and replacement candidates even when they support cold
+history. Do not remove the audit records or restore stale projections over newer
+finalized events to make an old image start; use a compatible rollback build.
