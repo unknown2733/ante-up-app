@@ -31,3 +31,11 @@ test('a newer observed configuration does not rewrite or resend an expired old c
   assert.equal(result.candidateHash,job.candidateHash);assert.equal(JSON.stringify(job),before);
   assert.throws(()=>expireUnlandedPublication(job,{...proof,candidateConfigVersion:undefined}),/PROOF_INVALID/);
 });
+
+test('v2 binds account readback to the specific finalized expiry block; v1 stays historical-compatible',()=>{
+ const p={...proof,version:2,readContextSlot:101,expiryBlock:{slot:'101',height:'201'}};
+ assert.equal(isPendingPublication(expireUnlandedPublication(job,p)),false);
+ for(const patch of [{readContextSlot:100},{expiryBlock:{slot:'100',height:'201'}},{expiryBlock:{slot:'101',height:'202'}},
+  {expiryBlock:undefined},{readContextSlot:undefined}])assert.throws(()=>expireUnlandedPublication(job,{...p,...patch}),/PROOF_INVALID/);
+ assert.equal(isPendingPublication(expireUnlandedPublication(job,proof)),false);
+});

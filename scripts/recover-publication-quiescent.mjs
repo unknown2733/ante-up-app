@@ -7,6 +7,8 @@ import {pathToFileURL} from 'node:url';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {hash} from '../services/data/index.mjs';
 import {atomicJson,args,check} from './ops/common.mjs';
+import {rpcReader,readFinalizedExpiry} from './ops/recovery-rpc.mjs';
+export {rpcReader} from './ops/recovery-rpc.mjs';
 const GENESIS='EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
 const PROGRAM='FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr';
 const TARGETS=[{container:'ante-up-collector-1',directory:'live-smoke',market:'7kmhXsn6GsFf1rZX5jYZ5xtPeProB6Vqtbx4ghUaFJGT'},
@@ -42,22 +44,23 @@ export async function proveAndExpire({job,producerId,stoppedAt,inspect,captureBo
     if(BigInt(final.height)>BigInt(boundary.lastValidBlockHeight)&&final.blockhashValid===false)break;
     await pause();
   }
-  const context=await readContext(boundary.slot);
+  const context=await readContext(final.slot);
   await save({stage:'CHAIN_CONTEXT_READBACK',expected:{sequence:job.sequence,configVersion:job.candidate.configVersion,
     queryVersion:job.candidate.queryVersion,queryHash:job.candidate.queryHash},observed:{
     minContextSlot:context.minContextSlot,snapshotExists:context.snapshotExists,nextSequence:context.nextSequence,
     signaturePresent:context.signatureStatus!==null,configVersion:context.configVersion,
     queryVersion:context.queryVersion,queryHash:context.queryHash}});
-  check(context.minContextSlot>=boundary.slot&&context.genesisHash===GENESIS&&context.snapshotExists===false&&
+  check(context.minContextSlot>=final.slot&&context.genesisHash===GENESIS&&context.snapshotExists===false&&
     context.nextSequence===job.sequence&&context.signatureStatus===null&&
     dec(context.configVersion)&&dec(job.candidate.configVersion)&&BigInt(context.configVersion)>=BigInt(job.candidate.configVersion)&&
     context.queryVersion===job.candidate.queryVersion&&
     context.queryHash===job.candidate.queryHash,'RECOVERY_CHAIN_CONTEXT_CHANGED');
-  const proof={version:1,kind:'QUIESCENT_RECENT_BLOCKHASH_EXPIRY',marketId:job.market.address,sequence:job.sequence,
+  const proof={version:2,kind:'QUIESCENT_RECENT_BLOCKHASH_EXPIRY',marketId:job.market.address,sequence:job.sequence,
     candidateHash:job.candidateHash,originalSignature:job.signature,genesisHash:GENESIS,programId:PROGRAM,
     producerId,producerStopped:true,producerStillStopped:true,producerStoppedAt:stoppedAt,
     capturedAt,verifiedAt:now(),boundaryBlockhash:boundary.blockhash,boundarySlot:String(boundary.slot),boundaryBlockTime:time,
     lastValidBlockHeight:boundary.lastValidBlockHeight,finalizedBlockHeight:final.height,finalizedSlot:String(final.slot),finalizedContextSlot:final.slot,
+    expiryBlock:{slot:String(final.slot),height:final.height},
     boundaryBlockhashValid:false,snapshotExists:false,snapshotAddress:context.snapshotAddress,
     nextSequence:context.nextSequence,signatureStatus:null,readContextSlot:context.minContextSlot,
     candidateConfigVersion:job.candidate.configVersion,configVersion:context.configVersion,
@@ -74,43 +77,6 @@ async function docker(argv){return new Promise((resolve,reject)=>{
 });}
 async function inspect(name){const [id,running,restarting]= (await docker(['inspect','--format','{{.Id}} {{.State.Running}} {{.State.Restarting}}',name])).split(' ');
   check(/^[a-f0-9]{64}$/.test(id),'PRODUCER_ID_INVALID');return {id,running:running==='true',restarting:restarting==='true'};}
-export function rpcReader(endpoints,{fetcher=fetch,wait=sleep}={}){return async(method,params=[])=>{
-  check(['getGenesisHash','getLatestBlockhash','getBlockTime','getBlock','getSlot','getBlockHeight','isBlockhashValid',
-    'getMultipleAccounts','getAccountInfo','getSignatureStatuses'].includes(method),'RECOVERY_RPC_METHOD_NOT_READ_ONLY');
-  const blocked=new Set(),errors=new Map();let pendingBlockTime=false;
-  for(let pass=0;pass<3;pass++){
-    let retryable=false;
-    for(const endpoint of endpoints){
-      if(blocked.has(endpoint))continue;
-      try{
-        const r=await fetcher(endpoint,{method:'POST',headers:{'content-type':'application/json'},
-          body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:AbortSignal.timeout(12000),redirect:'error'});
-        if(!r.ok){
-          await r.body?.cancel();const transient=r.status===429||r.status>=500&&r.status<=599;
-          errors.set(endpoint,r.status===429?'RECOVERY_RPC_RATE_LIMITED':transient?'RECOVERY_RPC_UNAVAILABLE':'RECOVERY_RPC_REJECTED');
-          if(transient)retryable=true;else blocked.add(endpoint);continue;
-        }
-        let d;try{d=await r.json();}catch{errors.set(endpoint,'RECOVERY_RPC_INVALID_RESPONSE');blocked.add(endpoint);continue;}
-        if(!d.error&&d.result!==undefined)return d.result;
-        if(method==='getBlockTime'&&[-32004,-32007,-32009].includes(d.error?.code)){pendingBlockTime=true;blocked.add(endpoint);continue;}
-        if(d.error?.code===-32016){errors.set(endpoint,'RECOVERY_RPC_CONTEXT_NOT_READY');retryable=true;continue;}
-        errors.set(endpoint,'RECOVERY_RPC_REJECTED');blocked.add(endpoint);
-      }catch(e){
-        // Only transport failures/timeouts are retried. No provider response text
-        // or token-bearing URL is retained in diagnostics.
-        if(e?.name==='TimeoutError'||e?.name==='AbortError'||e instanceof TypeError){errors.set(endpoint,'RECOVERY_RPC_UNAVAILABLE');retryable=true;}
-        else{errors.set(endpoint,'RECOVERY_RPC_UNAVAILABLE');blocked.add(endpoint);}
-      }
-    }
-    if(!retryable||pass===2)break;
-    await wait(pass===0?500:1000);
-  }
-  if(pendingBlockTime)return null;
-  const codes=[...errors.values()];
-  throw Error(codes.includes('RECOVERY_RPC_CONTEXT_NOT_READY')?'RECOVERY_RPC_CONTEXT_NOT_READY':
-    codes.includes('RECOVERY_RPC_RATE_LIMITED')?'RECOVERY_RPC_RATE_LIMITED':
-    codes.includes('RECOVERY_RPC_UNAVAILABLE')?'RECOVERY_RPC_UNAVAILABLE':codes[0]??'RECOVERY_RPC_UNAVAILABLE');
-};}
 
 async function main(){
   const a=args(process.argv.slice(2),['--state-root','--rpc-file','--backup-rpc-file','--output'],['--execute']);
@@ -146,10 +112,7 @@ async function main(){
     try{await proveAndExpire({job:w.job,producerId:w.producer.id,stoppedAt:w.stoppedAt,inspect:()=>inspect(w.target.container),expire:expireUnlandedPublication,save,
       captureBoundary:async()=>{const r=await rpc('getLatestBlockhash',[{commitment:'processed'}]);return {genesisHash:GENESIS,slot:r.context.slot,blockhash:r.value.blockhash,lastValidBlockHeight:String(r.value.lastValidBlockHeight)};},
       blockTime:slot=>rpc('getBlockTime',[slot]),
-      finality:async b=>{const options={commitment:'finalized',minContextSlot:b.slot};
-        const slot=await rpc('getSlot',[{commitment:'finalized'}]);if(slot<b.slot)return {slot,height:'0',blockhashValid:true};
-        const height=await rpc('getBlockHeight',[options]),valid=await rpc('isBlockhashValid',[b.blockhash,options]);
-        check(valid.context.slot>=b.slot,'RECOVERY_FINALITY_CONTEXT_INVALID');return {slot,height:String(height),blockhashValid:valid.value};},
+      finality:b=>readFinalizedExpiry(rpc,b),
       readContext:async minContextSlot=>{
         const r=await rpc('getMultipleAccounts',[[w.target.market,w.configAddress,w.snapshotAddress],{encoding:'base64',commitment:'finalized',minContextSlot}]);
         check(r.context.slot>=minContextSlot,'RECOVERY_ACCOUNT_CONTEXT_INVALID');const [m,c,s]=r.value;

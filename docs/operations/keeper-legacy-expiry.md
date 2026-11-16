@@ -33,3 +33,7 @@ python3 scripts/recover-keeper-lp-guard.py /path/to/node /path/to/recover-keeper
 Do not invoke inside another process already holding the two locks: the launcher intentionally exits `KEEPER_EXPIRY_LOCK_BUSY`. It never restarts services or removes lock files. Keep the external receipt and the SQLite audit receipt. This is not an authorization to reopen LP, settle positions, or modify another attempt.
 
 Local tests: `node --test services/keeper/test/legacy-lp-expiry.test.mjs`. These use only in-memory SQLite and injected RPC/guard fixtures; no source API, chain transaction or wallet is used.
+
+Both operator recovery CLIs import `scripts/ops/recovery-rpc.mjs`, which has no executable entrypoint. Do not import one CLI from another when bundling: their `import.meta.url` guards would otherwise alias to the bundle entrypoint. A bundled `--plan` with missing required arguments must emit only `KEEPER_EXPIRY_ARGUMENTS_REQUIRED`, never start the publication CLI.
+
+Publication recovery now emits version 2 proofs with an `expiryBlock` slot/height pair and an account context at or after that block. Historical version 1 receipts remain readable without rewriting their original hashes; their retained evidence can be audited separately against finalized block heights.

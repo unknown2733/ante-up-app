@@ -2,6 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';
 import {proveAndExpire,rpcReader} from './recover-publication-quiescent.mjs';
 import {hash} from '../services/data/index.mjs';
 import {expireUnlandedPublication} from '../services/data/publication-recovery.mjs';
+import {readFinalizedExpiry} from './ops/recovery-rpc.mjs';
 const GENESIS='EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG',PROGRAM='FrMATpA81wUMYsZufQkew9K5MW2AC8rgdYQ2wUM6KDKr';
 function fixture(){let time=100,committed=0;const events=[];
  const candidate={marketId:'market',sequence:'7',configVersion:'2',queryVersion:'1',queryHash:'abc'};
@@ -80,4 +81,18 @@ test('a not-yet-available block time returns pending without inventing time',asy
 test('the retrier cannot submit transactions or request airdrops',async()=>{
  const rpc=rpcReader(['one'],{fetcher:async()=>assert.fail('must not call transport')});
  for(const method of ['sendTransaction','requestAirdrop'])await assert.rejects(rpc(method),/METHOD_NOT_READ_ONLY/);
+});
+
+test('finalized expiry height comes from getBlock at the exact slot; unavailable blocks fail closed',async()=>{
+ const calls=[];
+ const rpc=async(method,params)=>{calls.push([method,params]);return method==='getSlot'?120:method==='getBlock'?{blockHeight:201}:{context:{slot:120},value:false};};
+ assert.deepEqual(await readFinalizedExpiry(rpc,{slot:100,blockhash:'hash'}),{slot:120,height:'201',blockhashValid:false});
+ assert.equal(calls[1][0],'getBlock');assert.equal(calls[1][1][0],120);assert.equal(calls[2][1][1].minContextSlot,120);
+ for(const block of [null,{}, {blockHeight:null}])await assert.rejects(()=>readFinalizedExpiry(async method=>method==='getSlot'?120:block,{slot:100,blockhash:'hash'}),/BLOCK_UNAVAILABLE/);
+});
+test('new helper refuses account context after boundary but before expiry slot',async()=>{
+ const f=fixture();
+ await assert.rejects(()=>proveAndExpire({...f.options,finality:async()=>({slot:20,height:'201',blockhashValid:false})}),/CHAIN_CONTEXT_CHANGED/);
+ assert.equal(f.committed,0);
+ const good=fixture(),p=await proveAndExpire(good.options);assert.equal(p.version,2);assert.deepEqual(p.expiryBlock,{slot:p.finalizedSlot,height:p.finalizedBlockHeight});
 });

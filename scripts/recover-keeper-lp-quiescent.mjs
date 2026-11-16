@@ -8,7 +8,7 @@ import {pathToFileURL} from 'node:url';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {hash} from '../services/data/index.mjs';
 import {GENESIS,PROGRAM,validateLegacyAttempt,validateBeforeState,validateLegacyExpiry,commitLegacyExpiry} from '../services/keeper/src/legacy-lp-expiry.mjs';
-import {rpcReader} from './recover-publication-quiescent.mjs';
+import {rpcReader,readFinalizedExpiry} from './ops/recovery-rpc.mjs';
 import {atomicJson,args} from './ops/common.mjs';
 const check=(ok,code)=>{if(!ok)throw Error(code);};
 const ROOT='/srv/ante-up/builds/service-state';
@@ -89,7 +89,8 @@ export async function proveLegacyLpExpiry({attempt,guard,captureBoundary,blockTi
  guard();const receipt=await commit(attempt,proof,guard);await save({stage:'RECONCILED',receiptHash:receipt});return proof;
 }
 async function main(){
- const a=args(process.argv.slice(2),['--attempts','--rpc-file','--backup-rpc-file','--output'],['--execute','--reviewed-recent-blockhash-only']);
+ const a=args(process.argv.slice(2),['--attempts','--rpc-file','--backup-rpc-file','--output'],['--plan','--execute','--reviewed-recent-blockhash-only']);
+ check(!(a['--plan']&&a['--execute']),'KEEPER_EXPIRY_CONFLICTING_MODE');
  check(a['--attempts']&&a['--rpc-file']&&a['--output'],'KEEPER_EXPIRY_ARGUMENTS_REQUIRED');
  const path=resolve(a['--attempts']);
  check(path===ROOT+'/keeper-auto/tariff/cycle-4/keeper-attempts.sqlite','KEEPER_EXPIRY_SCOPE_NOT_APPROVED');
@@ -131,13 +132,7 @@ async function main(){
   try{await proveLegacyLpExpiry({attempt,guard,readState,save,
    captureBoundary:async()=>{const r=await rpc('getLatestBlockhash',[{commitment:'processed'}]);return {genesisHash:GENESIS,slot:r.context.slot,blockhash:r.value.blockhash,lastValidBlockHeight:String(r.value.lastValidBlockHeight)};},
    blockTime:slot=>rpc('getBlockTime',[slot]),
-   finality:async b=>{const slot=await rpc('getSlot',[{commitment:'finalized',minContextSlot:b.slot}]);
-    if(slot<b.slot)return {slot,height:'0',blockhashValid:true};
-    // Bind expiry height to this specific finalized block, not two unrelated RPC tips.
-    const block=await rpc('getBlock',[slot,{commitment:'finalized',transactionDetails:'none',rewards:false}]);
-    check(Number.isSafeInteger(block?.blockHeight)&&block.blockHeight>=0,'KEEPER_EXPIRY_BLOCK_UNAVAILABLE');
-    const valid=await rpc('isBlockhashValid',[b.blockhash,{commitment:'finalized',minContextSlot:slot}]);
-    check(valid.context.slot>=slot,'KEEPER_EXPIRY_CONTEXT_BEHIND');return {slot,height:String(block.blockHeight),blockhashValid:valid.value};},
+   finality:b=>readFinalizedExpiry(rpc,b),
    commit:(attempt,proof,guard)=>commitLegacyExpiry(db,attempt,proof,guard)});
   }catch(e){await save({stage:'STOPPED',code:/^[A-Z][A-Z0-9_]+$/.test(e.message)?e.message:'KEEPER_EXPIRY_FAILED'});throw e;}
   console.log('KEEPER_UNSIGNED_LP_ATTEMPT_EXPIRED_NO_TRANSACTION_SENT');
