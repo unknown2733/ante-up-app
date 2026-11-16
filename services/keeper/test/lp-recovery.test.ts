@@ -5,12 +5,40 @@ import {mkdirSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {SqliteKeeperAttempts} from '../src/attempts.ts';
 import {advanceEmptyLpRecovery,planEmptyLpRecovery,type EmptyWindowState} from '../src/lp-recovery.ts';
+import {KeeperPreparationFailure} from '../src/preparation-failure.ts';
 
 const work=resolve(import.meta.dirname,'../../../../work/d-keeper-recovery');mkdirSync(work,{recursive:true});
 const now=1_800_000_000,marketId='market';
 const base:EmptyWindowState={marketId,cycle:'0',currentMaturity:0,openPositions:0,totalShares:'1000',
   lpGeneration:'1',validityGeneration:'2',lastLpMaturity:1_799_000_000,
   lpWindowStart:now-1000,lpWindowEnd:now-100,navValid:true};
+
+test('typed LP preparation failure allows a later generation; ordinary unsigned failure remains unknown',async()=>{
+  for(const typed of [true,false]){
+    const attempts=new SqliteKeeperAttempts(':memory:');let calls=0;
+    const chain={async readEmptyWindow(){return base;},async verifyAttempt(){return 'PENDING' as const;},
+      async startLpWindow(){calls++;throw typed?new KeeperPreparationFailure('RPC_RATE_LIMITED'):Error('unknown');}};
+    try{
+      assert.equal((await advanceEmptyLpRecovery({marketId,chain,attempts,now})).state,typed?'failed':'unknown');
+      assert.equal((await advanceEmptyLpRecovery({marketId,chain,attempts,now:now+1})).state,typed?'failed':'unknown');
+      assert.equal(calls,typed?2:1);
+    }finally{attempts.close();}
+  }
+});
+
+test('LP callback entered or durable signature prevents even a typed error from clearing uncertainty',async()=>{
+  for(const signature of ['', 'durable-sig']){
+    const attempts=new SqliteKeeperAttempts(':memory:');let calls=0;
+    const chain={async readEmptyWindow(){return base;},async verifyAttempt(){return 'PENDING' as const;},
+      async startLpWindow(_id:string,onSigned?:(signature:string)=>void){calls++;try{onSigned?.(signature);}catch{}
+        throw new KeeperPreparationFailure('RPC_RATE_LIMITED');}};
+    try{
+      const first=await advanceEmptyLpRecovery({marketId,chain,attempts,now});assert.equal(first.state,'unknown');
+      assert.equal(first.signature,signature||null);
+      assert.equal((await advanceEmptyLpRecovery({marketId,chain,attempts,now:now+1})).state,'unknown');assert.equal(calls,1);
+    }finally{attempts.close();}
+  }
+});
 
 test('empty-cycle validity reset is due without any settlement candidate',()=>{
   assert.equal(planEmptyLpRecovery(base,marketId,now).state,'ready');

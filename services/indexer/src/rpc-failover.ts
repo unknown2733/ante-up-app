@@ -7,7 +7,7 @@ type Request = {send: (...args: unknown[]) => Promise<unknown>};
 // Only idempotent reads may switch providers. In particular, sendTransaction is never replayed.
 const READ_METHODS = new Set([
   'getAccountInfo', 'getBalance', 'getBlock', 'getBlockHeight', 'getGenesisHash',
-  'getLatestBlockhash', 'getProgramAccounts', 'getSignatureStatuses',
+  'getLatestBlockhash', 'getMultipleAccounts', 'getProgramAccounts', 'getSignatureStatuses',
   'getSignaturesForAddress', 'getSlot', 'getTransaction', 'isBlockhashValid',
 ]);
 
@@ -18,6 +18,7 @@ export function withRpcReadFailover(primary: SolanaRpc, backup: SolanaRpc, optio
   const cooldownMs = options.cooldownMs ?? 60_000;
   if (!Number.isSafeInteger(cooldownMs) || cooldownMs < 0) throw new Error('RPC_FAILOVER_COOLDOWN_INVALID');
   let primaryPausedUntil = 0;
+  let backupPausedUntil = 0;
   let backupValidation: Promise<void> | null = null;
   const validateBackup = async () => {
     if (!options.expectedGenesisHash) return;
@@ -37,14 +38,18 @@ export function withRpcReadFailover(primary: SolanaRpc, backup: SolanaRpc, optio
             const method = Reflect.get(rpc, property) as (...args: unknown[]) => Request;
             return method.apply(rpc, args).send(...sendArgs);
           };
-          if (now() < primaryPausedUntil) { await validateBackup(); return send(backup); }
+          const readBackup = async () => {
+            if (now() < backupPausedUntil) throw new Error('RPC_RATE_LIMITED HTTP 429');
+            try { await validateBackup(); return await send(backup); }
+            catch(error) { if(isRpcRateLimited(error))backupPausedUntil=now()+cooldownMs; throw error; }
+          };
+          if (now() < primaryPausedUntil) return readBackup();
           try { return await send(primary); }
           catch (error) {
             if (!isRpcRateLimited(error)) throw error;
             primaryPausedUntil = now() + cooldownMs;
             options.onFailover?.();
-            await validateBackup();
-            return send(backup);
+            return readBackup();
           }
         },
       });

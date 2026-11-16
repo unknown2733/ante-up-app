@@ -8,6 +8,20 @@ import {once} from 'node:events';
 import {collect, notification, runOnce, validateConfig} from './monitor.mjs';
 import {GlobalXBudget} from '../../services/data/global-budget.mjs';
 
+test('archive bytes are separated only for a complete inventory, and failed backup phases stay visible',async t=>{
+  const f=await fixture(t),dir=join(f.config.stateDirectory,'history-archive');await mkdir(join(dir,'live-smoke'),{recursive:true});
+  const contentHash='a'.repeat(64),path=`live-smoke/${contentHash}.json.gz`;
+  await writeFile(join(dir,path),Buffer.alloc(200));
+  await writeFile(join(dir,'manifest.json'),JSON.stringify({version:1,kind:'HISTORY_ARCHIVE_INVENTORY',entries:[{path,contentHash,sha256:'b'.repeat(64),bytes:200}]}));
+  const config={...f.config,maxStateBytes:999999999,historyArchiveDirectory:'history-archive'};
+  let r=await collect(config,{now,fetcher:f.fetcher});assert.ok(r.metrics.archiveBytes>200);assert.equal(r.metrics.totalStateBytes-r.metrics.stateBytes,r.metrics.archiveBytes);
+  await rm(join(dir,path));r=await collect(config,{now,fetcher:f.fetcher});assert.equal(r.metrics.stateBytes,r.metrics.totalStateBytes);assert.ok(r.alerts.some(a=>a.id==='INPUT_INVALID:history-archive'));
+  const cyclePath=join(f.dir,'cycle.json');await writeFile(cyclePath,JSON.stringify({version:1,kind:'BACKUP_CYCLE',status:'FAILED',finishedAt:new Date(now).toISOString(),phases:{creation:{state:'SUCCEEDED'},artifactVerification:{state:'SUCCEEDED'},serviceRecovery:{state:'FAILED'},publicReadback:{state:'SUCCEEDED'}}}));
+  r=await collect({...f.config,backup:{...f.config.backup,cycleReport:cyclePath}},{now,fetcher:f.fetcher});
+  assert.ok(r.alerts.some(a=>a.id==='BACKUP_PHASE_FAILED:serviceRecovery'));
+  assert.ok(r.alerts.some(a=>a.id==='BACKUP_CYCLE_FAILED:backup'));
+});
+
 const now=Date.parse('2026-10-16T08:00:00Z'),at=now/1000;
 const market='11111111111111111111111111111111',program='22222222222222222222222222222222';
 async function fixture(t){

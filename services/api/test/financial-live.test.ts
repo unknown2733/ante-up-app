@@ -59,6 +59,33 @@ const signedWire=(unsigned:string)=>{
   return {signature:getBase58Decoder().decode(sig),wireBase64:Buffer.from(getTransactionEncoder().encode({...transaction,signatures:{...transaction.signatures,[wallet]:sig}} as any)).toString('base64')};
 };
 
+test('single-market claim quote uses fresh targeted projection when unrelated listing reads fail',async()=>{
+ const store=new LiveStore(':memory:');const seen:string[]=[];let quoted=0;
+ const market={id:programId,keyword:'target',aliases:[],phase:'INDEXED' as const,epochPhase:'SETTLING' as const,dataStatus:'OUTAGE' as const,
+  supported:true,chain:{cluster:'localnet' as const,programId,address:programId},price:null,snapshot:null,anchor:null,capabilities:{claim:{allowed:true,reason:null}}};
+ const api=createApp({mode:'localnet',programId,read:{...read,async markets(){throw Error('HTTP 429 unrelated market');},
+  async market(id:string){seen.push(id);return id===programId?market:null;}},financial:{...financial,
+  async quote(intent,projection,at){quoted++;assert.equal(projection,market);return {id:randomUUID(),intent,chain:market.chain,phase:'INDEXED',
+   quotedAt:at,expiresAt:at+30,configVersion:'1',snapshot:null,stateVersion:'2',priceAtoms:'0',grossAtoms:'10000000',tradeFeeAtoms:'0',timePrepaidAtoms:'0',
+   maxPaymentAtoms:'0',minReceiveAtoms:'10217844',maxPayoutAtoms:null,maturityAt:null,executable:true};}},
+  financialTransactions:transactions,liveStore:store,chain,now:()=>now,verifier:{async verify(){return true;}}});
+ try{
+  const challenge=(await json(await api.handle(new Request(`${base}/v1/auth`,{method:'POST',body:JSON.stringify({wallet,cluster:'localnet'})})))).data;
+  const token=(await json(await api.handle(new Request(`${base}/v1/auth/session`,{method:'POST',body:JSON.stringify({wallet,cluster:'localnet',nonce:challenge.nonce,signature:'test'})})))).data.token;
+  const intent={action:'claim',marketId:programId,claimId:programId,wallet,requestId:randomUUID()};
+  const response=await post(api,'/v1/financial/quotes',intent,token);
+  assert.equal(response.status,200);assert.equal((await json(response)).data.quote.minReceiveAtoms,'10217844');assert.deepEqual(seen,[programId]);
+  const unknown=await post(api,'/v1/financial/quotes',{...intent,marketId:wallet,requestId:randomUUID()},token);
+  assert.equal(unknown.status,400);assert.equal(quoted,1);
+  seen.length=0;
+  const detail=await api.handle(new Request(`${base}/v1/markets/${programId}`));
+  assert.equal(detail.status,200);assert.equal((await json(detail)).data.id,programId);
+  const snapshots=await api.handle(new Request(`${base}/v1/markets/${programId}/snapshots`));
+  assert.equal(snapshots.status,200);assert.deepEqual((await json(snapshots)).data,[]);
+  assert.deepEqual(seen,[programId,programId]);
+ }finally{store.close();}
+});
+
 test('public faucet capacity uses finalized reader data and rejects inconsistent limits',async()=>{
   const store=new LiveStore(resolve(work,`${randomUUID()}.sqlite`));
   const capacity={payoutAtoms:'1000000000',mintedAtoms:'14000000000',totalLimitAtoms:'100000000000',remainingClaims:'86'};

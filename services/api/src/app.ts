@@ -21,6 +21,8 @@ export interface ReadAdapter {
   mode?: Mode;
   /** Public reads may reuse a brief finalized snapshot; execution passes zero. */
   markets(maxAgeMs?: number): Promise<MarketView[]>;
+  /** Fresh execution projection for one market; bypass listing cache and unrelated accounts. */
+  market?(marketId:string): Promise<MarketView|null>;
   records(): Promise<FreeRecord[]>;
   proofs(): Promise<ProofStatus[]>;
   heldCalculationWallets(): Promise<Set<string>>;
@@ -80,6 +82,14 @@ export function createApp(options: {
   const selectedRead = options.read ?? (mode === 'fixture' ? new FixtureReadAdapter(now) : null);
   if (!selectedRead || (selectedRead.mode && selectedRead.mode !== mode) || (mode !== 'fixture' && selectedRead.mode !== mode)) throw new Error('READ_ADAPTER_MODE_MISMATCH');
   const read: ReadAdapter = selectedRead;
+  const freshMarket=async(marketId:string)=>{
+    if(read.market){
+      const market=await read.market(marketId);
+      if(market&&market.id!==marketId)throw new InputError('market projection identity mismatch');
+      return market?validateMarket(market):null;
+    }
+    return (await read.markets(0)).map(validateMarket).find(m=>m.id===marketId)??null;
+  };
   if (mode !== 'fixture' && (!options.liveStore || !options.chain || !options.programId)) throw new Error('LIVE_ADAPTERS_REQUIRED');
   if (options.consumer && mode !== 'devnet') throw new Error('CONSUMER_DEVNET_ONLY');
   if (options.consumer && options.consumer.namespace !== consumerLiveNamespace('devnet', options.programId!))
@@ -104,6 +114,12 @@ export function createApp(options: {
   async function handle(request: Request): Promise<Response> {
     const asOf = now();
     const url = new URL(request.url);
+    // Process/configuration liveness only. Financial/source readiness is checked
+    // by the normal market endpoints and operations monitor, never by this route.
+    if (url.pathname === '/health' && request.method === 'GET') return json({
+      service:'ante-up-api',kind:'liveness',status:'ok',mode,
+      cluster:mode === 'fixture' ? null : mode,configurationReady:true,
+    });
     const parts = url.pathname.split('/').filter(Boolean);
     if (parts[0] !== 'v1') return fail('INVALID_INPUT', 'unknown route');
     try {
@@ -173,7 +189,7 @@ export function createApp(options: {
             return json(envelope({kind:'quote',quote:existing},asOf));
           }
           if(intent.action==='registerMarket')await options.reconcileExpiredRegistrations?.();
-          const market = intent.marketId ? (await read.markets(0)).map(validateMarket).find(m => m.id === intent.marketId) ?? null : null;
+          const market = intent.marketId ? await freshMarket(intent.marketId) : null;
           if (intent.marketId && !market) return fail('INVALID_INPUT','market not found',intent.requestId);
           const quoted = await options.financial.quote(intent,market,asOf);
           if (!quoted) return json(envelope(notExecutable('FINANCIAL_CHAIN_STATE_NOT_READY'),asOf));
@@ -214,7 +230,7 @@ export function createApp(options: {
         return json(envelope(p.items, asOf, p.nextCursor));
       }
       if (request.method === 'GET' && parts[1] === 'markets' && parts[2]) {
-        const market = (await read.markets()).map(validateMarket).find(m => m.id === decodeURIComponent(parts[2]));
+        const market = await freshMarket(decodeURIComponent(parts[2]));
         if (!market) return fail('INVALID_INPUT', 'market not found');
         if (parts.length === 3) return json(envelope(market, asOf));
         if (parts.length === 4 && parts[3] === 'snapshots') return json(envelope(market.snapshot ? [market.snapshot] : [], asOf));
@@ -291,13 +307,13 @@ export function createApp(options: {
         if (parts[1] === 'transactions') return fail('INVALID_INPUT', 'unknown route');
         const body = validateActionBody(await parseBody(request));
         if (!(await signed(request, body.wallet))) return fail('UNAUTHORIZED', 'wallet signature required', body.requestId);
-        if (!(await read.markets(0)).some(m => m.id === body.marketId)) return fail('INVALID_INPUT', 'market not found', body.requestId);
+        if (!(await freshMarket(body.marketId))) return fail('INVALID_INPUT', 'market not found', body.requestId);
         return json(envelope(notExecutable(mode === 'fixture' ? 'FIXTURE_NO_CHAIN_ADAPTER' : 'CHAIN_ADAPTER_NOT_CONFIGURED'), asOf));
       }
       if (request.method === 'POST' && parts.length === 3 && parts[1] === 'transactions' && parts[2] === 'prepare') {
         const body = validateActionBody(await parseBody(request));
         if (!(await signed(request, body.wallet))) return fail('UNAUTHORIZED', 'wallet signature required', body.requestId);
-        if (!(await read.markets(0)).some(m => m.id === body.marketId)) return fail('INVALID_INPUT', 'market not found', body.requestId);
+        if (!(await freshMarket(body.marketId))) return fail('INVALID_INPUT', 'market not found', body.requestId);
         if (mode === 'fixture') return json(envelope(notExecutable('FIXTURE_NO_CHAIN_ADAPTER'),asOf));
         if (body.action !== 'openFree' && body.action !== 'closeFree') return json(envelope(notExecutable('UNSUPPORTED_ACTION'),asOf));
         if (!options.transactions) return json(envelope(notExecutable('CHAIN_ADAPTER_NOT_CONFIGURED'),asOf));

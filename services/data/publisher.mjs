@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 import { readStateJson, writeStateJson } from './state-json.mjs';
 import { replay, canonical, hash } from './index.mjs';
 import { getAdmissionGateIntent } from './outage.mjs';
+import { isPendingPublication } from './publication-recovery.mjs';
 
 const check=(ok,code='INVALID_PUBLISH_INPUT')=>{if(!ok)throw new Error(code);};
 const decimal=x=>typeof x==='string' && /^(0|[1-9][0-9]*)$/.test(x);
@@ -90,6 +91,10 @@ export async function publishSnapshot({collectionStore,repository,batchId,market
   }
   check(job.market.address===market.address && job.market.seedHex===market.seedHex,'MARKET_MAPPING_MISMATCH');
   if (job.state==='FINALIZED') return job.published;
+  if (job.state==='EXPIRED_UNLANDED') {
+    check(!isPendingPublication(job),'PUBLICATION_EXPIRY_PROOF_INVALID');
+    return {expired:true,sequence:job.sequence,payloadHash:job.candidateHash};
+  }
   const finalized=await chain.readFinalizedSnapshot({market,sequence:job.sequence,payloadHash:job.candidateHash,
     signature:job.signature,candidate:job.candidate});
   if (finalized) {
@@ -150,7 +155,7 @@ export async function publishSourceInvalidOutage({collectionStore,rawRepository,
   const state=await repository.read();
   if(!state.jobs[id]){
     check(!Object.values(state.jobs).some(j=>j.market?.address===market.address &&
-      j.state!=='FINALIZED'),'PUBLICATION_PENDING');
+      isPendingPublication(j)),'PUBLICATION_PENDING');
     const context=await chain.readPublishContext(market);
     check(decimal(context?.sequence) && BigInt(context.sequence)>0n &&
       decimal(context.configVersion) && context.queryVersion===stored.queryVersion &&
@@ -206,7 +211,7 @@ export async function getSourceInvalidPublicationState({collectionStore,reposito
 
 export async function reconcilePublications({collectionStore,repository,market,chain,publisherSigner,sdk}) {
   const state=await repository.read();
-  const pending=Object.values(state.jobs).filter(j=>j.market?.address===market.address && j.state!=='FINALIZED');
+  const pending=Object.values(state.jobs).filter(j=>j.market?.address===market.address && isPendingPublication(j));
   let finalized=0;
   for (const job of pending) {
     const result=await publishSnapshot({collectionStore,repository,batchId:job.id,market,chain,publisherSigner,sdk,
@@ -215,5 +220,5 @@ export async function reconcilePublications({collectionStore,repository,market,c
   }
   const latest=await repository.read();
   return {finalized,unresolved:Object.values(latest.jobs).filter(j=>j.market?.address===market.address &&
-    j.state!=='FINALIZED').length};
+    isPendingPublication(j)).length};
 }

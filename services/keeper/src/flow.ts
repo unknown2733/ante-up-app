@@ -1,6 +1,7 @@
 import { hash } from '../../data/index.mjs';
 import { readFrozenSettlement, type AcceptedCandidate, type SettlementScope } from './candidate.ts';
 import { SqliteKeeperAttempts, type KeeperAction, type KeeperAttempt, type KeeperAttemptKey } from './attempts.ts';
+import {KeeperPreparationFailure,isKeeperPreparationFailure} from './preparation-failure.ts';
 
 export interface FinalizedEpochState {
   marketId:string;cycle:string;epochStartedAt:number;maturityAt:number;
@@ -19,7 +20,7 @@ export interface FinancialEpochChain {
   settle(marketId:string,positionAddress:string,onSigned?:(signature:string)=>void):Promise<string>;
   startLpWindow(marketId:string,onSigned?:(signature:string)=>void):Promise<string>;
 }
-type Progress={state:'notDue'|'unknown'|'submitted'|'complete';action:KeeperAction|null;signature:string|null};
+type Progress={state:'notDue'|'unknown'|'submitted'|'complete'|'failed';action:KeeperAction|null;signature:string|null};
 export type FinancialEpochPlan={state:'notDue'|'ready'|'complete';action:KeeperAction|null;entity:string|null;
   candidate:AcceptedCandidate|null;finalized:FinalizedEpochState|null};
 const hex=(s:string)=>/^[0-9a-f]{64}$/.test(s);
@@ -77,11 +78,17 @@ export async function advanceFinancialEpoch(input:{journalPath:string;scope:Sett
       if (reconciled.state!=='FAILED') return {state:'unknown',action,signature:reconciled.signature};
       reservation=attempts.reserve(key,fingerprint,now);
     }
+    let callbackEntered=false;
     try {
-      const signature=await send(signature=>{attempts.attachSignature(reservation.attempt,signature,now);});
+      const signature=await send(signature=>{callbackEntered=true;attempts.attachSignature(reservation.attempt,signature,now);});
       if (attempts.get(key)?.signature!==signature) attempts.attachSignature(reservation.attempt,signature,now);
       return {state:'submitted',action,signature};
-    } catch {return {state:'unknown',action,signature:attempts.get(key)?.signature??null};}
+    } catch(error) {
+      if(!callbackEntered&&isKeeperPreparationFailure(error)){
+        attempts.failBeforeSigning(reservation.attempt,error,now);return {state:'failed',action,signature:null};
+      }
+      return {state:'unknown',action,signature:attempts.get(key)?.signature??null};
+    }
   }
   if (plan.action==='ACCEPT_SETTLEMENT') {
     return submit('ACCEPT_SETTLEMENT','',candidateHash,onSigned=>chain.accept(candidate,onSigned));

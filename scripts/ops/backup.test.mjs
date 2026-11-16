@@ -6,7 +6,49 @@ import {gzipSync} from 'node:zlib';
 import {mkdir, mkdtemp, writeFile, readFile, rm, readdir, symlink} from 'node:fs/promises';
 import {join, resolve} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
-import {createBackup, copyBackup, restoreDrill} from './backup.mjs';
+import {createBackup, copyBackup, restoreDrill, validateHistory} from './backup.mjs';
+
+test('archive inventory lookup preserves missing, size and hash checks without repeated scans',async t=>{
+  const f=await fixture(t),archive=join(f.dir,'state/history-archive');
+  await mkdir(join(archive,'live-smoke'),{recursive:true});
+  const content=Buffer.from('{"points":[1,2,3]}'),contentHash=createHash('sha256').update(content).digest('hex');
+  const compressed=gzipSync(content),entry={path:`live-smoke/${contentHash}.json.gz`,contentHash,
+    sha256:createHash('sha256').update(compressed).digest('hex'),bytes:compressed.length};
+  await writeFile(join(archive,entry.path),compressed);
+  await writeFile(join(archive,'manifest.json'),JSON.stringify({version:1,kind:'HISTORY_ARCHIVE_INVENTORY',entries:[entry]}));
+  const manifest={path:'state/history-archive/manifest.json'},blob={...entry,path:`state/history-archive/${entry.path}`};
+  const inventory=[...Array.from({length:2048},(_,i)=>({path:`state/unrelated-${i}.dat`})),manifest,blob];
+  inventory.find=()=>{throw Error('UNEXPECTED_LINEAR_INVENTORY_SEARCH');};
+  assert.equal((await validateHistory(f.dir,inventory)).entries,1);
+  for(const changed of [null,{...blob,bytes:blob.bytes+1},{...blob,sha256:'0'.repeat(64)}]){
+    const invalid=[manifest,...(changed?[changed]:[])];
+    await assert.rejects(validateHistory(f.dir,invalid),/HISTORY_ARCHIVE_ENTRY_MISMATCH/);
+  }
+  // Duplicate inventories are rejected by restore itself; helper retains first-match semantics.
+  await assert.rejects(validateHistory(f.dir,[manifest,{...blob,bytes:blob.bytes+1},blob]),/HISTORY_ARCHIVE_ENTRY_MISMATCH/);
+  await writeFile(join(archive,entry.path),gzipSync(Buffer.from('changed')));
+  await assert.rejects(validateHistory(f.dir,[manifest,blob]),/HISTORY_CONTENT_HASH_MISMATCH/);
+});
+
+test('cold history nested references survive encrypted copy and isolated restore',async t=>{
+  const f=await fixture(t),archive=join(f.dir,'state/history-archive');await mkdir(join(archive,'live-smoke'),{recursive:true});
+  const leaf=Buffer.from(JSON.stringify({points:[1,2,3]})),leafHash=createHash('sha256').update(leaf).digest('hex');
+  const parent=Buffer.from(JSON.stringify({observations:{__ante_history_sha256:leafHash}})),parentHash=createHash('sha256').update(parent).digest('hex');
+  const entries=[];
+  for(const [bytes,contentHash] of [[leaf,leafHash],[parent,parentHash]]){
+    const compressed=gzipSync(bytes),path=`live-smoke/${contentHash}.json.gz`;await writeFile(join(archive,path),compressed);
+    entries.push({path,contentHash,sha256:createHash('sha256').update(compressed).digest('hex'),bytes:compressed.length});
+  }
+  const manifest=JSON.stringify({version:1,kind:'HISTORY_ARCHIVE_INVENTORY',entries});await writeFile(join(archive,'manifest.json'),manifest);
+  await writeFile(join(f.dir,'state/live-smoke/collection.json'),JSON.stringify({replayInput:{__ante_history_sha256:parentHash}}));
+  f.config.required.push('state/history-archive/manifest.json');
+  const created=await createBackup({...f,quiesced:true});await copyBackup({input:f.output,destination:join(f.dir,'remote'),destinationId:'fixture',failureDomain:'other'});
+  const report=await restoreDrill({input:join(f.dir,'remote/test.aub'),keyFile:f.keyFile,target:join(f.dir,'restored')});
+  assert.equal(report.backupSha256,created.sha256);
+  assert.deepEqual(report.historyArchive,{kind:'HISTORY_ARCHIVE_RESTORE_VERIFICATION',manifestSha256:createHash('sha256').update(manifest).digest('hex'),hashes:'matched',entries:2});
+  await rm(join(archive,entries[0].path));
+  await assert.rejects(createBackup({...f,output:join(f.dir,'output/missing.aub'),quiesced:true}),/HISTORY_ARCHIVE_ENTRY_MISMATCH/);
+});
 
 async function fixture(t){
   // All transient data stays in this worktree, including synthetic key material.

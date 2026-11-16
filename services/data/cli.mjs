@@ -58,11 +58,9 @@ export async function runLiveCycle({config,argv,now,store,transport,publisherRun
     const stored=(await store.read()).markets[config.marketId];
     const intent=stored && getAdmissionGateIntent(stored,config.marketId);
     if (reconciliation.unresolved) {
-      // Keep the paid, bounded source observations durable for weekly settlement.
-      // A blocked prior transaction still forbids a newer on-chain publication.
-      if(intent?.provenance.reason==='SOURCE_INVALID')
-        return {state:'PUBLICATION_PENDING',reconciliation};
-      pendingPublication=reconciliation;
+      // Do not spend additional source credits while publication cannot advance.
+      return {state:'PUBLICATION_PENDING',reconciliation,
+        publication:{pending:true,reason:'PRIOR_PUBLICATION_PENDING',unresolved:reconciliation.unresolved}};
     }
     if(intent?.provenance.reason==='SOURCE_INVALID'){
       const id=`source-invalid:${intent.incidentId}`;

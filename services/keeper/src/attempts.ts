@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import {KeeperPreparationFailure,isKeeperPreparationFailure} from './preparation-failure.ts';
 
 export type KeeperAction='ACCEPT_SETTLEMENT'|'SETTLE_PRO'|'START_LP_WINDOW'|'RECOVER_LP_WINDOW';
 export interface KeeperAttemptKey {action:KeeperAction;marketId:string;cycle:string;entity:string}
@@ -10,12 +11,16 @@ const hash=/^[0-9a-f]{64}$/;
 /** Durable single-writer reservation. UNKNOWN never expires merely because a process restarted. */
 export class SqliteKeeperAttempts {
   private readonly db:DatabaseSync;
+  private readonly freshReservations=new WeakSet<KeeperAttempt>();
   constructor(path:string){
     this.db=new DatabaseSync(path);
     this.db.exec(`PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;
       CREATE TABLE IF NOT EXISTS keeper_attempts(action TEXT NOT NULL,market_id TEXT NOT NULL,cycle TEXT NOT NULL,
         entity TEXT NOT NULL,fingerprint TEXT NOT NULL,generation INTEGER NOT NULL,state TEXT NOT NULL,
-        signature TEXT,updated_at INTEGER NOT NULL,PRIMARY KEY(action,market_id,cycle,entity));`);
+        signature TEXT,updated_at INTEGER NOT NULL,PRIMARY KEY(action,market_id,cycle,entity));
+      CREATE TABLE IF NOT EXISTS keeper_presign_failures(action TEXT NOT NULL,market_id TEXT NOT NULL,cycle TEXT NOT NULL,
+        entity TEXT NOT NULL,generation INTEGER NOT NULL,fingerprint TEXT NOT NULL,stage TEXT NOT NULL,reason TEXT NOT NULL,
+        failed_at INTEGER NOT NULL,PRIMARY KEY(action,market_id,cycle,entity,generation));`);
   }
   close(){this.db.close();}
   get(key:KeeperAttemptKey):KeeperAttempt|null {
@@ -44,10 +49,14 @@ export class SqliteKeeperAttempts {
       else this.db.prepare("INSERT INTO keeper_attempts VALUES(?,?,?,?,?,?,'UNKNOWN',NULL,?)")
         .run(key.action,key.marketId,key.cycle,key.entity,fingerprint,generation,now);
       this.db.exec('COMMIT');
-      return {created:true,attempt:{...key,fingerprint,generation,state:'UNKNOWN',signature:null}};
+      const attempt:KeeperAttempt={...key,fingerprint,generation,state:'UNKNOWN',signature:null};
+      Object.freeze(attempt);
+      this.freshReservations.add(attempt);
+      return {created:true,attempt};
     } catch(error){this.db.exec('ROLLBACK');throw error;}
   }
   attachSignature(attempt:KeeperAttempt,signature:string,now:number):KeeperAttempt {
+    this.freshReservations.delete(attempt);
     if (!signature || !Number.isSafeInteger(now) || now<0) throw new Error('KEEPER_ATTEMPT_INVALID');
     const current=this.get(attempt);
     if (!current || current.generation!==attempt.generation || current.fingerprint!==attempt.fingerprint ||
@@ -57,8 +66,24 @@ export class SqliteKeeperAttempts {
     if (changed.changes!==1) throw new Error('KEEPER_ATTEMPT_STALE');
     return this.get(attempt)!;
   }
+  /** Only this process's newly reserved, never-signed attempt may take this path. */
+  failBeforeSigning(attempt:KeeperAttempt,error:KeeperPreparationFailure,now:number):KeeperAttempt {
+    if(!(isKeeperPreparationFailure(error))||!this.freshReservations.has(attempt)||
+      error.stage!=='BEFORE_SIGNING'||!['RPC_RATE_LIMITED','BLOCKHASH_EXPIRED','PREPARATION_FAILED'].includes(error.reason)||
+      !Number.isSafeInteger(now)||now<0)throw new Error('KEEPER_PRESIGN_FAILURE_INVALID');
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const changed=this.db.prepare("UPDATE keeper_attempts SET state='FAILED',updated_at=? WHERE action=? AND market_id=? AND cycle=? AND entity=? AND generation=? AND fingerprint=? AND state='UNKNOWN' AND signature IS NULL AND updated_at<=?")
+        .run(now,attempt.action,attempt.marketId,attempt.cycle,attempt.entity,attempt.generation,attempt.fingerprint,now);
+      if(changed.changes!==1)throw new Error('KEEPER_ATTEMPT_STALE');
+      this.db.prepare('INSERT INTO keeper_presign_failures VALUES(?,?,?,?,?,?,?,?,?)')
+        .run(attempt.action,attempt.marketId,attempt.cycle,attempt.entity,attempt.generation,attempt.fingerprint,error.stage,error.reason,now);
+      this.db.exec('COMMIT');this.freshReservations.delete(attempt);return this.get(attempt)!;
+    }catch(cause){this.db.exec('ROLLBACK');throw cause;}
+  }
   /** Caller supplies a receipt/PDA verifier; absent or ambiguous evidence keeps the attempt unresolved. */
   async reconcile(attempt:KeeperAttempt,verify:(attempt:KeeperAttempt)=>Promise<'FINALIZED'|'FAILED'|'PENDING'>,now:number):Promise<KeeperAttempt> {
+    this.freshReservations.delete(attempt);
     const current=this.get(attempt);
     if (!current || current.generation!==attempt.generation || current.fingerprint!==attempt.fingerprint) throw new Error('KEEPER_ATTEMPT_STALE');
     if (current.state==='FINALIZED' || current.state==='FAILED') return current;

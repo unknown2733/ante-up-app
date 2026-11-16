@@ -20,6 +20,8 @@ import { GlobalXBudget } from '../services/data/global-budget.mjs';
 import { nextRegularPollAt } from '../services/data/poll-schedule.mjs';
 import { createRpcReadFailover } from '../services/indexer/src/rpc-failover.ts';
 import { withChainReadFailover } from '../services/data/transport-failover.mjs';
+import { collectorGate } from './collector-gate.mjs';
+import { isRpcRateLimited } from '../services/indexer/src/rpc-retry.ts';
 
 // Explicit paid-data opt-in. Files stay on the execution host; no secrets in argv.
 const required=name=>{if(!process.env[name])throw Error(`MISSING_${name}`);return process.env[name];};
@@ -95,8 +97,15 @@ try{
  const publisherRuntime={repository:new FileCandidateRepository(candidatePath),market:mapped,chain,publisherSigner:publisher};
  let initial=args.includes('--initial');
  do{
-  await checkStorage(config.directory);
-  await reconcilePublications({collectionStore:store,...publisherRuntime});
+  try {
+  const gate=await collectorGate({checkStorage:()=>checkStorage(config.directory),
+    reconcile:()=>reconcilePublications({collectionStore:store,...publisherRuntime})});
+  if(!gate.ready){
+   await heartbeat(healthName,{marketId:market,state:'WAITING',reason:gate.reason,unresolved:gate.unresolved??null});
+   console.log(JSON.stringify({state:'WAITING',reason:gate.reason,unresolved:gate.unresolved??null}));
+   if(!args.includes('--follow'))break;
+   await sleep(30_000);continue;
+  }
   const state=await store.read(),stored=state.markets[market],now=Math.floor(Date.now()/1000);
   await persistObservedStaleness(store,market,now,state);
   const retryAt=Math.max(0,...Object.values(state.batches).filter(b=>b.state==='FAILED').map(b=>b.retryAt??0));
@@ -114,6 +123,12 @@ try{
   if(result.error==='BUDGET_EXHAUSTED')throw Error('BUDGET_EXHAUSTED');
   initial=false;
   await reconcilePublications({collectionStore:store,...publisherRuntime});
+  } catch(error) {
+   if(!isRpcRateLimited(error))throw error;
+   await heartbeat(healthName,{marketId:market,state:'WAITING',reason:'RPC_RATE_LIMITED'});
+   console.log(JSON.stringify({state:'WAITING',reason:'RPC_RATE_LIMITED'}));
+   if(!args.includes('--follow'))break;
+  }
   if(args.includes('--follow'))await sleep(30_000);
  }while(args.includes('--follow')&&!stopping);
 }catch(error){

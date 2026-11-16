@@ -3,7 +3,7 @@ import type {MarketView} from '../../../contracts/types';
 export type MarketReadState={value:MarketView|null;error:string;loading:boolean};
 /** Hold price-dependent actions. Fixed claims still require fresh wallet/chain checks. */
 export function heldMarket(value:MarketView|null):MarketView|null {
-  return value?{...value,price:null,priceReadiness:{state:'UNAVAILABLE',dataThrough:value.priceReadiness?.dataThrough??value.snapshot?.payload.dataThrough??0},
+  return value?{...value,runtimeStatus:undefined,price:null,priceReadiness:{state:'UNAVAILABLE',dataThrough:value.priceReadiness?.dataThrough??value.snapshot?.payload.dataThrough??0},
     capabilities:Object.fromEntries(Object.entries(value.capabilities).map(([action,capability])=>[action,action==='claim'?capability:{allowed:false,reason:'DATA_NOT_READY'}]))}:null;
 }
 export type ScopedMarketRead=MarketReadState & {identity:string;revision:string};
@@ -36,9 +36,11 @@ export function createMarketRefresh(input:{id:string;load:()=>Promise<{data:Mark
       if(response.data && response.data.id!==input.id)throw Error('Market identity could not be verified.');
       value=response.data;input.publish({value,error:'',loading:false});
       schedule(value?.priceReadiness?.state==='SYNCING'?5000:60000);
-    }catch{
+    }catch(cause){
       if(!active||request!==generation)return;
-      input.publish({value:heldMarket(value),error:'Could not reach the market data service. Retrying automatically. You can also retry now.',loading:false});
+      const rateLimited=cause instanceof Error && /\b429\b|RPC_RATE_LIMITED/.test(cause.message) ||
+        !!cause && typeof cause==='object' && 'code' in cause && cause.code==='RPC_RATE_LIMITED';
+      input.publish({value:heldMarket(value),error:rateLimited?'The Devnet connection is busy. Retrying automatically; wait before requesting a fresh quote.':'Could not reach the market data service. Retrying automatically. You can also retry now.',loading:false});
       schedule(15000);
     }finally{
       inFlight=false;

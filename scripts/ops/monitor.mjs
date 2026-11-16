@@ -5,6 +5,8 @@ import {pathToFileURL} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {check, json, atomicJson, args, inside} from './common.mjs';
+import {measureStateStorage} from '../storage-accounting.mjs';
+import {isPendingPublication} from '../../services/data/publication-recovery.mjs';
 
 const DECIMAL=/^(0|[1-9][0-9]*)$/;
 const positive=x=>Number.isSafeInteger(x)&&x>0;
@@ -22,6 +24,8 @@ export function validateConfig(c) {
   check(Array.isArray(c.services)&&c.services.length>0&&c.services.every(s=>safeRelative(s.path)&&typeof s.name==='string'&&/^[a-z0-9-]+$/.test(s.name)&&positive(s.maxAgeSeconds)),'MONITOR_SERVICES_INVALID');
   check(positive(c.pendingPublishMaxAgeSeconds)&&positive(c.proofMaxAgeSeconds)&&positive(c.maxProofBacklog)&&positive(c.repeatSeconds)&&positive(c.intervalSeconds)&&positive(c.minFreeBytes),'MONITOR_THRESHOLDS_INVALID');
   if(c.maxStateBytes!==undefined)check(positive(c.maxStateBytes),'MONITOR_STATE_LIMIT_INVALID');
+  if(c.historyArchiveDirectory!==undefined)check(c.historyArchiveDirectory==='history-archive','MONITOR_HISTORY_ARCHIVE_INVALID');
+  if(c.backup?.cycleReport!==undefined)check(typeof c.backup.cycleReport==='string'&&c.backup.cycleReport.length>0,'MONITOR_BACKUP_CYCLE_INVALID');
   if(c.activeStorage!==undefined)check(Array.isArray(c.activeStorage)&&c.activeStorage.every(s=>
     typeof s.name==='string'&&/^[a-z0-9-]+$/.test(s.name)&&safeRelative(s.path)&&positive(s.limitBytes))&&
     new Set(c.activeStorage.map(s=>s.name)).size===c.activeStorage.length,'MONITOR_ACTIVE_STORAGE_INVALID');
@@ -143,6 +147,14 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
   if(c.maxStateBytes!==undefined){
     try{
       metrics.stateBytes=await usedBytes(c.stateDirectory);
+      metrics.totalStateBytes=metrics.stateBytes;
+      if(c.historyArchiveDirectory){
+        try{
+          const usage=await measureStateStorage(c.stateDirectory,{stateRoot:c.stateDirectory,
+            archiveRoot:join(c.stateDirectory,c.historyArchiveDirectory)});
+          metrics.archiveBytes=usage.archiveBytes;metrics.stateBytes=usage.activeBytes;
+        }catch{add('INPUT_INVALID','history-archive');}
+      }
       const ratio=metrics.stateBytes/c.maxStateBytes;
       if(ratio>=1)add('STATE_LIMIT','state','critical',{usedBytes:metrics.stateBytes,maxStateBytes:c.maxStateBytes});
       else if(ratio>=0.8)add('STATE_NEAR_LIMIT','state','warning',{usedBytes:metrics.stateBytes,maxStateBytes:c.maxStateBytes});
@@ -217,7 +229,7 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
     if(!candidates.jobs||typeof candidates.jobs!=='object'||Array.isArray(candidates.jobs)){
       add('INPUT_INVALID',scope);continue;
     }
-    const pending=Object.values(candidates.jobs).filter(j=>j.state!=='FINALIZED');
+    const pending=Object.values(candidates.jobs).filter(isPendingPublication);
     metrics.pendingPublications+=pending.length;
     for(const job of pending)age(job.candidate?.computedAt,c.pendingPublishMaxAgeSeconds,'PUBLICATION_STUCK',job.id??'unknown');
   }
@@ -405,6 +417,19 @@ export async function collect(c,{now=Date.now(),fetcher=fetch}={}) {
     }
   }catch{add('RPC_UNAVAILABLE','devnet');}
   if(c.backup){
+    if(c.backup.cycleReport){
+      const cycle=await load(c.backup.cycleReport,'backup-cycle');
+      if(cycle){
+        const phases=['creation','artifactVerification','serviceRecovery','publicReadback'];
+        if(cycle.version!==1||cycle.kind!=='BACKUP_CYCLE'||!['RUNNING','SUCCEEDED','FAILED'].includes(cycle.status))add('INPUT_INVALID','backup-cycle');
+        else if(cycle.status==='RUNNING')age(Math.floor(Date.parse(cycle.startedAt)/1000),3600,'BACKUP_CYCLE_STUCK','backup');
+        else{
+          age(Math.floor(Date.parse(cycle.finishedAt)/1000),c.backup.maxAgeSeconds,'BACKUP_CYCLE_STALE','backup');
+          for(const name of phases)if(cycle.phases?.[name]?.state!=='SUCCEEDED')add('BACKUP_PHASE_FAILED',name);
+          if(cycle.status==='FAILED')add('BACKUP_CYCLE_FAILED','backup');
+        }
+      }
+    }
     const receipt=await load(c.backup.copyReceipt,'backup-copy'),drill=await load(c.backup.drillReport,'restore-drill');
     if(receipt){
       if(receipt.version!==1||receipt.kind!=='backup-copy'||receipt.destinationId!==c.backup.destinationId||receipt.verification!=='destination-readback-sha256'||!/^[a-f0-9]{64}$/.test(receipt.sha256))add('INPUT_INVALID','backup-copy');

@@ -10,6 +10,7 @@ import { displayConsumerError } from './consumer-ui/copy';
 import { marketDisplayTitle } from './consumer-ui/catalog';
 import { transactionHref } from './sharing/proofLinks';
 import './financialPresentation.css';
+import {marketActionReason} from './marketStatus';
 import {marketSigningBlocked} from './financialSigning';
 
 function atomAmount(input: string): string {
@@ -125,7 +126,7 @@ export function FinancialMarket({ market, section, onFinalized, refreshBlocked =
   useEffect(() => { setQuote(null); setOutcome(null); setError(''); }, [action, quantity, direction, leverage, positionId, claimId]);
   const modeProblem = isFixture || !liveFinancialFlow ? 'Financial actions are unavailable.' : !wallet ? 'Connect a wallet.' : wallet.cluster !== walletCluster || market.chain?.cluster !== wallet.cluster || market.chain.address !== market.id ? 'Wallet network does not match this market.' : null;
   const capability = market.capabilities[action as Action];
-  const stageProblem = capability?.allowed !== true ? `${actionLabel[action]} unavailable: ${displayConsumerError(capability?.reason, 'Execution unavailable')}` : null;
+  const stageProblem = capability?.allowed !== true ? `${actionLabel[action]} unavailable: ${marketActionReason(market,action as Action)??displayConsumerError(capability?.reason, 'Execution unavailable')}` : null;
   const unavailable = refreshBlocked && action!=='claim' ? 'Refreshing market conditions. Wait for a current quote.' : stageProblem ?? modeProblem;
   const signingBlocked=marketSigningBlocked({busy,unavailable,pending,canExecute:!!liveFinancialFlow?.canExecute(action),remaining:quoteRemaining});
   const activePosition = portfolio?.positions.filter((item) => item.marketId === market.id && item.owner === wallet?.address && item.status === 'OPEN') ?? [];

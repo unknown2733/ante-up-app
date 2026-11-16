@@ -1,5 +1,6 @@
 import {hash} from '../../data/index.mjs';
 import {SqliteKeeperAttempts, type KeeperAttempt} from './attempts.ts';
+import {KeeperPreparationFailure,isKeeperPreparationFailure} from './preparation-failure.ts';
 
 export interface EmptyWindowState {
   marketId:string;cycle:string;currentMaturity:number;openPositions:number;totalShares:string;
@@ -39,7 +40,7 @@ export function planEmptyLpRecovery(state:EmptyWindowState,marketId:string,now:n
 }
 
 export async function advanceEmptyLpRecovery(input:{marketId:string;chain:EmptyWindowChain;
-  attempts:SqliteKeeperAttempts;now:number}):Promise<{state:'notDue'|'unknown'|'submitted';signature:string|null}> {
+  attempts:SqliteKeeperAttempts;now:number}):Promise<{state:'notDue'|'unknown'|'submitted'|'failed';signature:string|null}> {
   const state=await input.chain.readEmptyWindow(input.marketId);
   const plan=planEmptyLpRecovery(state,input.marketId,input.now);
   if (plan.state==='notDue') return {state:'notDue',signature:null};
@@ -56,12 +57,19 @@ export async function advanceEmptyLpRecovery(input:{marketId:string;chain:EmptyW
     if (reconciled.state!=='FAILED') return {state:'unknown',signature:reconciled.signature};
     reservation=input.attempts.reserve(key,plan.fingerprint!,input.now);
   }
+  let callbackEntered=false;
   try {
     const signature=await input.chain.startLpWindow(input.marketId,signed=>{
+      callbackEntered=true;
       input.attempts.attachSignature(reservation.attempt,signed,input.now);
     });
     if (input.attempts.get(key)?.signature!==signature)
       input.attempts.attachSignature(reservation.attempt,signature,input.now);
     return {state:'submitted',signature};
-  } catch {return {state:'unknown',signature:input.attempts.get(key)?.signature??null};}
+  } catch(error) {
+    if(!callbackEntered&&isKeeperPreparationFailure(error)){
+      input.attempts.failBeforeSigning(reservation.attempt,error,input.now);return {state:'failed',signature:null};
+    }
+    return {state:'unknown',signature:input.attempts.get(key)?.signature??null};
+  }
 }

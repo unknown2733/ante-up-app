@@ -31,19 +31,43 @@ async function inventory(roots){
     const s=await lstat(join(root,path),{bigint:true});result.push([`${name}/${path}`,s.size.toString(),s.mtimeNs.toString(),s.ino.toString()]);
   }return JSON.stringify(result);
 }
-async function validateHistory(root, entries){
+export async function validateHistory(root, entries){
   const paths=new Set(entries.map(e=>e.path));
+  // Keep the first entry, matching the former find() lookup. Archive manifests
+  // can contain tens of thousands of blobs; do not rescan the full inventory per blob.
+  const entryByPath=new Map();
+  for(const entry of entries)if(!entryByPath.has(entry.path))entryByPath.set(entry.path,entry);
+  const archivePrefix='state/history-archive',manifestPath=`${archivePrefix}/manifest.json`;
+  let archive=null;const archived=new Map();
+  if(paths.has(manifestPath)){
+    const manifest=await json(join(root,manifestPath));
+    check(manifest.version===1&&manifest.kind==='HISTORY_ARCHIVE_INVENTORY'&&Array.isArray(manifest.entries),'HISTORY_ARCHIVE_MANIFEST_INVALID');
+    for(const entry of manifest.entries){
+      check(safePath(entry.path)&&/^[a-f0-9]{64}$/.test(entry.contentHash)&&/^[a-f0-9]{64}$/.test(entry.sha256)&&
+        Number.isSafeInteger(entry.bytes)&&entry.bytes>0&&entry.path.endsWith(`/${entry.contentHash}.json.gz`)&&
+        !archived.has(entry.path),'HISTORY_ARCHIVE_ENTRY_INVALID');
+      const path=`${archivePrefix}/${entry.path}`,stored=entryByPath.get(path);
+      check(stored&&stored.bytes===entry.bytes&&stored.sha256===entry.sha256,'HISTORY_ARCHIVE_ENTRY_MISMATCH');
+      archived.set(entry.path,entry);
+    }
+    check(entries.filter(e=>e.path.startsWith(archivePrefix+'/')&&e.path.endsWith('.json.gz')).every(e=>archived.has(e.path.slice(archivePrefix.length+1))), 'HISTORY_ARCHIVE_UNTRACKED_BLOB');
+    archive={kind:'HISTORY_ARCHIVE_RESTORE_VERIFICATION',manifestSha256:await digest(join(root,manifestPath)),hashes:'matched',entries:archived.size};
+  }else check(!entries.some(e=>e.path.startsWith(archivePrefix+'/')),'HISTORY_ARCHIVE_MANIFEST_MISSING');
   function references(text,directory){
-    for(const match of text.matchAll(/"__ante_history_sha256"\s*:\s*"([a-f0-9]{64})"/g))
-      check(paths.has(`${directory}/.history/${match[1]}.json.gz`),'HISTORY_REFERENCE_MISSING');
+    for(const match of text.matchAll(/"__ante_history_sha256"\s*:\s*"([a-f0-9]{64})"/g)){
+      const relative=directory.startsWith('state/')?directory.slice(6):null;
+      check(paths.has(`${directory}/.history/${match[1]}.json.gz`)||relative&&archived.has(`${relative}/${match[1]}.json.gz`),'HISTORY_REFERENCE_MISSING');
+    }
   }
   for(const e of entries){
-    const blob=e.path.match(/\/\.history\/([a-f0-9]{64})\.json\.gz$/);
+    const cold=e.path.startsWith(archivePrefix+'/')?archived.get(e.path.slice(archivePrefix.length+1)):null;
+    const blob=e.path.match(/\/\.history\/([a-f0-9]{64})\.json\.gz$/)??(cold?[null,cold.contentHash]:null);
     if(blob){
       const hash=createHash('sha256'), stream=createReadStream(join(root,e.path)).pipe(createGunzip());
       let tail='';
       for await(const chunk of stream){
-        hash.update(chunk);const text=tail+chunk.toString('utf8');references(text,posix.dirname(posix.dirname(e.path)));tail=text.slice(-160);
+        hash.update(chunk);const text=tail+chunk.toString('utf8');
+        references(text,cold?'state/'+posix.dirname(e.path.slice(archivePrefix.length+1)):posix.dirname(posix.dirname(e.path)));tail=text.slice(-160);
       }
       check(hash.digest('hex')===blob[1],'HISTORY_CONTENT_HASH_MISMATCH');
     }
@@ -55,6 +79,7 @@ async function validateHistory(root, entries){
       tail=text.slice(-160);
     }
   }
+  return archive;
 }
 async function isSqlite(path) {
   const f=await open(path,'r');try{const b=Buffer.alloc(16);await f.read(b,0,16,0);return b.equals(Buffer.from('SQLite format 3\0'));}finally{await f.close();}
@@ -201,11 +226,12 @@ export async function restoreDrill({input,keyFile,target,requiredFiles=[]}) {
       check(position===(await payload.stat()).size,'TRAILING_BACKUP_BYTES');
       for(const path of manifest.required)check(safePath(path)&&seen.has(path.toLowerCase()),'RESTORE_REQUIRED_FILE_MISSING');
     }finally{await payload.close();}
-    await validateHistory(target,manifest.entries);
+    const historyArchive=await validateHistory(target,manifest.entries);
     await rm(plain);await exclusiveJson(join(target,'restore-report.json'),{version:1,kind:'isolated-restore-drill',verifiedAt:new Date().toISOString(),
       backupSha256:await digest(input),backupCreatedAt:manifest.createdAt,requiredFiles:manifest.required,
       release:manifest.release,files:manifest.entries.length,databases:manifest.entries.filter(e=>e.sqlite).length,
-      hashes:'matched',sqlite:'quick_check-schema-row-counts-matched',servicesStarted:false,chainReconciled:false});
+      hashes:'matched',sqlite:'quick_check-schema-row-counts-matched',servicesStarted:false,chainReconciled:false,
+      ...(historyArchive?{historyArchive}:{})});
     return json(join(target,'restore-report.json'));
   }catch(e){await rm(target,{recursive:true,force:true});throw e;}
   finally{key.fill(0);}

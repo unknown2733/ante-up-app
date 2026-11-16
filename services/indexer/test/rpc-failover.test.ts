@@ -7,6 +7,16 @@ import { isRpcRateLimited } from '../src/rpc-retry.ts';
 
 type Rpc = ReturnType<typeof createSolanaRpc>;
 
+test('exhausted backup is also cooled down rather than hammered by each read',async()=>{
+  let time=1000,calls=0;
+  const limited={getBalance:()=>({send:async()=>{calls++;throw Error('HTTP 429');}})} as unknown as Rpc;
+  const rpc=withRpcReadFailover(limited,limited,{now:()=>time});
+  const read=()=>rpc.getBalance(address('11111111111111111111111111111111')).send();
+  await assert.rejects(read,/429/);assert.equal(calls,2);
+  await assert.rejects(read,/429/);assert.equal(calls,2);
+  time+=60_000;await assert.rejects(read,/429/);assert.equal(calls,4);
+});
+
 test('rate-limited read switches provider and pauses the limited provider', async () => {
   let time = 1000, primaryCalls = 0, backupCalls = 0, notices = 0;
   const primary = {getBalance: () => ({send: async () => {

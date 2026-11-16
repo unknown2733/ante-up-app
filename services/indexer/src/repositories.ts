@@ -5,6 +5,7 @@ import { retryRpcRead } from './rpc-retry.ts';
 import { ANTE_UP_PROGRAM_ADDRESS, findSnapshotPda, getMarketDecoder, getSnapshotDecoder, MARKET_DISCRIMINATOR, SNAPSHOT_DISCRIMINATOR } from '../../../clients/chain/dist/index.js';
 import type { ProofStatus, SnapshotCandidate } from '../../../contracts/types.ts';
 import { canonical, hash as canonicalHash } from '../../data/index.mjs';
+import { isPendingPublication } from '../../data/publication-recovery.mjs';
 import { status as evidenceStatus } from '../../evidence/index.mjs';
 import type { ProofResolver, SnapshotResolver } from './generated-decoder.ts';
 import { snapshotViewFromGenerated } from './snapshot.ts';
@@ -12,6 +13,12 @@ import type { StreamKey } from './sqlite.ts';
 import { TrustedSnapshotArchive } from './snapshot-archive.ts';
 
 const hex = /^[0-9a-f]{64}$/;
+interface CandidateHandoff {
+  market?: {address?:string;cluster?:string;programId?:string};
+  candidate?: SnapshotCandidate; candidateHash?:string; sequence?:string;
+  state?:string; previousState?:string; published?:unknown;
+  expiryRecovery?:unknown; expiryRecoveryHash?:string;
+}
 export interface AccountBytes {ownerProgramId:string; data:Uint8Array}
 export interface FinalizedAccountReader {get(address: string): Promise<AccountBytes | null>;archive?:SnapshotArchiveReader}
 export interface ProgramAccountBytes extends AccountBytes {address:string}
@@ -24,6 +31,9 @@ export interface SnapshotArchiveReader {
 /** Finalized read; callers verify owner, PDA, discriminator and candidate hash. */
 export class KitFinalizedAccountReader implements FinalizedAccountReader {
   private readonly rpc: ReturnType<typeof createSolanaRpc>;
+  private readonly pending = new Map<string,Promise<AccountBytes|null>>();
+  private readonly queue = new Map<string,{resolve:(value:AccountBytes|null)=>void;reject:(error:unknown)=>void}>();
+  private draining = false;
   readonly archive?: SnapshotArchiveReader;
   constructor(endpoint: string, rpc?: ReturnType<typeof createSolanaRpc>, archive?: SnapshotArchiveReader) {
     if (!/^https?:\/\//.test(endpoint)) throw new Error('RPC_URL_REQUIRED');
@@ -34,11 +44,54 @@ export class KitFinalizedAccountReader implements FinalizedAccountReader {
     this.archive=archive??(path&&sha?new TrustedSnapshotArchive(path,sha,String(ANTE_UP_PROGRAM_ADDRESS)):undefined);
   }
   async get(accountAddress: string): Promise<AccountBytes | null> {
+    address(accountAddress);
+    // Real Kit clients support multi-account finalized reads. Older injected
+    // adapters may intentionally implement only getAccountInfo.
+    if(typeof this.rpc.getMultipleAccounts==='function') {
+      let pending=this.pending.get(accountAddress);
+      if(!pending){
+        pending=new Promise<AccountBytes|null>((resolve,reject)=>this.queue.set(accountAddress,{resolve,reject}));
+        this.pending.set(accountAddress,pending);
+        if(!this.draining){this.draining=true;queueMicrotask(()=>{void this.drain();});}
+      }
+      const result=await pending;
+      // Callers must not mutate bytes consumed by another concurrent quote.
+      return result?{ownerProgramId:result.ownerProgramId,data:Uint8Array.from(result.data)}:null;
+    }
     const response = await retryRpcRead(() => this.rpc.getAccountInfo(address(accountAddress),{commitment:'finalized',encoding:'base64'}).send());
-    if (!response.value) return null;
-    const data = response.value.data;
-    if (!Array.isArray(data) || data[1] !== 'base64' || typeof data[0] !== 'string') throw new Error('INVALID_ACCOUNT_DATA');
-    return {ownerProgramId:String(response.value.owner),data:Buffer.from(data[0],'base64')};
+    return this.decodeAccount(response.value);
+  }
+  private decodeAccount(value:unknown):AccountBytes|null {
+    if(value===null)return null;
+    if(!value||typeof value!=='object')throw new Error('INVALID_ACCOUNT_DATA');
+    const {data,owner}=value as {data?:unknown;owner?:unknown};
+    if(typeof owner!=='string'||!Array.isArray(data)||data.length!==2||data[1]!=='base64'||typeof data[0]!=='string')
+      throw new Error('INVALID_ACCOUNT_DATA');
+    try{address(owner);}catch{throw new Error('INVALID_ACCOUNT_DATA');}
+    const bytes=Buffer.from(data[0],'base64');
+    if(bytes.toString('base64')!==data[0])throw new Error('INVALID_ACCOUNT_DATA');
+    return {ownerProgramId:owner,data:bytes};
+  }
+  private async drain():Promise<void> {
+    // Bound both provider payload size and concurrent HTTP requests. Requests
+    // arriving during a batch wait for the next one; no result survives settle.
+    while(this.queue.size){
+      const batch=[...this.queue.entries()].slice(0,100);
+      for(const [key] of batch)this.queue.delete(key);
+      try{
+        const keys=batch.map(([key])=>address(key));
+        const response=await retryRpcRead(()=>this.rpc.getMultipleAccounts(keys,{commitment:'finalized',encoding:'base64'}).send());
+        if(!Array.isArray(response.value)||response.value.length!==batch.length)throw new Error('INVALID_ACCOUNT_BATCH');
+        const results=Array.from(response.value,value=>this.decodeAccount(value));
+        // Validate the whole reply before resolving any consumer.
+        for(let i=0;i<batch.length;i++){
+          this.pending.delete(batch[i][0]);batch[i][1].resolve(results[i]);
+        }
+      }catch(error){
+        for(const [key,waiter] of batch){this.pending.delete(key);waiter.reject(error);}
+      }
+    }
+    this.draining=false;
   }
   async scan(programId:string):Promise<{slot:string;accounts:ProgramAccountBytes[]}> {
     const response=await retryRpcRead(() => this.rpc.getProgramAccounts(address(programId),{commitment:'finalized',encoding:'base64',withContext:true}).send());
@@ -126,22 +179,68 @@ export class SqliteEventRepositories implements SnapshotResolver, ProofResolver 
     this.db = new DatabaseSync(path);
     this.db.exec(`PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;
       CREATE TABLE IF NOT EXISTS snapshot_candidates(cluster TEXT NOT NULL,program_id TEXT NOT NULL,market_address TEXT NOT NULL,sequence TEXT NOT NULL,payload_hash TEXT NOT NULL,candidate_json TEXT NOT NULL,PRIMARY KEY(cluster,program_id,market_address,sequence),UNIQUE(cluster,program_id,payload_hash));
+      CREATE TABLE IF NOT EXISTS expired_snapshot_candidates(cluster TEXT NOT NULL,program_id TEXT NOT NULL,market_address TEXT NOT NULL,sequence TEXT NOT NULL,payload_hash TEXT NOT NULL,candidate_json TEXT NOT NULL,recovery_json TEXT NOT NULL,recovery_hash TEXT NOT NULL,PRIMARY KEY(cluster,program_id,market_address,sequence,payload_hash));
       CREATE TABLE IF NOT EXISTS proof_id_links(cluster TEXT NOT NULL,program_id TEXT NOT NULL,record_address TEXT NOT NULL,proof_hash TEXT NOT NULL,proof_id TEXT NOT NULL,proof_json TEXT NOT NULL,PRIMARY KEY(cluster,program_id,record_address,proof_hash));`);
   }
   close() {this.db.close();}
   /** Accept C's published snapshots or queued publication jobs; account verification follows at event time. */
   async importCandidateFile(path: string, scope: StreamKey): Promise<number> {
-    const data = JSON.parse(await readFile(path,'utf8')) as {jobs?:Record<string,unknown>;snapshots?:Record<string,unknown>};
-    let imported = 0;
-    for (const value of [...Object.values(data.snapshots ?? {}),...Object.values(data.jobs ?? {})]) {
-      const item = value as {market?:{address?:string;cluster?:string;programId?:string};candidate?:SnapshotCandidate;candidateHash?:string};
-      if (!item.market?.address || item.market.cluster !== scope.cluster || item.market.programId !== scope.programId || !item.candidate) continue;
-      const hash = canonicalHash(item.candidate);
-      if (hash !== item.candidateHash) throw new Error('CANDIDATE_HASH_MISMATCH');
-      this.putCandidate(scope,item.market.address,item.candidate);
-      imported++;
+    const data = JSON.parse(await readFile(path,'utf8')) as {jobs?:Record<string,CandidateHandoff>;snapshots?:Record<string,CandidateHandoff>};
+    const inScope=(item:CandidateHandoff)=>Boolean(item.market?.address && item.market.cluster===scope.cluster && item.market.programId===scope.programId && item.candidate);
+    const snapshots=Object.values(data.snapshots??{}).filter(inScope),jobs=Object.values(data.jobs??{}).filter(inScope);
+    const all=[...snapshots,...jobs],expired=jobs.filter(item=>item.state==='EXPIRED_UNLANDED');
+    for(const item of all){
+      if(canonicalHash(item.candidate)!==item.candidateHash)throw new Error('CANDIDATE_HASH_MISMATCH');
+      if(item.candidate!.marketId!==item.market!.address)throw new Error('CANDIDATE_MARKET_MISMATCH');
     }
-    return imported;
+    // Validate every receipt and read every finalized PDA before changing SQLite.
+    // A local receipt is trusted operator evidence bound by hashes, not a chain signature.
+    for(const item of expired){
+      if(!['REQUESTING','SUBMITTED'].includes(item.previousState??'') || item.published ||
+        item.sequence!==item.candidate!.sequence || isPendingPublication(item))
+        throw new Error('CANDIDATE_EXPIRY_PROOF_INVALID');
+      if(snapshots.some(snapshot=>snapshot.candidateHash===item.candidateHash) ||
+        jobs.some(job=>job!==item && job.candidateHash===item.candidateHash && job.state!=='EXPIRED_UNLANDED'))
+        throw new Error('CANDIDATE_EXPIRY_CONFLICT');
+      const [pda]=await findSnapshotPda({market:address(item.market!.address!),sequence:BigInt(item.sequence!)},{programAddress:address(scope.programId)});
+      const account=await this.accounts.get(String(pda))??await this.archive?.get(String(pda));
+      if(account){
+        if(account.ownerProgramId!==scope.programId || !Buffer.from(account.data.subarray(0,8)).equals(Buffer.from(SNAPSHOT_DISCRIMINATOR)))
+          throw new Error('CANDIDATE_EXPIRY_ACCOUNT_INVALID');
+        const snapshot=getSnapshotDecoder().decode(account.data),chainHash=Buffer.from(snapshot.payloadHash).toString('hex');
+        if(String(snapshot.market)!==item.market!.address || snapshot.sequence.toString()!==item.sequence || chainHash===item.candidateHash)
+          throw new Error('CANDIDATE_EXPIRY_CONFLICT');
+        if(!all.some(next=>next.state!=='EXPIRED_UNLANDED' && next.candidateHash===chainHash &&
+          next.market!.address===item.market!.address && next.candidate!.sequence===item.sequence &&
+          next.candidate!.configVersion===snapshot.configVersion.toString() && next.candidate!.queryVersion===snapshot.queryVersion.toString()))
+          throw new Error('CANDIDATE_EXPIRY_REPLACEMENT_UNAVAILABLE');
+      }
+    }
+    this.db.exec('BEGIN IMMEDIATE');
+    try{
+      for(const item of expired){
+        const values=[scope.cluster,scope.programId,item.market!.address!,item.sequence!,item.candidateHash!];
+        // Existing finalized index evidence wins even if a supplied receipt says
+        // the old PDA was absent. Never rewrite historical finalized projections.
+        if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='current_snapshots'").get() &&
+          this.db.prepare("SELECT 1 FROM current_snapshots WHERE cluster=? AND program_id=? AND market_id=? AND sequence=? AND json_extract(snapshot_json,'$.payloadHash')=?").get(...values))
+          throw new Error('CANDIDATE_EXPIRY_CONFLICT');
+        if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='finalized_events'").get() &&
+          this.db.prepare("SELECT 1 FROM finalized_events WHERE cluster=? AND program_id=? AND kind='snapshot' AND json_extract(event_json,'$.snapshot.payload.marketId')=? AND json_extract(event_json,'$.snapshot.payload.sequence')=? AND json_extract(event_json,'$.snapshot.payloadHash')=?").get(...values))
+          throw new Error('CANDIDATE_EXPIRY_CONFLICT');
+        const recovery=canonical(item.expiryRecovery),json=canonical(item.candidate);
+        this.db.prepare('INSERT OR IGNORE INTO expired_snapshot_candidates VALUES(?,?,?,?,?,?,?,?)').run(...values,json,recovery,item.expiryRecoveryHash!);
+        const old=this.db.prepare('SELECT candidate_json,recovery_json,recovery_hash FROM expired_snapshot_candidates WHERE cluster=? AND program_id=? AND market_address=? AND sequence=? AND payload_hash=?').get(...values) as {candidate_json:string;recovery_json:string;recovery_hash:string};
+        if(old.candidate_json!==json || old.recovery_json!==recovery || old.recovery_hash!==item.expiryRecoveryHash)throw new Error('CANDIDATE_EXPIRY_CONFLICT');
+        this.db.prepare('DELETE FROM snapshot_candidates WHERE cluster=? AND program_id=? AND market_address=? AND sequence=? AND payload_hash=? AND candidate_json=?').run(...values,json);
+      }
+      let imported=0;
+      for(const item of all){
+        if(expired.includes(item))continue;
+        this.putCandidate(scope,item.market!.address!,item.candidate!);imported++;
+      }
+      this.db.exec('COMMIT');return imported;
+    }catch(error){this.db.exec('ROLLBACK');throw error;}
   }
   async importProofFile(path: string, scope: StreamKey): Promise<number> {
     const jobs = JSON.parse(await readFile(path,'utf8')) as Record<string,unknown>;
@@ -157,6 +256,8 @@ export class SqliteEventRepositories implements SnapshotResolver, ProofResolver 
   putCandidate(scope: StreamKey, marketAddress: string, candidate: SnapshotCandidate): string {
     const payloadHash = canonicalHash(candidate);
     if (candidate.marketId !== marketAddress || !hex.test(payloadHash)) throw new Error('CANDIDATE_MARKET_MISMATCH');
+    if(this.db.prepare('SELECT 1 FROM expired_snapshot_candidates WHERE cluster=? AND program_id=? AND market_address=? AND sequence=? AND payload_hash=?').get(scope.cluster,scope.programId,marketAddress,candidate.sequence,payloadHash))
+      throw new Error('CANDIDATE_EXPIRED_REIMPORT');
     const json = canonical(candidate);
     this.db.prepare('INSERT OR IGNORE INTO snapshot_candidates VALUES(?,?,?,?,?,?)').run(scope.cluster,scope.programId,marketAddress,candidate.sequence,payloadHash,json);
     const row = this.db.prepare('SELECT payload_hash,candidate_json FROM snapshot_candidates WHERE cluster=? AND program_id=? AND market_address=? AND sequence=?').get(scope.cluster,scope.programId,marketAddress,candidate.sequence) as {payload_hash:string;candidate_json:string};
