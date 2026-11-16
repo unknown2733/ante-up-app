@@ -152,11 +152,11 @@ function sourceRoots(stateRoot,collections,protectedPaths){
   }
   return roots;
 }
-export function planHistoryArchive({stateRoot,archiveRoot,collections,protectedPaths=[]}){
+function planArchive({stateRoot,archiveRoot,collections,protectedPaths=[]},verificationCache,{preparePrune=false}={}){
   stateRoot=resolve(stateRoot);archiveRoot=resolve(archiveRoot);
   check(Array.isArray(collections)&&collections.length>0&&new Set(collections).size===collections.length,'HISTORY_COLLECTION_INVALID');
   for(const c of collections)check(!inside(join(stateRoot,c),archiveRoot)&&archiveRoot!==join(stateRoot,c),'HISTORY_ARCHIVE_IN_ACTIVE_ROOT');
-  const options={stateRoot,archiveRoot,verificationCache:new Map()},roots=sourceRoots(stateRoot,collections,protectedPaths);
+  const options={stateRoot,archiveRoot,verificationCache},roots=sourceRoots(stateRoot,collections,protectedPaths);
   const active=new Map(collections.map(c=>[c,new Set()]));
   for(const root of roots){
     const path=join(stateRoot,root.path),bytes=plainFile(path),value=JSON.parse(bytes);root.sha256=hash(bytes);
@@ -181,7 +181,7 @@ export function planHistoryArchive({stateRoot,archiveRoot,collections,protectedP
     for(const name of readdirSync(directory).sort()){
       check(/^[a-f0-9]{64}\.json\.gz$/.test(name),'HISTORY_UNEXPECTED_BLOB');
       const contentHash=name.slice(0,64),bytes=plainFile(join(directory,name));
-      const verified=verifiedMetadata(bytes,contentHash,options.verificationCache);
+      const verified=verifiedMetadata(bytes,contentHash,options.verificationCache,{references:preparePrune});
       if(active.get(c).has(contentHash)){protectedBytes+=bytes.length;continue;}
       entries.push({path:`${c}/${name}`,sha256:verified.sha256,contentHash,bytes:bytes.length});
     }
@@ -189,6 +189,7 @@ export function planHistoryArchive({stateRoot,archiveRoot,collections,protectedP
   return {version:1,kind:'HISTORY_ARCHIVE_PLAN',stateRoot,archiveRoot,collections,protectedPaths,roots,
     entries,protectedBytes,archiveBytes:entries.reduce((s,e)=>s+e.bytes,0)};
 }
+export function planHistoryArchive(options){return planArchive(options,new Map());}
 function validatePlan(plan){
   check(plan?.version===1&&plan.kind==='HISTORY_ARCHIVE_PLAN'&&Array.isArray(plan.roots),'HISTORY_ARCHIVE_PLAN_INVALID');
   validateArchiveManifest({version:1,kind:'HISTORY_ARCHIVE_INVENTORY',entries:plan.entries});
@@ -228,13 +229,12 @@ export function stageHistoryArchive(plan,{quiesced=false}={}){
   atomic(manifestPath,JSON.stringify({version:1,kind:'HISTORY_ARCHIVE_INVENTORY',entries:[...entries.values()].sort((a,b)=>a.path.localeCompare(b.path))}));
   return verifyArchive(plan.archiveRoot,verificationCache);
 }
-export function pruneHistoryArchive(plan,restoreReceipt,{quiesced=false}={}){
+function pruneArchive(plan,restoreReceipt,{quiesced=false}={},verificationCache){
   validatePlan(plan);check(quiesced,'HISTORY_WRITERS_MUST_BE_QUIESCED');
   // Capture metadata before the potentially long full-byte verification phase.
   // Every duplicate removal checks only lstat metadata, not root bytes/JSON again.
   const initialStamp=rootStamp(plan);checkCurrentRoots(plan);
   check(rootStamp(plan)===initialStamp,'HISTORY_ROOT_CHANGED');
-  const verificationCache=new Map();
   const verified=verifyArchive(plan.archiveRoot,verificationCache,{references:true});
   check(restoreReceipt?.kind==='HISTORY_ARCHIVE_RESTORE_VERIFICATION'&&restoreReceipt.hashes==='matched'&&
     restoreReceipt.manifestSha256===verified.manifestSha256,'HISTORY_RESTORE_RECEIPT_REQUIRED');
@@ -255,6 +255,7 @@ export function pruneHistoryArchive(plan,restoreReceipt,{quiesced=false}={}){
   verifyRootReferences(plan,verificationCache);
   return {...verified,removed};
 }
+export function pruneHistoryArchive(plan,restoreReceipt,options){return pruneArchive(plan,restoreReceipt,options,new Map());}
 
 // A later backup receipt can safely prune an older inventory after writers ran:
 // recompute current obligations instead of requiring the original stage's roots.
@@ -266,7 +267,10 @@ export function pruneCurrentHistoryArchive(options,restoreReceipt,{quiesced=fals
   check(restoreReceipt?.kind==='HISTORY_ARCHIVE_RESTORE_VERIFICATION'&&restoreReceipt.hashes==='matched'&&
     restoreReceipt.manifestSha256===hash(manifestBytes),'HISTORY_RESTORE_RECEIPT_REQUIRED');
   const inventory=new Map(manifest.entries.map(e=>[e.path,e]));
-  const current=planHistoryArchive(options);
+  // This one operation owns the cache. Public plan/prune calls always create
+  // their own, and callers cannot inject verification claims through options.
+  const verificationCache=new Map();
+  const current=planArchive(options,verificationCache,{preparePrune:true});
   current.entries=current.entries.filter(e=>{
     const archived=inventory.get(e.path);if(!archived)return false;
     check(e.sha256===archived.sha256&&e.contentHash===archived.contentHash&&e.bytes===archived.bytes,'HISTORY_ARCHIVE_CONFLICT');
@@ -274,5 +278,5 @@ export function pruneCurrentHistoryArchive(options,restoreReceipt,{quiesced=fals
   });
   current.archiveBytes=current.entries.reduce((sum,e)=>sum+e.bytes,0);
   // Retains all strict root/file/hash and immediate pre-delete checks.
-  return pruneHistoryArchive(current,restoreReceipt,{quiesced:true});
+  return pruneArchive(current,restoreReceipt,{quiesced:true},verificationCache);
 }

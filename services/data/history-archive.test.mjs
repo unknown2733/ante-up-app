@@ -215,3 +215,31 @@ test('a changed archived blob is detected by final readback despite earlier per-
   try{assert.throws(()=>pruneHistoryArchive(plan,receipt,{quiesced:true}),/HISTORY_HASH_MISMATCH/);assert.ok(changed);}
   finally{mocked.mock.restore();syncBuiltinESMExports();}
 });
+test('one prune-current operation shares private metadata across planning and pruning only',t=>{
+  const f=fixture(t),plan=f.plan();stageHistoryArchive(plan,{quiesced:true});const receipt=f.restore();
+  writeStateJson(f.collection,{markets:{m:{observations:[{at:200,count:15}]}}});
+  const distinct=readdirSync(join(f.dir,'.history')).length,original=zlib.gunzipSync;let calls=0;
+  const mocked=t.mock.method(zlib,'gunzipSync',function(...args){calls++;return original.apply(this,args);});
+  syncBuiltinESMExports();
+  try{
+    assert.equal(pruneCurrentHistoryArchive(f.options,receipt,{quiesced:true}).removed,plan.entries.length);
+    assert.equal(calls,distinct);
+    calls=0;verifyHistoryArchive(f.archiveRoot);assert.equal(calls,plan.entries.length);
+  }finally{mocked.mock.restore();syncBuiltinESMExports();}
+});
+test('prune-current detects archive changes between planning and pruning despite its shared cache',t=>{
+  const f=fixture(t),plan=f.plan();stageHistoryArchive(plan,{quiesced:true});const receipt=f.restore();
+  const manifest=join(f.archiveRoot,'manifest.json'),target=join(f.archiveRoot,plan.entries[0].path),original=fs.readFileSync;
+  let manifestReads=0,changed=false;
+  const mocked=t.mock.method(fs,'readFileSync',function(path,...args){
+    const result=original.call(this,path,...args);
+    if(path===manifest&&++manifestReads===2){fs.writeFileSync(target,'changed-after-plan');changed=true;}
+    return result;
+  });
+  syncBuiltinESMExports();
+  try{
+    assert.throws(()=>pruneCurrentHistoryArchive(f.options,receipt,{quiesced:true}),/HISTORY_ARCHIVE_BYTES_MISMATCH/);
+    assert.ok(changed);
+    for(const e of plan.entries)assert.ok(existsSync(join(f.dir,'.history',`${e.contentHash}.json.gz`)));
+  }finally{mocked.mock.restore();syncBuiltinESMExports();}
+});
