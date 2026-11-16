@@ -6,7 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {atomicJson,digest,check,args} from './common.mjs';
 
-export async function runBackupCycle({generate,verify,restore,inspect,probe,save,services,probes,
+export async function runBackupCycle({generate,verify,verifyHistoryMaintenance,restore,inspect,probe,save,services,probes,
   now=Date.now,wait=sleep,recoveryTimeoutMs=180000,intervalMs=5000}) {
   check(Array.isArray(services)&&services.length>0&&services.every(n=>/^[a-z0-9-]+$/.test(n)), 'CYCLE_SERVICES_INVALID');
   check(Number.isSafeInteger(recoveryTimeoutMs)&&recoveryTimeoutMs>0&&recoveryTimeoutMs<=600000&&
@@ -35,6 +35,7 @@ export async function runBackupCycle({generate,verify,restore,inspect,probe,save
       }
     });
   }
+  if(verifyHistoryMaintenance)await phase('historyMaintenance',()=>verifyHistoryMaintenance(report.startedAt));
   await phase('artifactVerification',()=>verify(report.startedAt));
   await phase('publicReadback',async()=>{
     const end=now()+recoveryTimeoutMs;let pending;
@@ -67,6 +68,14 @@ export async function verifyArtifact(base,startedAt){
   check((await stat(path)).size===result.bytes&&await digest(path)===result.sha256,'BACKUP_ARTIFACT_HASH_MISMATCH');
   return {artifact:basename(path),bytes:result.bytes,sha256:result.sha256,createdAt:result.createdAt};
 }
+export async function verifyHistoryReport(base,startedAt){
+  const report=JSON.parse(await readFile(join(base,'ops-reports','history-maintenance.json'),'utf8'));
+  check(report.version===1&&report.kind==='HISTORY_ARCHIVE_MAINTENANCE'&&
+    Date.parse(report.startedAt)>=Date.parse(startedAt)&&Date.parse(report.finishedAt)>=Date.parse(report.startedAt),
+    'BACKUP_HISTORY_REPORT_MISSING_OR_STALE');
+  check(['STAGED','PRUNED','AWAITING_RESTORE'].includes(report.status),'BACKUP_HISTORY_MAINTENANCE_FAILED');
+  return {status:report.status,manifestSha256:report.manifestAfter??null};
+}
 async function main(){
   const a=args(process.argv.slice(2),['--base','--services']);check(a['--base']&&a['--services'],'CYCLE_ARGUMENTS_REQUIRED');
   const base=resolve(a['--base']),services=a['--services'].split(',');
@@ -75,6 +84,7 @@ async function main(){
   const report=await runBackupCycle({services,probes:[{name:'web',url:'https://ante-up.fun/'},{name:'markets',url:'https://ante-up.fun/api/v1/markets'}],
     generate:async()=>(await command('bash',[join(base,'run-backup.sh')])).code,
     verify:startedAt=>verifyArtifact(base,startedAt),
+    verifyHistoryMaintenance:startedAt=>verifyHistoryReport(base,startedAt),
     restore:async names=>{for(const name of names){const r=await command('docker',['inspect','--format','{{.State.Running}}',name],{capture:true});
       if(r.code!==0||r.output.trim()!=='true')await command('docker',['start',name]);}},
     inspect:async name=>{const r=await command('docker',['inspect','--format','{{.State.Running}} {{.State.Restarting}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}',name],{capture:true});return r.code===0&&['true false healthy','true false none'].includes(r.output.trim());},

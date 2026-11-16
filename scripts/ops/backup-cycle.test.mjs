@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {runBackupCycle,verifyArtifact} from './backup-cycle.mjs';
+import {runBackupCycle,verifyArtifact,verifyHistoryReport} from './backup-cycle.mjs';
 import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -31,6 +31,19 @@ test('artifact failure, recovery failure and API failure remain distinct',async(
 test('provider errors are redacted from phase reports',async()=>{
  const f=fixture(),r=await runBackupCycle({...f.options,verify:async()=>{throw Error('https://private/?api-key=secret');}});
  assert.equal(JSON.stringify(r).includes('secret'),false);assert.equal(r.phases.artifactVerification.code,'BACKUP_PHASE_FAILED');
+});
+test('failed history maintenance preserves successful backup and recovery evidence',async()=>{
+ const f=fixture(),r=await runBackupCycle({...f.options,verifyHistoryMaintenance:async()=>{throw Error('BACKUP_HISTORY_MAINTENANCE_FAILED');}});
+ assert.equal(r.status,'FAILED');assert.equal(r.phases.historyMaintenance.state,'FAILED');
+ assert.equal(r.phases.creation.state,'SUCCEEDED');assert.equal(r.phases.artifactVerification.state,'SUCCEEDED');assert.equal(f.restores,1);
+});
+test('history report must belong to this run; awaiting exact restore is a safe hold',async t=>{
+ const base=await mkdtemp(join(tmpdir(),'ante-history-report-'));t.after(()=>rm(base,{recursive:true,force:true}));await mkdir(join(base,'ops-reports'));
+ const path=join(base,'ops-reports','history-maintenance.json');
+ const report={version:1,kind:'HISTORY_ARCHIVE_MAINTENANCE',startedAt:'2026-11-16T01:00:01.000Z',finishedAt:'2026-11-16T01:00:02.000Z',status:'AWAITING_RESTORE'};
+ await writeFile(path,JSON.stringify(report));assert.equal((await verifyHistoryReport(base,'2026-11-16T01:00:00.000Z')).status,'AWAITING_RESTORE');
+ await assert.rejects(verifyHistoryReport(base,'2026-11-17T01:00:00.000Z'),/STALE/);
+ await writeFile(path,JSON.stringify({...report,status:'FAILED'}));await assert.rejects(verifyHistoryReport(base,'2026-11-16T01:00:00.000Z'),/MAINTENANCE_FAILED/);
 });
 test('artifact must match current run, exact size and SHA',async t=>{
  const base=await mkdtemp(join(tmpdir(),'ante-cycle-'));t.after(()=>rm(base,{recursive:true,force:true}));await mkdir(join(base,'output'));
