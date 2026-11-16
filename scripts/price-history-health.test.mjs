@@ -13,7 +13,7 @@ test('price worker stays healthy with one sampled market while stale reference m
       writeFileSync(path, JSON.stringify({ atMs: Date.now(), stored: 1, noData: 2, readErrors: 0, ...state }));
       return spawnSync(process.execPath, ['scripts/price-history.mjs', '--health'], {
         cwd: new URL('..', import.meta.url), encoding: 'utf8',
-        env: { ...process.env, ANTE_UP_PRICE_HEALTH_PATH: path },
+        env: { ...process.env, ANTE_UP_PRICE_HEALTH_PATH: path, ANTE_UP_PRICE_INTERVAL_MS: '300000' },
       });
     };
     const partial = check({ status: 'PARTIAL', valid: 1 });
@@ -22,7 +22,7 @@ test('price worker stays healthy with one sampled market while stale reference m
     const waiting=check({ status: 'NO_DATA', valid: 0, stored: 0, noData: 3 });
     assert.equal(waiting.status,0,waiting.stderr);assert.equal(JSON.parse(waiting.stdout).priceReady,false);
     assert.notEqual(check({ status: 'NO_DATA', valid: 0, stored: 0, noData: 3, readErrors: 1 }).status,0);
-    assert.notEqual(check({ status: 'NO_DATA', valid: 0, stored: 0, noData: 3, atMs: Date.now()-200000 }).status,0);
+    assert.notEqual(check({ status: 'NO_DATA', valid: 0, stored: 0, noData: 3, atMs: Date.now()-1000000 }).status,0);
     assert.notEqual(check({ status: 'NO_DATA', valid: 0, stored: 0, noData: 3, atMs: Date.now()+60000 }).status,0);
     assert.notEqual(check({ status: 'ERROR', valid: 1, readErrors: 1 }).status, 0);
   } finally { rmSync(dir, { recursive: true, force: true }); }
