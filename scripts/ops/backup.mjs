@@ -33,6 +33,10 @@ async function inventory(roots){
 }
 export async function validateHistory(root, entries){
   const paths=new Set(entries.map(e=>e.path));
+  // Keep the first entry, matching the former find() lookup. Archive manifests
+  // can contain tens of thousands of blobs; do not rescan the full inventory per blob.
+  const entryByPath=new Map();
+  for(const entry of entries)if(!entryByPath.has(entry.path))entryByPath.set(entry.path,entry);
   const archivePrefix='state/history-archive',manifestPath=`${archivePrefix}/manifest.json`;
   let archive=null;const archived=new Map();
   if(paths.has(manifestPath)){
@@ -42,7 +46,7 @@ export async function validateHistory(root, entries){
       check(safePath(entry.path)&&/^[a-f0-9]{64}$/.test(entry.contentHash)&&/^[a-f0-9]{64}$/.test(entry.sha256)&&
         Number.isSafeInteger(entry.bytes)&&entry.bytes>0&&entry.path.endsWith(`/${entry.contentHash}.json.gz`)&&
         !archived.has(entry.path),'HISTORY_ARCHIVE_ENTRY_INVALID');
-      const path=`${archivePrefix}/${entry.path}`,stored=entries.find(e=>e.path===path);
+      const path=`${archivePrefix}/${entry.path}`,stored=entryByPath.get(path);
       check(stored&&stored.bytes===entry.bytes&&stored.sha256===entry.sha256,'HISTORY_ARCHIVE_ENTRY_MISMATCH');
       archived.set(entry.path,entry);
     }

@@ -6,7 +6,29 @@ import {gzipSync} from 'node:zlib';
 import {mkdir, mkdtemp, writeFile, readFile, rm, readdir, symlink} from 'node:fs/promises';
 import {join, resolve} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
-import {createBackup, copyBackup, restoreDrill} from './backup.mjs';
+import {createBackup, copyBackup, restoreDrill, validateHistory} from './backup.mjs';
+
+test('archive inventory lookup preserves missing, size and hash checks without repeated scans',async t=>{
+  const f=await fixture(t),archive=join(f.dir,'state/history-archive');
+  await mkdir(join(archive,'live-smoke'),{recursive:true});
+  const content=Buffer.from('{"points":[1,2,3]}'),contentHash=createHash('sha256').update(content).digest('hex');
+  const compressed=gzipSync(content),entry={path:`live-smoke/${contentHash}.json.gz`,contentHash,
+    sha256:createHash('sha256').update(compressed).digest('hex'),bytes:compressed.length};
+  await writeFile(join(archive,entry.path),compressed);
+  await writeFile(join(archive,'manifest.json'),JSON.stringify({version:1,kind:'HISTORY_ARCHIVE_INVENTORY',entries:[entry]}));
+  const manifest={path:'state/history-archive/manifest.json'},blob={...entry,path:`state/history-archive/${entry.path}`};
+  const inventory=[...Array.from({length:2048},(_,i)=>({path:`state/unrelated-${i}.dat`})),manifest,blob];
+  inventory.find=()=>{throw Error('UNEXPECTED_LINEAR_INVENTORY_SEARCH');};
+  assert.equal((await validateHistory(f.dir,inventory)).entries,1);
+  for(const changed of [null,{...blob,bytes:blob.bytes+1},{...blob,sha256:'0'.repeat(64)}]){
+    const invalid=[manifest,...(changed?[changed]:[])];
+    await assert.rejects(validateHistory(f.dir,invalid),/HISTORY_ARCHIVE_ENTRY_MISMATCH/);
+  }
+  // Duplicate inventories are rejected by restore itself; helper retains first-match semantics.
+  await assert.rejects(validateHistory(f.dir,[manifest,{...blob,bytes:blob.bytes+1},blob]),/HISTORY_ARCHIVE_ENTRY_MISMATCH/);
+  await writeFile(join(archive,entry.path),gzipSync(Buffer.from('changed')));
+  await assert.rejects(validateHistory(f.dir,[manifest,blob]),/HISTORY_CONTENT_HASH_MISMATCH/);
+});
 
 test('cold history nested references survive encrypted copy and isolated restore',async t=>{
   const f=await fixture(t),archive=join(f.dir,'state/history-archive');await mkdir(join(archive,'live-smoke'),{recursive:true});
