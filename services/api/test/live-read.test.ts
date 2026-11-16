@@ -96,6 +96,7 @@ test('indexed market price requires matching fresh finalized snapshot and blocks
   assert.deepEqual((await read.markets(0))[0].price,{kind:'indexed',atoms:'1000000',executable:false});
   through=now-600;
   assert.equal((await read.markets(0))[0].price,null);
+  assert.equal((await read.market(String(marketAddress)))?.price,null,'targeted execution does not reuse a prior fresh listing price');
   assert.equal((await read.markets(0))[0].priceReadiness?.state,'STALE');
   assert.equal((await read.markets(0))[0].dataStatus,'LOW_ACTIVITY');
   assert.equal((await read.markets(0))[0].priceReadiness?.reason,'DATA_STALE');
@@ -105,6 +106,7 @@ test('indexed market price requires matching fresh finalized snapshot and blocks
   assert.deepEqual(syncing.priceReadiness,{state:'SYNCING',dataThrough:through,checkedAt:now,reason:'INDEX_SYNCING'});
   assert.equal(syncing.capabilities.openPro?.allowed,false);
   assert.equal(syncing.capabilities.spotSell?.allowed,false);
+  assert.equal((await read.market(String(marketAddress)))?.priceReadiness?.state,'SYNCING','targeted projection keeps snapshot matching gate');
   through=now-600;
   assert.equal((await read.markets(0))[0].priceReadiness?.state,'STALE','staleness takes precedence over projection mismatch');
   through=now-100;projectedSequence='3';
@@ -113,6 +115,53 @@ test('indexed market price requires matching fresh finalized snapshot and blocks
   rpcFailed=true;
   await assert.rejects(read.markets(0),/429/);
   repositories.close();store.close();
+});
+
+test('targeted market reads only target and global admission, bypasses listing cache and unrelated failure',async()=>{
+ const programId=String(ANTE_UP_PROGRAM_ADDRESS),seeds=[new Uint8Array(32).fill(11),new Uint8Array(32).fill(12)];
+ const ids=await Promise.all(seeds.map(async seed=>String((await findMarketPda({marketId:seed},{programAddress:address(programId)}))[0])));
+ const admissionId=String((await findAdmissionPda({programAddress:address(programId)}))[0]);
+ const reads:string[]=[],financialReads:string[]=[];let gateOpen=true,unrelatedFailure=false,reconciliations=0;
+ let unrelatedWait:Promise<void>|null=null,onUnrelatedWait=()=>{};
+ const accountReader={async get(id:string){
+  reads.push(id);
+  if(id===admissionId)return {ownerProgramId:programId,data:getAdmissionEncoder().encode({admin:address(programId),open:gateOpen,outstanding:0,
+   recent:Array(100).fill(0n),fundedOpenCap:20n,fundedOpenCount:0n})};
+  const i=ids.indexOf(id);if(i<0)throw Error('UNEXPECTED_ACCOUNT');
+  if(i===1&&unrelatedWait){onUnrelatedWait();await unrelatedWait;}
+  if(i===1&&unrelatedFailure)throw Error('HTTP 429 unrelated market');
+  return {ownerProgramId:programId,data:getMarketEncoder().encode({id:seeds[i],admin:address(programId),queryHash:new Uint8Array(32),queryVersion:1n,
+   phase:MarketPhase.Curve,dataStatus:DataStatus.Preparing,admission:{state:AdmissionState.Blocked,recoveryCount:0,reason:AdmissionReason.DataNotReady},
+   latestSequence:0n,latestHash:new Uint8Array(32),latestDataThrough:0n,latestNowQ12:null,latest7dQ12:null,validityGeneration:0n})};
+ }};
+ const store=new SqliteProjectionStore(':memory:'),repositories=new SqliteEventRepositories(':memory:',accountReader);
+ const read=new SqliteFinalizedReadAdapter({mode:'localnet',programId,store,repositories,accounts:accountReader,now:()=>1_800_000_000,
+  registry:ids.map((id,i)=>({address:id,seedHex:Buffer.from(seeds[i]).toString('hex'),keyword:`market${i}`,aliases:[]})),
+  financial:{async financeMarket(id:string){financialReads.push(id);if(id===ids[1]&&unrelatedFailure)throw Error('HTTP 429');return {curveSold:0n};}} as unknown as FinalizedFinancialAccounts,
+  registrations:{finalized:()=>[],async reconcilePending(){reconciliations++;}} as any});
+ try{
+  const listing=await read.markets();assert.equal(listing.length,2);assert.equal(reconciliations,1);
+  reads.length=0;financialReads.length=0;gateOpen=false;unrelatedFailure=true;
+  const target=await read.market(ids[0]);assert.equal(target?.capabilities.openFree?.reason,'ENTRY_PAUSED');
+  assert.deepEqual(reads,[admissionId,ids[0]]);assert.deepEqual(financialReads,[ids[0]]);assert.equal(reconciliations,1);
+  assert.equal(await read.markets(),listing,'single read must not overwrite full listing cache');
+  assert.equal(listing[0].capabilities.openFree?.allowed,true,'target gate refresh cannot mutate cached public results');
+  reads.length=0;financialReads.length=0;
+  assert.equal(await read.market('unknown'),null);assert.deepEqual(reads,[]);assert.deepEqual(financialReads,[]);
+  await assert.rejects(read.markets(0),/429/,'the unrelated market really fails a whole-list read');
+  reads.length=0;financialReads.length=0;gateOpen=true;
+  assert.equal((await read.market(ids[0]))?.capabilities.openFree?.allowed,true);
+  assert.deepEqual(reads,[admissionId,ids[0]]);assert.deepEqual(financialReads,[ids[0]]);
+  unrelatedFailure=false;
+  let release!:()=>void;unrelatedWait=new Promise<void>(resolve=>{release=resolve;});
+  const entered=new Promise<void>(resolve=>{onUnrelatedWait=resolve;});
+  const listingInFlight=read.markets(0);await entered;gateOpen=false;
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  try{
+   const fresh=await Promise.race([read.market(ids[0]),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error('target joined unrelated listing')),1500);})]);
+   assert.equal(fresh?.capabilities.openFree?.reason,'ENTRY_PAUSED','target execution does not join a stale in-flight listing');
+  }finally{if(timer)clearTimeout(timer);release();await listingInFlight;}
+ }finally{repositories.close();store.close();}
 });
 
 test('operator synthetic provenance cannot be stripped by an automatic registration',()=>{

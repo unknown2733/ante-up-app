@@ -57,7 +57,8 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
     this.repositories=options.repositories;this.accounts=options.accounts;this.registry=options.registry;this.now=options.now;
     this.financial=options.financial??null;this.registrations=options.registrations??null;this.runtimeReadiness=options.runtimeReadiness;
   }
-  async market(marketId: string) {return (await this.markets(0)).find(m=>m.id===marketId)??null;}
+  /** Execution read: never joins a cached or in-flight public listing. */
+  async market(marketId: string) {return (await this.readMarkets(marketId))[0]??null;}
   async record(recordId: string) {return (await this.records()).find(r=>r.id===recordId)??null;}
   async markets(maxAgeMs=30_000): Promise<MarketView[]> {
     if(this.marketCache?.value.some(m=>m.priceReadiness?.state==='SYNCING'))maxAgeMs=Math.min(maxAgeMs,2000);
@@ -71,14 +72,19 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
       return value;
     } finally {if (this.marketRead===current) this.marketRead=null;}
   }
-  private async readMarkets(): Promise<MarketView[]> {
+  private async readMarkets(marketId?:string): Promise<MarketView[]> {
     // A wallet can land a registration and close the tab before submitting its
     // signature to the API. Recheck a bounded set against finalized accounts.
-    if(this.registrations&&this.financial&&this.now()>=this.registrationRecheckAt){
+    // Reconciliation can read unrelated accounts; public listing owns that sweep.
+    if(marketId===undefined&&this.registrations&&this.financial&&this.now()>=this.registrationRecheckAt){
       this.registrationRecheckAt=this.now()+60;
       try{await this.registrations.reconcilePending(this.financial);}
       catch{console.error('REGISTRATION_RECONCILE_FAILED');}
     }
+    // Resolve identity locally first. Unknown targets must cause no account reads.
+    const entries=mergeMarketRegistry(this.registry,this.registrations?.finalized()??[])
+      .filter(entry=>marketId===undefined||entry.address===marketId);
+    if(entries.length===0)return [];
     const snapshots=this.store.snapshots(this.mode,this.programId);
     const [admissionAddress]=await findAdmissionPda({programAddress:address(this.programId)});
     const admissionRaw=await this.accounts.get(String(admissionAddress));
@@ -96,7 +102,6 @@ export class SqliteFinalizedReadAdapter implements ReadAdapter, FreeStateReader 
       : {allowed:true,reason:null};
     const result:MarketView[]=[];
     // Operator registry is authoritative for display/provenance; auto registrations cannot relabel a synthetic feed.
-    const entries=mergeMarketRegistry(this.registry,this.registrations?.finalized()??[]);
     for (const entry of entries) {
       if (!/^[0-9a-f]{64}$/.test(entry.seedHex)) throw new Error('INVALID_MARKET_SEED');
       const seed=Uint8Array.from(Buffer.from(entry.seedHex,'hex'));
