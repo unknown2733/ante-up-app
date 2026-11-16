@@ -44,12 +44,16 @@ function refs(value){
 function closure(stateFile,initial,options){
   const visited=new Set();
   function visit(h){if(visited.has(h))return;visited.add(h);
-    const value=JSON.parse(readHistoryBlob(stateFile,h,options));for(const child of refs(value))visit(child);
+    const key=`${dirname(resolve(stateFile))}:${h}`,cache=options.referenceCache;
+    let children=cache?.get(key);
+    if(!children){children=refs(JSON.parse(readHistoryBlob(stateFile,h,options)));cache?.set(key,children);}
+    for(const child of children)visit(child);
   }
   for(const h of initial)visit(h);return visited;
 }
 function verifyRootReferences(plan){
-  for(const r of plan.roots){const path=join(plan.stateRoot,r.path);closure(path,refs(JSON.parse(plainFile(path))),plan);}
+  const options={...plan,referenceCache:new Map()};
+  for(const r of plan.roots){const path=join(plan.stateRoot,r.path);closure(path,refs(JSON.parse(plainFile(path))),options);}
 }
 const finalizedJob=job=>job?.state==='FINALIZED'&&job.published?.finality==='finalized';
 function activeCandidateValue(value){
@@ -131,7 +135,7 @@ export function planHistoryArchive({stateRoot,archiveRoot,collections,protectedP
   stateRoot=resolve(stateRoot);archiveRoot=resolve(archiveRoot);
   check(Array.isArray(collections)&&collections.length>0&&new Set(collections).size===collections.length,'HISTORY_COLLECTION_INVALID');
   for(const c of collections)check(!inside(join(stateRoot,c),archiveRoot)&&archiveRoot!==join(stateRoot,c),'HISTORY_ARCHIVE_IN_ACTIVE_ROOT');
-  const options={stateRoot,archiveRoot},roots=sourceRoots(stateRoot,collections,protectedPaths);
+  const options={stateRoot,archiveRoot,referenceCache:new Map()},roots=sourceRoots(stateRoot,collections,protectedPaths);
   const active=new Map(collections.map(c=>[c,new Set()]));
   for(const root of roots){
     const path=join(stateRoot,root.path),bytes=plainFile(path),value=JSON.parse(bytes);root.sha256=hash(bytes);
