@@ -129,3 +129,22 @@ test('current prune rejects mismatched receipt and missing quiescence without de
   assert.throws(()=>pruneCurrentHistoryArchive(f.options,{...receipt,manifestSha256:'0'.repeat(64)},{quiesced:true}),/HISTORY_RESTORE_RECEIPT_REQUIRED/);
   assert.deepEqual(readdirSync(join(f.dir,'.history')).sort(),before);
 });
+test('real-shaped finalized snapshots and completed collection batches do not pin all old replay inputs',t=>{
+  const f=fixture(t),batches={},jobs={},snapshots={};
+  for(let i=0;i<100;i++){
+    const id=`m:1:${i}`,replayInput={observations:[{at:i,count:i+1}],start:i};
+    batches[id]={id,state:'VALIDATED',calculation:{marketId:'m',dataThrough:i,computedAt:i+1},replayInput};
+    jobs[id]={id,state:i===40?'SUBMITTED':'FINALIZED',published:i===40?null:{finality:'finalized'},replayInput};
+    if(i!==40)snapshots[`m:${i}`]={published:{finality:'finalized'},replayInput};
+  }
+  writeStateJson(f.collection,{markets:{m:{observations:[{at:101,count:20}],recoveryState:{lastPollId:'m:1:99'}}},batches});
+  writeStateJson(f.candidates,{jobs,snapshots});
+  const raw=JSON.parse(readFileSync(f.collection)),plan=f.plan();
+  const archived=new Set(plan.entries.map(e=>e.contentHash));
+  for(const i of [0,1,39,41,98])assert.ok(archived.has(raw.batches[`m:1:${i}`].replayInput.__ante_history_sha256));
+  for(const i of [40,99])assert.ok(!archived.has(raw.batches[`m:1:${i}`].replayInput.__ante_history_sha256));
+  assert.ok(!archived.has(raw.markets.m.observations.__ante_history_sha256));
+  stageHistoryArchive(plan,{quiesced:true});pruneHistoryArchive(plan,f.restore(),{quiesced:true});
+  assert.equal(readStateJson(f.collection,f.options).batches['m:1:0'].replayInput.observations[0].count,1);
+  assert.equal(readStateJson(f.candidates,f.options).snapshots['m:98'].replayInput.start,98);
+});

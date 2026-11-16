@@ -28,11 +28,14 @@ node scripts/archive-state-history.mjs --verify "$ARCHIVE_ROOT"
 ```
 
 The collection names are exact existing directory names, not market identifiers.
-The plan keeps current collection references, jobs without both `FINALIZED` and
-finalized publication evidence, and references in the evidence and Keeper roots
-active. Historical journal copies are verified but do not create new obligations.
-Unknown obligation states stay active. All nested references are checked without
-materializing every historical replay in memory.
+The plan keeps current market observations/recovery, current recovery batch,
+newest completed source batch per market, jobs without both `FINALIZED` and
+finalized publication evidence (and their collection batch), and references in
+the evidence and Keeper roots active. Older `VALIDATED` source batches and
+finalized snapshot replay copies remain readable from cold storage; they do not
+pin the entire history merely by remaining in the journal. Unknown obligation
+states and inputs with unrecognized metadata stay active. All historical and
+nested references are checked without materializing every replay in memory.
 
 Staging copies exact blob bytes and publishes `manifest.json` with version 1,
 kind `HISTORY_ARCHIVE_INVENTORY`, and entries containing relative `path`, compressed

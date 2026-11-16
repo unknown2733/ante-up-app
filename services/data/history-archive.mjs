@@ -51,6 +51,36 @@ function closure(stateFile,initial,options){
 function verifyRootReferences(plan){
   for(const r of plan.roots){const path=join(plan.stateRoot,r.path);closure(path,refs(JSON.parse(plainFile(path))),plan);}
 }
+const finalizedJob=job=>job?.state==='FINALIZED'&&job.published?.finality==='finalized';
+function activeCandidateValue(value){
+  check(value.jobs&&typeof value.jobs==='object','HISTORY_CANDIDATES_INVALID');
+  return {...value,jobs:Object.fromEntries(Object.entries(value.jobs).filter(([,job])=>!finalizedJob(job))),
+    snapshots:Object.fromEntries(Object.entries(value.snapshots??{}).filter(([,snapshot])=>snapshot.published?.finality!=='finalized'))};
+}
+function activeCollectionValue(value,candidates){
+  const pinned=new Set(Object.entries(candidates.jobs??{}).filter(([,job])=>!finalizedJob(job)).map(([id])=>id));
+  for(const market of Object.values(value.markets??{})){
+    const recovery=market.recoveryState;
+    for(const id of [recovery?.lastPollId,recovery?.provenance?.batchId,recovery?.incident?.provenance?.batchId])
+      if(typeof id==='string')pinned.add(id);
+  }
+  const latest=new Map();
+  for(const [id,batch] of Object.entries(value.batches??{})){
+    // VALIDATED/PREPARING describe a completed source read, not final chain publication.
+    // Retain pending publication inputs, the current recovery input and the newest
+    // completed source input per market; older completed inputs remain cold-readable.
+    if(!['VALIDATED','PREPARING'].includes(batch.state)){pinned.add(id);continue;}
+    const c=batch.calculation,marketId=c?.marketId;
+    if(typeof marketId!=='string'||!Number.isSafeInteger(c.dataThrough)||!Number.isSafeInteger(c.computedAt)){
+      pinned.add(id);continue;
+    }
+    const prior=latest.get(marketId);
+    if(!prior||c.dataThrough>prior.through||c.dataThrough===prior.through&&c.computedAt>prior.at)
+      latest.set(marketId,{id,through:c.dataThrough,at:c.computedAt});
+  }
+  for(const entry of latest.values())pinned.add(entry.id);
+  return {...value,batches:Object.fromEntries(Object.entries(value.batches??{}).filter(([id])=>pinned.has(id)))};
+}
 function inventoryPath(path){
   check(typeof path==='string'&&!path.includes('\\')&&!path.startsWith('/')&&
     path.split('/').every(x=>x&&x!=='.'&&x!=='..')&&/\/[a-f0-9]{64}\.json\.gz$/.test(path),'HISTORY_ARCHIVE_PATH_INVALID');
@@ -109,10 +139,12 @@ export function planHistoryArchive({stateRoot,archiveRoot,collections,protectedP
     // Every historical reference must remain reconstructible, including nested refs.
     closure(path,all,options);
     let keep=root.role==='historical'?new Set():all;
+    if(root.role==='current'){
+      const candidates=JSON.parse(plainFile(join(dirname(path),'candidates.json')));
+      keep=refs(activeCollectionValue(value,candidates));
+    }
     if(root.role==='candidates'){
-      check(value.jobs&&typeof value.jobs==='object','HISTORY_CANDIDATES_INVALID');
-      keep=refs({...value,jobs:Object.fromEntries(Object.entries(value.jobs).filter(([,job])=>
-        job.state!=='FINALIZED'||job.published?.finality!=='finalized'))});
+      keep=refs(activeCandidateValue(value));
     }
     const namespace=root.path.split('/')[0];
     if(active.has(namespace))for(const h of closure(path,keep,options))active.get(namespace).add(h);
