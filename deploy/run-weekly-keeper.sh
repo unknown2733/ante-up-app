@@ -6,7 +6,8 @@ set -eu
 STATE=/srv/ante-up/builds/service-state
 SECRETS=/srv/ante-up/secrets
 IMAGE=${ANTE_UP_KEEPER_IMAGE:-ante-up:weekly-keeper-v1}
-exec 9>"$STATE/keeper-auto/weekly.lock"
+# Contenders must not truncate/touch the lock while a quiescent backup owns it.
+exec 9>>"$STATE/keeper-auto/weekly.lock"
 flock -n 9 || exit 0
 
 # Keeper scans all historical Snapshot accounts when planning a matured cycle.
