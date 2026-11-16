@@ -104,6 +104,12 @@ export function createApp(options: {
   async function handle(request: Request): Promise<Response> {
     const asOf = now();
     const url = new URL(request.url);
+    // Process/configuration liveness only. Financial/source readiness is checked
+    // by the normal market endpoints and operations monitor, never by this route.
+    if (url.pathname === '/health' && request.method === 'GET') return json({
+      service:'ante-up-api',kind:'liveness',status:'ok',mode,
+      cluster:mode === 'fixture' ? null : mode,configurationReady:true,
+    });
     const parts = url.pathname.split('/').filter(Boolean);
     if (parts[0] !== 'v1') return fail('INVALID_INPUT', 'unknown route');
     try {
