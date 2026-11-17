@@ -54,3 +54,26 @@ test('artifact must match current run, exact size and SHA',async t=>{
  await assert.rejects(verifyArtifact(base,'2026-11-17T00:00:00.000Z'),/STALE/);
  await writeFile(path,'broken');await assert.rejects(verifyArtifact(base,'2026-11-16T00:59:59.000Z'),/HASH_MISMATCH/);
 });
+
+
+test('report failure after quiescing never prevents service restoration',async()=>{
+ const f=fixture();let generated=false;
+ const r=await runBackupCycle({...f.options,generate:async()=>{generated=true;return 0;},
+  save:async()=>{if(generated)throw Error('secret write error');}});
+ assert.equal(generated,true);assert.equal(f.restores,1);
+ assert.equal(r.phases.serviceRecovery.state,'SUCCEEDED');assert.equal(r.status,'FAILED');
+ assert.equal(r.reportingCode,'BACKUP_REPORT_WRITE_FAILED');assert.ok(r.reportingFailures>0);
+ assert.equal(JSON.stringify(r).includes('secret'),false);
+});
+test('initial reporting failure prevents new generation but still attempts restoration',async()=>{
+ const f=fixture();let generated=false;
+ const r=await runBackupCycle({...f.options,generate:async()=>{generated=true;return 0;},save:async()=>{throw Error('disk full');}});
+ assert.equal(generated,false);assert.equal(f.restores,1);assert.equal(r.status,'FAILED');
+ assert.equal(r.phases.creation.code,'BACKUP_REPORT_WRITE_FAILED');assert.equal(r.phases.serviceRecovery.state,'SUCCEEDED');
+});
+test('one report failure remains failed after reporting recovers',async()=>{
+ const f=fixture();let calls=0;
+ const r=await runBackupCycle({...f.options,save:async()=>{if(++calls===4)throw Error('write error');}});
+ assert.equal(f.restores,1);assert.equal(r.status,'FAILED');assert.equal(r.reportingFailures,1);
+ assert.equal(r.phases.serviceRecovery.state,'SUCCEEDED');
+});

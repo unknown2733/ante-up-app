@@ -12,14 +12,18 @@ export async function runBackupCycle({generate,verify,verifyHistoryMaintenance,r
   check(Number.isSafeInteger(recoveryTimeoutMs)&&recoveryTimeoutMs>0&&recoveryTimeoutMs<=600000&&
     Number.isSafeInteger(intervalMs)&&intervalMs>0,'CYCLE_TIMEOUT_INVALID');
   const report={version:1,kind:'BACKUP_CYCLE',startedAt:new Date(now()).toISOString(),status:'RUNNING',phases:{}};
+  async function persist(){
+    try{await save(report);return true;}
+    catch{report.reportingFailures=(report.reportingFailures??0)+1;report.reportingCode='BACKUP_REPORT_WRITE_FAILED';report.status='FAILED';return false;}
+  }
   async function phase(name,fn){
-    report.phases[name]={state:'RUNNING',startedAt:new Date(now()).toISOString()};await save(report);
+    report.phases[name]={state:'RUNNING',startedAt:new Date(now()).toISOString()};await persist();
     try{const details=await fn();report.phases[name]={...report.phases[name],state:'SUCCEEDED',details};}
     catch(e){report.phases[name]={...report.phases[name],state:'FAILED',code:/^[A-Z][A-Z0-9_]+$/.test(e.message)?e.message:'BACKUP_PHASE_FAILED'};}
-    report.phases[name].finishedAt=new Date(now()).toISOString();await save(report);
+    report.phases[name].finishedAt=new Date(now()).toISOString();await persist();
   }
-  await save(report);
-  try {await phase('creation',async()=>{const exitCode=await generate();check(exitCode===0,'BACKUP_RUNNER_FAILED');return {exitCode};});}
+  await persist();
+  try {await phase('creation',async()=>{check(!report.reportingFailures,'BACKUP_REPORT_WRITE_FAILED');const exitCode=await generate();check(exitCode===0,'BACKUP_RUNNER_FAILED');return {exitCode};});}
   finally {
     // The generation script retains its EXIT trap. This second check covers a
     // failed restart in that trap; restoration also runs after generation failure.
@@ -28,7 +32,7 @@ export async function runBackupCycle({generate,verify,verifyHistoryMaintenance,r
       const end=now()+recoveryTimeoutMs;let pending=services;
       while(true){
         pending=[];for(const name of services){try{if(!await inspect(name))pending.push(name);}catch{pending.push(name);}}
-        report.phases.serviceRecovery.pendingServices=pending;await save(report);
+        report.phases.serviceRecovery.pendingServices=pending;await persist();
         if(!pending.length)return {services};
         if(now()>=end)throw Error('BACKUP_SERVICE_RECOVERY_FAILED');
         await wait(Math.min(intervalMs,end-now()));
@@ -41,14 +45,14 @@ export async function runBackupCycle({generate,verify,verifyHistoryMaintenance,r
     const end=now()+recoveryTimeoutMs;let pending;
     while(true){
       pending=[];for(const item of probes){try{if(!await probe(item))pending.push(item.name);}catch{pending.push(item.name);}}
-      report.phases.publicReadback.pendingProbes=pending;await save(report);
+      report.phases.publicReadback.pendingProbes=pending;await persist();
       if(!pending.length)return {probes:probes.map(p=>p.name)};
       if(now()>=end)throw Error('BACKUP_PUBLIC_READBACK_FAILED');
       await wait(Math.min(intervalMs,end-now()));
     }
   });
   report.finishedAt=new Date(now()).toISOString();
-  report.status=Object.values(report.phases).every(p=>p.state==='SUCCEEDED')?'SUCCEEDED':'FAILED';await save(report);
+  report.status=!report.reportingFailures&&Object.values(report.phases).every(p=>p.state==='SUCCEEDED')?'SUCCEEDED':'FAILED';await persist();
   return report;
 }
 
