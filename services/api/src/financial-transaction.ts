@@ -35,8 +35,25 @@ export class KitFirstSliceFinancialTransactionAdapter implements FinancialTransa
   constructor(options:{state:FinalizedFinancialAccounts;reader:FirstSliceFinancialReader;blockhashes:BlockhashProvider;now:()=>number}) {this.options=options;}
   private async instructions(quote:FinancialQuote):Promise<Instruction[]> {
     const {state}=this.options,programAddress=address(state.options.programId),wallet=address(quote.intent.wallet);
-    const finance=await state.financeConfig();
     if (quote.chain.cluster!==state.options.cluster || quote.chain.programId!==state.options.programId) throw new Error('FINANCIAL_NETWORK_MISMATCH');
+    if(quote.intent.action==='claim'){
+      const {marketId,claimId}=quote.intent;
+      if(!marketId||!claimId)throw Error('PRO_CLAIM_UNAVAILABLE');
+      const [market,fm,config,finance,claim]=await Promise.all([
+        state.market(marketId),state.financeMarket(marketId),state.config(),state.financeConfig(),state.claimByAddress(claimId),
+      ]);
+      if(market.phase!==2||fm.stateVersion.toString()!==quote.stateVersion||config.configVersion.toString()!==quote.configVersion)
+        throw Error('REQUOTE_REQUIRED');
+      if(!claim||String(claim.value.owner)!==String(wallet)||String(claim.value.market)!==marketId||claim.value.paid||
+        (claim.value.payout+claim.value.refund).toString()!==quote.minReceiveAtoms)
+        throw Error('PRO_CLAIM_UNAVAILABLE');
+      const payment=await state.associatedToken(String(wallet),String(finance.paymentMint));
+      const ix=await getClaimProInstructionAsync({market:address(marketId),position:claim.value.position,
+        claim:address(claim.address),paymentMint:finance.paymentMint,paymentVault:fm.paymentVault,
+        ownerPayment:address(payment.address),owner:createNoopSigner(wallet)},{programAddress});
+      return payment.exists===false?[ensureAta(String(wallet),String(finance.paymentMint),payment.address),ix]:[ix];
+    }
+    const finance=await state.financeConfig();
     if (quote.intent.action==='faucet') {
       if (finance.faucetMinted.toString()!==quote.stateVersion || finance.faucetAmount.toString()!==quote.minReceiveAtoms) throw new Error('REQUOTE_REQUIRED');
       const [receipt]=await findReceiptPda({wallet},{programAddress});
@@ -75,14 +92,14 @@ export class KitFirstSliceFinancialTransactionAdapter implements FinancialTransa
       const destination=buy?keyword:payment;
       return destination.exists===false ? [ensureAta(String(wallet),destination.mint,destination.address),ix] : [ix];
     }
-    if (['spotBuy','spotSell','openPro','closePro','claim','depositLP','withdrawLP'].includes(quote.intent.action)) {
+    if (['spotBuy','spotSell','openPro','closePro','depositLP','withdrawLP'].includes(quote.intent.action)) {
       const marketId=quote.intent.marketId;
       if (!marketId) throw new Error('FINANCIAL_MARKET_REQUIRED');
       const [market,fm,config]=await Promise.all([state.market(marketId),state.financeMarket(marketId),state.config()]);
       if (market.phase!==2 || fm.stateVersion.toString()!==quote.stateVersion || config.configVersion.toString()!==quote.configVersion)
         throw new Error('REQUOTE_REQUIRED');
-      if (quote.intent.action!=='claim' && (!quote.snapshot || market.latestSequence.toString()!==quote.snapshot.sequence ||
-          Buffer.from(market.latestHash).toString('hex')!==quote.snapshot.payloadHash)) throw new Error('REQUOTE_REQUIRED');
+      if (!quote.snapshot || market.latestSequence.toString()!==quote.snapshot.sequence ||
+          Buffer.from(market.latestHash).toString('hex')!==quote.snapshot.payloadHash) throw new Error('REQUOTE_REQUIRED');
       const payment=await state.associatedToken(String(wallet),String(finance.paymentMint));
       const common={market:address(marketId),paymentMint:finance.paymentMint,paymentVault:fm.paymentVault,
         expectedSequence:market.latestSequence,expectedConfigVersion:config.configVersion,
@@ -123,15 +140,6 @@ export class KitFirstSliceFinancialTransactionAdapter implements FinancialTransa
           settlement:address(settlement),owner:createNoopSigner(wallet),minReceipt:BigInt(quote.minReceiveAtoms),
           expectedSequence:market.latestSequence,expectedConfigVersion:config.configVersion,
           expectedStateVersion:fm.stateVersion,deadline:BigInt(quote.expiresAt)},{programAddress})];
-      }
-      if (quote.intent.action==='claim') {
-        const claimAddress=quote.intent.claimId,claim=claimAddress?await state.claimByAddress(claimAddress):null;
-        if (!claim || String(claim.value.owner)!==String(wallet) || String(claim.value.market)!==marketId || claim.value.paid)
-          throw new Error('PRO_CLAIM_UNAVAILABLE');
-        const ix=await getClaimProInstructionAsync({market:address(marketId),position:claim.value.position,
-          claim:address(claim.address),paymentMint:finance.paymentMint,paymentVault:fm.paymentVault,
-          ownerPayment:address(payment.address),owner:createNoopSigner(wallet)},{programAddress});
-        return payment.exists===false?[ensureAta(String(wallet),String(finance.paymentMint),payment.address),ix]:[ix];
       }
       const [holding]=await findHoldingPda({market:address(marketId),owner:wallet},{programAddress});
       const lp={...common,holding,ownerPayment:address(payment.address),owner:createNoopSigner(wallet)};
