@@ -25,9 +25,10 @@ export function createKitPublisherChain({transport,programId,publisherSigner,fee
         latestDataThrough:chainMarket.data.latestDataThrough.toString(),
         latestPayloadHash:hex(chainMarket.data.latestHash)};
     },
-    async sendInstruction({instruction}){
+    journalsBeforeBroadcast:true,
+    async sendInstruction({instruction,beforeBroadcast}){
       const prepared=await sdk.prepareUnsignedTransaction({transport,instruction,feePayer,programAddress:programId});
-      const result=await sdk.submitAndConfirmFinalized({transport,prepared,expectedInstruction:instruction,sign,wait,attempts});
+      const result=await sdk.submitAndConfirmFinalized({transport,prepared,expectedInstruction:instruction,sign,beforeBroadcast,wait,attempts});
       if (result.state==='FAILED') throw new Error(result.reason);
       return {signature:result.signature,finalized:result.state==='FINALIZED'};
     },

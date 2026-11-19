@@ -99,7 +99,11 @@ try{
  do{
   try {
   const gate=await collectorGate({checkStorage:()=>checkStorage(config.directory),
-    reconcile:()=>reconcilePublications({collectionStore:store,...publisherRuntime})});
+    reconcile:({allowPreparedResume})=>reconcilePublications({collectionStore:store,...publisherRuntime,
+      beforeResume:allowPreparedResume ? async()=>{
+        await checkApproval();
+        if((await rpc.getBalance(publisher.address).send()).value<10_000_000n)throw Error('PUBLISHER_SOL_LOW');
+      } : undefined})});
   if(!gate.ready){
    await heartbeat(healthName,{marketId:market,state:'WAITING',reason:gate.reason,unresolved:gate.unresolved??null});
    console.log(JSON.stringify({state:'WAITING',reason:gate.reason,unresolved:gate.unresolved??null}));

@@ -109,6 +109,9 @@ export async function publishSnapshot({collectionStore,repository,batchId,market
   }
   if (job.state!=='PREPARED') return {pending:true,sequence:job.sequence,payloadHash:job.candidateHash};
   if (reconcileOnly) return {pending:true,sequence:job.sequence,payloadHash:job.candidateHash};
+  check(job.signature===null && job.published===null && job.id===batchId &&
+    job.candidate?.sequence===job.sequence && job.candidate?.marketId===market.address &&
+    hash(job.candidate)===job.candidateHash,'PREPARED_PUBLICATION_INVALID');
   const current=await chain.readPublishContext(market);
   check(current?.sequence===job.sequence && current.configVersion===job.candidate.configVersion &&
     current.queryVersion===job.candidate.queryVersion && current.queryHash===job.candidate.queryHash,
@@ -130,10 +133,17 @@ export async function publishSnapshot({collectionStore,repository,batchId,market
     evidenceHash:bytes(c.evidenceHash),payloadHash:bytes(job.candidateHash)};
   check(input.dataStatus!==undefined && input.admission.state!==undefined && c.formulaVersion.length<=16,'INVALID_ENUM');
   const instruction=await sdk.getPublishSnapshotInstructionAsync(input,{programAddress:market.programId});
-  job.state='REQUESTING';await repository.write(state);
+  const persistSignature=async signature=>{
+    check(typeof signature==='string' && signature.length>0 &&
+      (job.signature===null || job.signature===signature),'PUBLICATION_SIGNATURE_MISMATCH');
+    job.signature=signature;job.state='SUBMITTED';await repository.write(state);
+  };
+  // The live adapter persists the exact signature before the first network send.
+  // Legacy adapters without that hook keep the conservative REQUESTING state.
+  if(!chain.journalsBeforeBroadcast){job.state='REQUESTING';await repository.write(state);}
   const submission=await chain.sendInstruction({id:batchId,market,sequence:job.sequence,candidate:job.candidate,
-    candidateHash:job.candidateHash,instruction});
-  if (submission?.signature) {job.signature=submission.signature;job.state='SUBMITTED';await repository.write(state);}
+    candidateHash:job.candidateHash,instruction,beforeBroadcast:persistSignature});
+  if (submission?.signature && job.signature!==submission.signature) await persistSignature(submission.signature);
   return {pending:true,sequence:job.sequence,payloadHash:job.candidateHash,signature:job.signature};
 }
 
@@ -209,7 +219,7 @@ export async function getSourceInvalidPublicationState({collectionStore,reposito
     finalizedSignature:finalized?job.published.signature:null};
 }
 
-export async function reconcilePublications({collectionStore,repository,market,chain,publisherSigner,sdk}) {
+export async function reconcilePublications({collectionStore,repository,market,chain,publisherSigner,sdk,beforeResume}) {
   const state=await repository.read();
   const pending=Object.values(state.jobs).filter(j=>j.market?.address===market.address && isPendingPublication(j));
   let finalized=0;
@@ -219,6 +229,16 @@ export async function reconcilePublications({collectionStore,repository,market,c
     if (result?.finality==='finalized') finalized++;
   }
   const latest=await repository.read();
-  return {finalized,unresolved:Object.values(latest.jobs).filter(j=>j.market?.address===market.address &&
-    isPendingPublication(j)).length};
+  const unresolved=Object.values(latest.jobs).filter(j=>j.market?.address===market.address &&
+    isPendingPublication(j));
+  if(beforeResume && unresolved.length===1 && unresolved[0].state==='PREPARED' &&
+    unresolved[0].signature===null && unresolved[0].published===null){
+    // A PREPARED candidate has no transaction to retry. Continue the original
+    // candidate before admitting another paid source call.
+    await beforeResume();
+    const result=await publishSnapshot({collectionStore,repository,batchId:unresolved[0].id,
+      market,chain,publisherSigner,sdk});
+    if(result?.finality==='finalized')return {finalized:finalized+1,unresolved:0};
+  }
+  return {finalized,unresolved:unresolved.length};
 }
