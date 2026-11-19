@@ -163,3 +163,22 @@ test('finalized ATA reader treats absence as zero and rejects invalid or frozen 
   bytes[32]=1;
   await assert.rejects(()=>state.associatedToken(wallet,paymentMint),/TOKEN_ACCOUNT_IDENTITY_MISMATCH/);
 });
+
+
+test('portfolio discovery requests only finance markets and positions owned by the wallet',async()=>{
+  const programId=randomAddress(),wallet=randomAddress();
+  const calls:{program:string;matches:readonly {offset:number;bytes:ArrayLike<number>}[]}[]=[];
+  const accounts={
+    async get(){return null;},
+    async scan(){throw Error('Portfolio must not scan historical Snapshots');},
+    async scanFiltered(program:string,matches:readonly {offset:number;bytes:ArrayLike<number>}[]){
+      calls.push({program,matches});return {slot:calls.length===1?'11':'12',accounts:[]};
+    },
+  };
+  const state=new FinalizedFinancialAccounts({cluster:'localnet',programId,accounts});
+  const result=await state.portfolioAccounts(wallet);
+  assert.deepEqual(result,{slot:'11',accounts:[]});
+  assert.deepEqual(calls.map(call=>call.program),[programId,programId]);
+  assert.deepEqual(calls.map(call=>call.matches.map(filter=>filter.offset)),[[0],[0,40]]);
+  assert.deepEqual([...calls[1].matches[1].bytes],[...getAddressEncoder().encode(address(wallet))]);
+});

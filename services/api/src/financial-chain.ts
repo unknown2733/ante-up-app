@@ -139,6 +139,22 @@ export class FinalizedFinancialAccounts {
     if (String(value.market)!==marketAddress || value.sequence!==sequence) throw new Error('FINANCIAL_SNAPSHOT_IDENTITY_MISMATCH');
     return value;
   }
+  async portfolioAccounts(wallet:string) {
+    const {accounts,programId}=this.options;
+    if(!accounts.scanFiltered)return this.programAccounts();
+    const [markets,positions]=await Promise.all([
+      accounts.scanFiltered(programId,[{offset:0,bytes:FINANCE_MARKET_DISCRIMINATOR}]),
+      accounts.scanFiltered(programId,[
+        {offset:0,bytes:PRO_POSITION_DISCRIMINATOR},
+        // Anchor discriminator, then the market public key, then the owner.
+        {offset:PRO_POSITION_DISCRIMINATOR.length+32,bytes:getAddressEncoder().encode(address(wallet))},
+      ]),
+    ]);
+    if(![markets,positions].every(scan=>/^(0|[1-9][0-9]*)$/.test(scan.slot)&&
+      scan.accounts.every(a=>a.ownerProgramId===programId)))throw Error('FINANCIAL_SCAN_INVALID');
+    const slot=BigInt(markets.slot)<BigInt(positions.slot)?markets.slot:positions.slot;
+    return {slot,accounts:[...markets.accounts,...positions.accounts]};
+  }
   async programAccounts() {
     if (!this.options.accounts.scan) return null;
     const result=await this.options.accounts.scan(this.options.programId);
@@ -187,9 +203,8 @@ export class FirstSliceFinancialReader implements FinancialReader {
       remainingClaims:((config.faucetTotalLimit-config.faucetMinted)/config.faucetAmount).toString()};
   }
   async portfolio(wallet:string) {
-    const scan=await this.state.programAccounts();if (!scan) return null;
-    const finance=await this.state.financeConfig();
-    const quote=await this.state.associatedToken(wallet,String(finance.paymentMint));
+    const [scan,finance]=await Promise.all([this.state.portfolioAccounts(wallet),this.state.financeConfig()]);
+    if (!scan) return null;
     const marketAddresses:string[]=[];
     const positionAddresses:string[]=[];
     for (const account of scan.accounts) {
@@ -205,17 +220,26 @@ export class FirstSliceFinancialReader implements FinancialReader {
       }
     }
     const tokenBalances:FinancialPortfolio['tokenBalances']=[],positions:FinancialPortfolio['positions']=[],claims:FinancialPortfolio['claims']=[],lpShares:FinancialPortfolio['lpShares']=[];
-    for (const marketAddress of [...new Set(marketAddresses)]) {
-      const fm=await this.state.financeMarket(marketAddress);
-      const token=await this.state.associatedToken(wallet,String(fm.keywordMint));
+    const [quote,balances,positionsAndClaims]=await Promise.all([
+      this.state.associatedToken(wallet,String(finance.paymentMint)),
+      Promise.all([...new Set(marketAddresses)].map(async marketAddress=>{
+        const fm=await this.state.financeMarket(marketAddress);
+        const [token,holding]=await Promise.all([
+          this.state.associatedToken(wallet,String(fm.keywordMint)),this.state.holding(marketAddress,wallet),
+        ]);
+        return {marketAddress,fm,token,holding};
+      })),
+      Promise.all(positionAddresses.map(async positionAddress=>{
+        const [position,claim]=await Promise.all([this.state.position(positionAddress),this.state.claim(positionAddress)]);
+        return {positionAddress,position,claim};
+      })),
+    ]);
+    for (const {marketAddress,fm,token,holding} of balances) {
       if (token.amount>0n) tokenBalances.push({marketId:marketAddress,mint:String(fm.keywordMint),atoms:token.amount.toString()});
-      const holding=await this.state.holding(marketAddress,wallet);
       if (holding && holding.value.shares>0n) lpShares.push({marketId:marketAddress,sharesAtoms:holding.value.shares.toString(),withdrawableAtoms:null});
     }
-    for (const positionAddress of positionAddresses) {
-      const position=await this.state.position(positionAddress);
+    for (const {positionAddress,position,claim} of positionsAndClaims) {
       if (!position || String(position.owner)!==wallet) throw new Error('PRO_POSITION_INVALID');
-      const claim=await this.state.claim(positionAddress);
       if (claim && (String(claim.value.owner)!==wallet || String(claim.value.market)!==String(position.market)) ||
           position.state===PositionState.Settled && !claim || position.state===PositionState.Open && claim) throw new Error('PRO_CLAIM_IDENTITY_MISMATCH');
       positions.push({id:positionAddress,marketId:String(position.market),owner:wallet,
@@ -283,14 +307,18 @@ export class FirstSliceFinancialReader implements FinancialReader {
   async quote(intent:FinancialIntent,market:MarketView|null,now:number):Promise<FinancialQuote|null> {
     if (!Number.isSafeInteger(now) || now<0) return null;
     if (!['faucet','registerMarket','curveBuy','curveSell','spotBuy','spotSell','openPro','closePro','claim','depositLP','withdrawLP'].includes(intent.action)) return null;
-    const finance=await this.state.financeConfig();
-    const [financeConfigAddress]=await findFinanceConfigPda({programAddress:address(this.state.options.programId)});
-    await this.state.mintAt(String(finance.paymentMint),String(financeConfigAddress));
-    if (intent.action!=='faucet') await this.state.tokenAt(String(finance.protocolTreasury),String(finance.paymentMint),String(finance.admin));
     const expiresAt=now+30; // Draft only; finishQuote seals time after the account reads.
     const base={id:randomUUID(),intent,chain:{cluster:this.state.options.cluster,programId:this.state.options.programId,address:this.state.options.programId},
       phase:null,quotedAt:now,expiresAt,configVersion:'0',snapshot:null,stateVersion:'0',priceAtoms:'0',grossAtoms:'0',
       tradeFeeAtoms:'0',timePrepaidAtoms:'0',maxPaymentAtoms:'0',minReceiveAtoms:'0',maxPayoutAtoms:null,maturityAt:null,executable:true} as FinancialQuote;
+    if (intent.action==='claim') {
+      if (market?.phase!=='INDEXED') return null;
+      return this.fixedClaimQuote(base);
+    }
+    const finance=await this.state.financeConfig();
+    const [financeConfigAddress]=await findFinanceConfigPda({programAddress:address(this.state.options.programId)});
+    await this.state.mintAt(String(finance.paymentMint),String(financeConfigAddress));
+    if (intent.action!=='faucet') await this.state.tokenAt(String(finance.protocolTreasury),String(finance.paymentMint),String(finance.admin));
     if (intent.action==='faucet') {
       const receipt=await this.state.receipt(intent.wallet);
       if (finance.faucetAmount<=0n || !u64(finance.faucetAmount) || finance.faucetMinted+finance.faucetAmount>finance.faucetTotalLimit ||
@@ -310,7 +338,7 @@ export class FirstSliceFinancialReader implements FinancialReader {
       return sealed;
     }
     if (!market || !intent.marketId) return null;
-    if (market.phase==='INDEXED' && ['spotBuy','spotSell','openPro','closePro','claim','depositLP','withdrawLP'].includes(intent.action))
+    if (market.phase==='INDEXED' && ['spotBuy','spotSell','openPro','closePro','depositLP','withdrawLP'].includes(intent.action))
       return this.indexedQuote(base,intent,market,finance,now);
     if (!['curveBuy','curveSell'].includes(intent.action) || market.phase!=='CURVE') return null;
     const [config,chainMarket,fm]=await Promise.all([this.state.config(),this.state.market(intent.marketId),this.state.financeMarket(intent.marketId)]);
@@ -335,6 +363,31 @@ export class FirstSliceFinancialReader implements FinancialReader {
       stateVersion:fm.stateVersion.toString(),priceAtoms:price.toString(),grossAtoms:gross.toString(),tradeFeeAtoms:fee.total.toString(),
       maxPaymentAtoms:intent.action==='curveBuy'?amount.toString():'0',minReceiveAtoms:intent.action==='curveSell'?amount.toString():'0'});
   }
+  private async fixedClaimQuote(base:FinancialQuote):Promise<FinancialQuote|null> {
+    const {marketId,claimId,wallet}=base.intent;
+    if(!marketId||!claimId)return null;
+    const state=this.state,programAddress=address(state.options.programId);
+    const [config,market,fm,finance,claim,[fmPda],[financeConfigPda]]=await Promise.all([
+      state.config(),state.market(marketId),state.financeMarket(marketId),state.financeConfig(),state.claimByAddress(claimId),
+      findFinanceMarketPda({market:address(marketId)},{programAddress}),findFinanceConfigPda({programAddress}),
+    ]);
+    if(market.phase!==MarketPhase.Indexed||!claim||String(claim.value.owner)!==wallet||
+      String(claim.value.market)!==marketId||claim.value.paid)return null;
+    const paymentMint=String(finance.paymentMint);
+    const [position,vault]=await Promise.all([
+      state.position(String(claim.value.position)),state.tokenAt(String(fm.paymentVault),paymentMint,String(fmPda)),
+      state.mintAt(paymentMint,String(financeConfigPda)),
+      state.tokenAt(String(finance.protocolTreasury),paymentMint,String(finance.admin)),
+      state.associatedToken(wallet,paymentMint),
+    ]);
+    if(!position||String(position.owner)!==wallet||String(position.market)!==marketId||
+      position.state!==PositionState.Settled)return null;
+    const due=claim.value.payout+claim.value.refund;
+    if(!u64(due)||due>fm.otherReserved||due>vault.amount)return null;
+    return this.finishQuote({...base,chain:{...base.chain,address:marketId},phase:'INDEXED',
+      configVersion:config.configVersion.toString(),stateVersion:fm.stateVersion.toString(),
+      minReceiveAtoms:due.toString(),grossAtoms:claim.value.payout.toString()});
+  }
   private async indexedQuote(base:FinancialQuote,intent:FinancialIntent,view:MarketView,finance:FinanceConfig,now:number):Promise<FinancialQuote|null> {
     const marketId=intent.marketId!;
     const [config,market,fm]=await Promise.all([this.state.config(),this.state.market(marketId),this.state.financeMarket(marketId)]);
@@ -343,19 +396,6 @@ export class FirstSliceFinancialReader implements FinancialReader {
     const vault=await this.state.tokenAt(String(fm.paymentVault),String(finance.paymentMint),String(fmPda));
     const common={...base,chain:{...base.chain,address:marketId},phase:'INDEXED' as const,
       configVersion:config.configVersion.toString(),stateVersion:fm.stateVersion.toString()};
-    if (intent.action==='claim') {
-      if (!intent.claimId) return null;
-      const verified=await this.state.claimByAddress(intent.claimId);
-      if (!verified) return null;
-      const position=await this.state.position(String(verified.value.position));
-      if (!position || String(position.owner)!==intent.wallet || String(position.market)!==marketId ||
-          String(verified.value.owner)!==intent.wallet || String(verified.value.market)!==marketId ||
-          verified.value.paid || position.state!==PositionState.Settled) return null;
-      const due=verified.value.payout+verified.value.refund;
-      if (!u64(due) || due>fm.otherReserved || due>vault.amount) return null;
-      await this.state.associatedToken(intent.wallet,String(finance.paymentMint));
-      return this.finishQuote({...common,snapshot:null,minReceiveAtoms:due.toString(),grossAtoms:verified.value.payout.toString()});
-    }
     const snapshot=view.snapshot;
     if (!snapshot || snapshot.finality!=='finalized' || snapshot.payload.sequence!==market.latestSequence.toString() ||
         snapshot.payloadHash!==Buffer.from(market.latestHash).toString('hex') || !market.latestNowQ12 || !market.latest7dQ12 ||

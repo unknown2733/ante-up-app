@@ -82,3 +82,28 @@ test('batched finalized reads fail over on 429 while transaction submission neve
   assert.deepEqual([primaryReads,backupReads,genesis],[1,1,1]);
   await assert.rejects(rpc.sendTransaction('wire' as any).send(),/429/);assert.equal(backupSends,0);
 });
+
+
+test('filtered finalized scans verify returned bytes and leave the Snapshot archive alone',async()=>{
+  const program=key(99);
+  const expected=Uint8Array.of(7,8);
+  let responseBytes=Uint8Array.of(7,8,9);
+  let count=0;
+  const rpc={getProgramAccounts:(id:string,options:unknown)=>({send:async()=>{
+    count++;
+    assert.equal(id,program);
+    assert.deepEqual(options,{commitment:'finalized',encoding:'base64',withContext:true,
+      filters:[{memcmp:{offset:0n,encoding:'base58',bytes:getBase58Decoder().decode(expected)}}]});
+    return {context:{slot:22n},value:[{pubkey:key(1),account:{owner:program,
+      data:[Buffer.from(responseBytes).toString('base64'),'base64']}}]};
+  }})} as unknown as Rpc;
+  const reader=new KitFinalizedAccountReader('https://unused.invalid',rpc,{
+    async get(){throw Error('Unexpected archive access');},
+    async entries(){throw Error('Unexpected archive access');},
+  });
+  assert.equal((await reader.scanFiltered(program,[{offset:0,bytes:expected}])).slot,'22');
+  responseBytes=Uint8Array.of(7,9,9);
+  await assert.rejects(()=>reader.scanFiltered(program,[{offset:0,bytes:expected}]),/PROGRAM_SCAN_FILTER_MISMATCH/);
+  await assert.rejects(()=>reader.scanFiltered(program,[]),/PROGRAM_SCAN_FILTER_INVALID/);
+  assert.equal(count,2);
+});
