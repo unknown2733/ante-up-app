@@ -14,7 +14,7 @@ test('unresolved publication prevents source calls, including unsigned REQUESTIN
 test('state pressure still reconciles accepted work without admitting new work',async()=>{
   let reconciled=0;
   const result=await collectorGate({checkStorage:async()=>{throw Error('STATE_STORAGE_LIMIT');},
-    reconcile:async()=>{reconciled++;return {unresolved:0};}});
+    reconcile:async({allowPreparedResume})=>{assert.equal(allowPreparedResume,false);reconciled++;return {unresolved:0};}});
   assert.equal(reconciled,1);assert.deepEqual(result,{ready:false,reason:'STATE_STORAGE_LIMIT',unresolved:0});
 });
 test('low physical disk stops journal writes; unknown storage failures fail closed',async()=>{
@@ -26,5 +26,5 @@ test('low physical disk stops journal writes; unknown storage failures fail clos
 test('reconciliation must succeed and explicitly clear pending before source work',async()=>{
   await assert.rejects(()=>collectorGate({checkStorage:async()=>{},reconcile:async()=>{throw Error('HTTP 429');}}),/429/);
   await assert.rejects(()=>collectorGate({checkStorage:async()=>{},reconcile:async()=>({})}),/RECONCILE_RESULT/);
-  assert.deepEqual(await collectorGate({checkStorage:async()=>{},reconcile:async()=>({unresolved:0})}),{ready:true});
+  assert.deepEqual(await collectorGate({checkStorage:async()=>{},reconcile:async({allowPreparedResume})=>{assert.equal(allowPreparedResume,true);return {unresolved:0};}}),{ready:true});
 });

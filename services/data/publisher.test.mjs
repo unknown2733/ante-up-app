@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { ANTE_UP_PROGRAM_ADDRESS, findMarketPda, getPublishSnapshotInstructionDataDecoder } from '../../clients/chain/dist/index.js';
 import { HISTORY_MINUTES, hash } from './index.mjs';
 import { FileCollectionState, runInitialArchive, runRegularPoll, runGapFill, queryHashFor } from './live.mjs';
-import { FileCandidateRepository, publishSnapshot } from './publisher.mjs';
+import { FileCandidateRepository, publishSnapshot, reconcilePublications } from './publisher.mjs';
 import { runLiveCycle } from './cli.mjs';
 
 const start=Math.floor(1_700_000_000/300)*300,end=start+HISTORY_MINUTES*60;
@@ -47,9 +47,31 @@ test('paged archive, gap repair, and generated publisher persist exact finalized
         return {signature:'sig'};},
       async readFinalizedSnapshot({sequence}){return finalityReady?submitted.get(sequence)??null:null;}};
     const signer={address:market.programId,signTransactions:async txs=>txs};
-    const pending=await publishSnapshot({collectionStore:store,repository,batchId:repaired.id,market,chain,publisherSigner:signer});
-    assert.equal(pending.pending,true);assert.equal(sends,1);
-    assert.equal((await repository.getCandidate(address,'1',pending.payloadHash)).publicationState,'SUBMITTED');
+    const args={collectionStore:store,repository,market,chain,publisherSigner:signer};
+    let guardCalls=0;
+    const beforeResume=async()=>{guardCalls++;};
+    const send=chain.sendInstruction.bind(chain);
+    chain.journalsBeforeBroadcast=true;
+    chain.sendInstruction=async()=>{throw Error('RPC before broadcast');};
+    await assert.rejects(publishSnapshot({...args,batchId:repaired.id}),/RPC before broadcast/);
+    const prepared=(await repository.read()).jobs[repaired.id];
+    assert.equal(prepared.state,'PREPARED');
+    assert.equal(prepared.signature,null);
+    assert.deepEqual(await reconcilePublications(args),{finalized:0,unresolved:1});
+    assert.equal(guardCalls,0);
+    await assert.rejects(reconcilePublications({...args,beforeResume}),/RPC before broadcast/);
+    assert.equal((await repository.read()).jobs[repaired.id].state,'PREPARED');
+    chain.sendInstruction=async input=>{
+      await input.beforeBroadcast('sig');
+      assert.equal((await repository.read()).jobs[input.id].state,'SUBMITTED');
+      return send(input);
+    };
+    assert.deepEqual(await reconcilePublications({...args,beforeResume}),{finalized:0,unresolved:1});
+    assert.equal(guardCalls,2);
+    assert.deepEqual(await reconcilePublications({...args,beforeResume}),{finalized:0,unresolved:1});
+    assert.equal(guardCalls,2);
+    assert.equal(sends,1);
+    assert.equal((await repository.getCandidate(address,'1',prepared.candidateHash)).publicationState,'SUBMITTED');
     assert.equal(await repository.getPublished(address,'1'),null);
     const config={directory:dir,marketId:address,expressions:['Dubai chocolate'],queryVersion:'1',
       estimatedCostMicros:1000,historyStart:start,token:'fixture'};

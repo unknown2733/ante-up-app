@@ -8,7 +8,7 @@ export async function collectorGate({checkStorage, reconcile}) {
   }
   // A critically full host must not attempt even a small journal write.
   if (storageReason === 'HOST_STORAGE_LOW') return {ready:false, reason:storageReason};
-  const result = await reconcile();
+  const result = await reconcile({allowPreparedResume:storageReason===null});
   if (!Number.isSafeInteger(result?.unresolved) || result.unresolved < 0)
     throw Error('PUBLICATION_RECONCILE_RESULT_INVALID');
   if (storageReason) return {ready:false, reason:storageReason, unresolved:result.unresolved};

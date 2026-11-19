@@ -268,6 +268,7 @@ export type FinalityResult =
 export async function submitAndConfirmFinalized(input: {
   transport: ChainTransport; prepared: PreparedChainTransaction; expectedInstruction: Instruction;
   sign: SignPreparedTransaction;
+  beforeBroadcast?: (signature: string) => Promise<void>;
   attempts?: number; wait?: (milliseconds: number) => Promise<void>;
 }): Promise<FinalityResult> {
   const {transport, prepared} = input;
@@ -296,6 +297,7 @@ export async function submitAndConfirmFinalized(input: {
       !isFullySignedTransaction(signed)) throw new Error('SIGNED_TRANSACTION_IDENTITY_MISMATCH');
   const signature = getSignatureFromTransaction(signed);
   const wire = getBase64Decoder().decode(getTransactionEncoder().encode(signed));
+  await input.beforeBroadcast?.(signature);
   let returned: string;
   try { returned = await transport.sendTransaction(wire); }
   catch { return {state: 'UNKNOWN', signature, reason: 'SUBMISSION_UNCERTAIN'}; }

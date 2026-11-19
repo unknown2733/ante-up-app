@@ -146,9 +146,15 @@ test('recent blockhash is serialized unsigned and signer injection confirms only
   const {instruction} = await createOpenFreeInstruction({marketAddress, owner: signer.address, recordId: 9n});
   let sends = 0;
   let reads = 0;
+  let journalSignature;
   const transport = fakeTransport({
-    async sendTransaction(wire) { sends++; return getSignatureFromTransaction(
-      getTransactionDecoder().decode(getBase64Encoder().encode(wire))); },
+    async sendTransaction(wire) {
+      sends++;
+      const signature=getSignatureFromTransaction(
+        getTransactionDecoder().decode(getBase64Encoder().encode(wire)));
+      assert.equal(signature,journalSignature);
+      return signature;
+    },
     async getSignatureStatus() { reads++; return reads === 1
       ? {confirmationStatus: 'confirmed', err: null} : {confirmationStatus: 'finalized', err: null}; },
   });
@@ -157,8 +163,11 @@ test('recent blockhash is serialized unsigned and signer injection confirms only
   assert.equal(unsigned.signatures[signer.address], null);
   assert.equal(prepared.blockhash, blockhash);
   assert.equal(prepared.lastValidBlockHeight, '100');
+  await assert.rejects(submitAndConfirmFinalized({transport,prepared,expectedInstruction:instruction,
+    sign:withKitSigner(signer),beforeBroadcast:async()=>{throw Error('journal write failed');}}),/journal write failed/);
+  assert.equal(sends,0);
   const result = await submitAndConfirmFinalized({transport, prepared, expectedInstruction: instruction,
-    sign: withKitSigner(signer), wait: async () => {}});
+    sign: withKitSigner(signer), beforeBroadcast:async signature=>{journalSignature=signature;}, wait: async () => {}});
   assert.equal(result.state, 'FINALIZED');
   assert.equal(sends, 1);
   assert.equal(reads, 2);
