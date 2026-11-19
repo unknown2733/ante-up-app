@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { readFile } from 'node:fs/promises';
-import { address, createSolanaRpc } from '@solana/kit';
+import { address, createSolanaRpc, getBase58Decoder, type Base58EncodedBytes, type ReadonlyUint8Array } from '@solana/kit';
 import { retryRpcRead } from './rpc-retry.ts';
 import { ANTE_UP_PROGRAM_ADDRESS, findSnapshotPda, getMarketDecoder, getSnapshotDecoder, MARKET_DISCRIMINATOR, SNAPSHOT_DISCRIMINATOR } from '../../../clients/chain/dist/index.js';
 import type { ProofStatus, SnapshotCandidate } from '../../../contracts/types.ts';
@@ -22,7 +22,11 @@ interface CandidateHandoff {
 export interface AccountBytes {ownerProgramId:string; data:Uint8Array}
 export interface FinalizedAccountReader {get(address: string): Promise<AccountBytes | null>;archive?:SnapshotArchiveReader}
 export interface ProgramAccountBytes extends AccountBytes {address:string}
-export interface FinalizedProgramAccountScanner {scan(programId:string):Promise<{slot:string;accounts:ProgramAccountBytes[]}>}
+export interface ProgramAccountByteFilter {offset:number;bytes:ReadonlyUint8Array}
+export interface FinalizedProgramAccountScanner {
+  scan(programId:string):Promise<{slot:string;accounts:ProgramAccountBytes[]}>;
+  scanFiltered?(programId:string,matches:readonly ProgramAccountByteFilter[]):Promise<{slot:string;accounts:ProgramAccountBytes[]}>;
+}
 export interface SnapshotArchiveReader {
   get(address:string):Promise<AccountBytes|null>;
   entries():Promise<ProgramAccountBytes[]>;
@@ -92,6 +96,29 @@ export class KitFinalizedAccountReader implements FinalizedAccountReader {
       }
     }
     this.draining=false;
+  }
+  // Live-only reads of typed account subsets. The full scanner separately
+  // reconciles the historical Snapshot archive and repairs missing sequences.
+  async scanFiltered(programId:string,matches:readonly ProgramAccountByteFilter[]):Promise<{slot:string;accounts:ProgramAccountBytes[]}> {
+    if(!matches.length||matches.some(m=>!Number.isSafeInteger(m.offset)||m.offset<0||
+      m.bytes.length===0||m.bytes.length>128))throw Error('PROGRAM_SCAN_FILTER_INVALID');
+    const filters=matches.map(m=>({memcmp:{
+      offset:BigInt(m.offset),encoding:'base58' as const,
+      bytes:getBase58Decoder().decode(m.bytes) as Base58EncodedBytes,
+    }}));
+    const response=await retryRpcRead(()=>this.rpc.getProgramAccounts(address(programId),{
+      commitment:'finalized',encoding:'base64',withContext:true,filters,
+    }).send());
+    const seen=new Set<string>();
+    const accounts=response.value.map(row=>{
+      const key=String(address(row.pubkey)),decoded=this.decodeAccount(row.account);
+      if(!decoded||decoded.ownerProgramId!==programId||seen.has(key)||
+        matches.some(m=>!Buffer.from(decoded.data.subarray(m.offset,m.offset+m.bytes.length)).equals(Buffer.from(m.bytes))))
+        throw Error('PROGRAM_SCAN_FILTER_MISMATCH');
+      seen.add(key);
+      return {address:key,...decoded};
+    });
+    return {slot:String(response.context.slot),accounts};
   }
   async scan(programId:string):Promise<{slot:string;accounts:ProgramAccountBytes[]}> {
     const response=await retryRpcRead(() => this.rpc.getProgramAccounts(address(programId),{commitment:'finalized',encoding:'base64',withContext:true}).send());

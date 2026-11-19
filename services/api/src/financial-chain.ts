@@ -139,6 +139,22 @@ export class FinalizedFinancialAccounts {
     if (String(value.market)!==marketAddress || value.sequence!==sequence) throw new Error('FINANCIAL_SNAPSHOT_IDENTITY_MISMATCH');
     return value;
   }
+  async portfolioAccounts(wallet:string) {
+    const {accounts,programId}=this.options;
+    if(!accounts.scanFiltered)return this.programAccounts();
+    const [markets,positions]=await Promise.all([
+      accounts.scanFiltered(programId,[{offset:0,bytes:FINANCE_MARKET_DISCRIMINATOR}]),
+      accounts.scanFiltered(programId,[
+        {offset:0,bytes:PRO_POSITION_DISCRIMINATOR},
+        // Anchor discriminator, then the market public key, then the owner.
+        {offset:PRO_POSITION_DISCRIMINATOR.length+32,bytes:getAddressEncoder().encode(address(wallet))},
+      ]),
+    ]);
+    if(![markets,positions].every(scan=>/^(0|[1-9][0-9]*)$/.test(scan.slot)&&
+      scan.accounts.every(a=>a.ownerProgramId===programId)))throw Error('FINANCIAL_SCAN_INVALID');
+    const slot=BigInt(markets.slot)<BigInt(positions.slot)?markets.slot:positions.slot;
+    return {slot,accounts:[...markets.accounts,...positions.accounts]};
+  }
   async programAccounts() {
     if (!this.options.accounts.scan) return null;
     const result=await this.options.accounts.scan(this.options.programId);
@@ -187,9 +203,8 @@ export class FirstSliceFinancialReader implements FinancialReader {
       remainingClaims:((config.faucetTotalLimit-config.faucetMinted)/config.faucetAmount).toString()};
   }
   async portfolio(wallet:string) {
-    const scan=await this.state.programAccounts();if (!scan) return null;
-    const finance=await this.state.financeConfig();
-    const quote=await this.state.associatedToken(wallet,String(finance.paymentMint));
+    const [scan,finance]=await Promise.all([this.state.portfolioAccounts(wallet),this.state.financeConfig()]);
+    if (!scan) return null;
     const marketAddresses:string[]=[];
     const positionAddresses:string[]=[];
     for (const account of scan.accounts) {
@@ -205,17 +220,26 @@ export class FirstSliceFinancialReader implements FinancialReader {
       }
     }
     const tokenBalances:FinancialPortfolio['tokenBalances']=[],positions:FinancialPortfolio['positions']=[],claims:FinancialPortfolio['claims']=[],lpShares:FinancialPortfolio['lpShares']=[];
-    for (const marketAddress of [...new Set(marketAddresses)]) {
-      const fm=await this.state.financeMarket(marketAddress);
-      const token=await this.state.associatedToken(wallet,String(fm.keywordMint));
+    const [quote,balances,positionsAndClaims]=await Promise.all([
+      this.state.associatedToken(wallet,String(finance.paymentMint)),
+      Promise.all([...new Set(marketAddresses)].map(async marketAddress=>{
+        const fm=await this.state.financeMarket(marketAddress);
+        const [token,holding]=await Promise.all([
+          this.state.associatedToken(wallet,String(fm.keywordMint)),this.state.holding(marketAddress,wallet),
+        ]);
+        return {marketAddress,fm,token,holding};
+      })),
+      Promise.all(positionAddresses.map(async positionAddress=>{
+        const [position,claim]=await Promise.all([this.state.position(positionAddress),this.state.claim(positionAddress)]);
+        return {positionAddress,position,claim};
+      })),
+    ]);
+    for (const {marketAddress,fm,token,holding} of balances) {
       if (token.amount>0n) tokenBalances.push({marketId:marketAddress,mint:String(fm.keywordMint),atoms:token.amount.toString()});
-      const holding=await this.state.holding(marketAddress,wallet);
       if (holding && holding.value.shares>0n) lpShares.push({marketId:marketAddress,sharesAtoms:holding.value.shares.toString(),withdrawableAtoms:null});
     }
-    for (const positionAddress of positionAddresses) {
-      const position=await this.state.position(positionAddress);
+    for (const {positionAddress,position,claim} of positionsAndClaims) {
       if (!position || String(position.owner)!==wallet) throw new Error('PRO_POSITION_INVALID');
-      const claim=await this.state.claim(positionAddress);
       if (claim && (String(claim.value.owner)!==wallet || String(claim.value.market)!==String(position.market)) ||
           position.state===PositionState.Settled && !claim || position.state===PositionState.Open && claim) throw new Error('PRO_CLAIM_IDENTITY_MISMATCH');
       positions.push({id:positionAddress,marketId:String(position.market),owner:wallet,
